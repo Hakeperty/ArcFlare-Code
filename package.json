@@ -1,0 +1,29 @@
+{
+  "name": "arcflare",
+  "version": "0.1.0",
+  "description": "ArcFlare CLI — upload, share, and run open AI models from the terminal.",
+  "bin": {
+    "arcflare": "bin/arcflare.js"
+  },
+  "type": "commonjs",
+  "files": [
+    "bin",
+    "lib"
+  ],
+  "scripts": {
+    "start": "node bin/arcflare.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "models",
+    "cli",
+    "arcflare",
+    "ollama"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/Hakeperty/ArcFlare-Code"
+}
