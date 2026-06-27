@@ -9,6 +9,7 @@ const { spawnSync } = require("child_process");
 const registry = require("../lib/registry");
 const store = require("../lib/store");
 const engine = require("../lib/engine");
+const gpu = require("../lib/gpu");
 const ui = require("../lib/ui");
 const { c } = ui;
 
@@ -133,6 +134,11 @@ async function liveChat(m, modelPath, prompt) {
     console.log(`  ${c.red("failed to load model:")} ${e.message}\n`);
     process.exit(1);
   }
+  const backend = await engine.activeBackend();
+  console.log(
+    `  ${c.green("✓")} ${c.bold(m.slug)} running on ${backend ? c.accent("GPU (" + backend + ")") : c.dim("CPU")}` +
+      `${backend ? "" : c.dim("  — run `arcflare gpu` to enable your GPU")}\n`,
+  );
 
   async function ask(text) {
     process.stdout.write(`  ${c.dim(m.slug + ":")} `);
@@ -482,6 +488,46 @@ function cmdStop() {
   console.log(`  ${c.dim("Stop a running API server with Ctrl-C in its terminal.")}\n`);
 }
 
+async function cmdGpu() {
+  const g = gpu.detect();
+  console.log();
+  console.log(`  ${c.bold("GPU acceleration")}`);
+  console.log(`  ${c.dim("Platform:")} ${g.platform}    ${c.dim("GPU:")} ${c.accent(g.vendor)}`);
+  console.log(`  ${c.dim("Best backend:")} ${c.bold(g.backend)}`);
+
+  const active = await engine.activeBackend();
+  console.log(`  ${c.dim("Currently active:")} ${active ? c.green(active) : c.dim("cpu")}`);
+  console.log();
+
+  // A GPU backend is already running — we're done.
+  if (active) {
+    console.log(`  ${c.green("✓")} GPU acceleration is active (${active}).`);
+    if (g.backend === "cuda" && active !== "cuda") {
+      console.log(
+        `  ${c.dim("Tip: on NVIDIA, the CUDA Toolkit can be faster than Vulkan — install it, then re-run")} ${c.cyan("arcflare gpu")}.`,
+      );
+    }
+    console.log();
+    return;
+  }
+
+  if (g.backend === "cpu") {
+    console.log(`  ${c.dim(g.note)}\n`);
+    return;
+  }
+
+  console.log(`  Building the ${c.bold(g.backend)} backend ${c.dim("(can take a few minutes)...")}`);
+  try {
+    const got = await engine.buildBackend(g.backend);
+    console.log(`  ${c.green("✓")} ${got} backend ready — ${c.cyan("arcflare run")} now uses your GPU.\n`);
+  } catch {
+    console.log(`  ${c.red("✗")} couldn't build the ${g.backend} backend (the SDK is likely missing).`);
+    console.log(`  ${c.dim(g.note)}`);
+    const guide = g.backend === "cuda" ? "CUDA" : "Vulkan";
+    console.log(`  ${c.dim("Guide:")} ${c.cyan("https://node-llama-cpp.withcat.ai/guide/" + guide)}\n`);
+  }
+}
+
 function parseFlags(args) {
   const flags = {};
   const positional = [];
@@ -515,6 +561,7 @@ function help() {
     ["rm <model>", "remove an installed model"],
     ["serve", "start the local HTTP API (default :11435)"],
     ["ps", "show the running server + its models"],
+    ["gpu", "detect your GPU and enable acceleration"],
     ["push <model>", "publish a model (coming soon)"],
     ["help / version", "show help / version"],
   ];
@@ -540,6 +587,7 @@ async function main() {
     case "serve": return cmdServe(flags);
     case "ps": return cmdPs(flags);
     case "stop": return cmdStop();
+    case "gpu": return cmdGpu();
     case "push": return cmdPush(positional[0]);
     case "path": return console.log(store.DIR);
     case "version": case "-v": case "--version": return console.log(`arcflare v${VERSION}`);

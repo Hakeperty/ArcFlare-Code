@@ -117,6 +117,23 @@ for discovery and fall back to a demo until a build is added.
 > Image/audio models (FLUX, Stable Diffusion, Whisper) are listed for discovery
 > and aren't text-chat models.
 
+## GPU acceleration
+
+ArcFlare auto-detects your hardware and uses the best llama.cpp backend, falling
+back to CPU:
+
+| Platform / GPU | Backend |
+| --- | --- |
+| Apple Silicon (Mac) | **Metal** (works out of the box) |
+| NVIDIA | **CUDA** (or Vulkan) |
+| AMD / Intel | **Vulkan** |
+| anything else | CPU |
+
+`arcflare run` prints which backend it's using (e.g. `running on GPU (vulkan)`).
+Run **`arcflare gpu`** to see what was detected and enable acceleration. CUDA and
+Vulkan builds require the matching SDK (CUDA Toolkit / Vulkan SDK); Metal needs
+nothing extra.
+
 ## Design
 
 A flat JSON store (`~/.arcflare/store.json`), GGUF models in `~/.arcflare/models`,

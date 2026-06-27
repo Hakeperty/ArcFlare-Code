@@ -1,6 +1,6 @@
 {
   "name": "arcflare",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "ArcFlare CLI — upload, share, and run open AI models from the terminal.",
   "bin": {
     "arcflare": "bin/arcflare.js"
