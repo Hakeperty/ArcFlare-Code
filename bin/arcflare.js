@@ -8,7 +8,7 @@ const readline = require("readline");
 const { spawnSync } = require("child_process");
 const registry = require("../lib/registry");
 const store = require("../lib/store");
-const ollama = require("../lib/ollama");
+const engine = require("../lib/engine");
 const ui = require("../lib/ui");
 const { c } = ui;
 
@@ -22,30 +22,20 @@ function humanBytes(n) {
   return `${(n / Math.pow(1024, i)).toFixed(i ? 1 : 0)}${u[i]}`;
 }
 
-/** Pull a model through the Ollama backend with a live progress bar. */
-async function ollamaPull(model) {
-  let lastStatus = "";
+/** Download a model's GGUF via the engine, with a live progress bar. */
+async function downloadModel(url) {
   let lastPct = -1;
-  await ollama.pull(model, (j) => {
-    if (j.error) {
-      process.stdout.write(`\n  ${c.red("pull error:")} ${j.error}\n`);
-      return;
-    }
-    if (j.total && j.completed != null) {
-      const pct = Math.floor((j.completed / j.total) * 100);
-      if (pct !== lastPct) {
-        lastPct = pct;
-        const width = 20;
-        const filled = Math.round((pct / 100) * width);
-        const bar = c.accent("█".repeat(filled)) + c.dim("░".repeat(width - filled));
-        process.stdout.write(
-          `\r  ${bar} ${String(pct).padStart(3)}%  ${c.dim(humanBytes(j.completed) + "/" + humanBytes(j.total))}   `,
-        );
-      }
-    } else if (j.status && j.status !== lastStatus) {
-      lastStatus = j.status;
-      process.stdout.write(`\r  ${c.dim(j.status)}                              \n`);
-    }
+  await engine.download(url, (done, total) => {
+    if (!total) return;
+    const pct = Math.floor((done / total) * 100);
+    if (pct === lastPct) return;
+    lastPct = pct;
+    const width = 20;
+    const filled = Math.round((pct / 100) * width);
+    const bar = c.accent("█".repeat(filled)) + c.dim("░".repeat(width - filled));
+    process.stdout.write(
+      `\r  ${bar} ${String(pct).padStart(3)}%  ${c.dim(humanBytes(done) + "/" + humanBytes(total))}   `,
+    );
   });
   process.stdout.write("\n");
 }
@@ -78,45 +68,30 @@ function notFound(name) {
   console.log(`  ${c.dim("Try")} ${c.cyan("arcflare search <q>")} ${c.dim("or")} ${c.cyan("arcflare list")}\n`);
 }
 
-async function installFlow(entry) {
-  await ui.step("Pulling manifest...");
-  await ui.progress("Downloading weights", 1200);
-  await ui.step("Verifying digest...");
-  store.install({
-    slug: entry.slug,
-    base: entry.base || entry.slug,
-    sizes: entry.sizes,
-    size: entry.size,
-    author: entry.author,
-    license: entry.license,
-    category: entry.category,
-  });
-}
-
 async function cmdPull(name) {
   const m = resolve(name);
   if (!m) return notFound(name), process.exit(1);
   console.log();
-  const up = await ollama.isUp();
-  if (up && !["Image", "Audio"].includes(m.category)) {
-    if (await ollama.has(m.base || m.slug)) {
-      console.log(`  ${c.green("✓")} ${c.bold(m.slug)} is already pulled — up to date.\n`);
-    } else {
-      console.log(`  pulling ${c.bold(m.base || m.slug)} via backend...`);
-      await ollamaPull(m.base || m.slug);
-      console.log(`  ${c.green("✓")} pulled ${c.bold(m.slug)}\n`);
-    }
-    if (!m.installed)
-      store.install({ slug: m.slug, base: m.base, sizes: m.sizes, size: m.size, author: m.author, license: m.license, category: m.category });
+  if (!m.gguf) {
+    if (!m.installed) store.install(metadataOf(m));
+    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} added ${c.dim("(listed for discovery — no local engine build yet)")}\n`);
     return;
   }
-  // No backend (or non-text model): record it in the local store.
-  if (m.installed) {
-    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} is already installed.\n`);
-    return;
+  if (engine.isDownloaded(m.gguf)) {
+    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} is already downloaded.\n`);
+  } else {
+    console.log(`  pulling ${c.bold(m.slug)} ${c.dim("(" + engine.fileNameFromUrl(m.gguf) + ")")}`);
+    await downloadModel(m.gguf);
+    console.log(`  ${c.green("✓")} pulled ${c.bold(m.slug)}\n`);
   }
-  await installFlow(m);
-  console.log(`  ${c.green("✓")} pulled ${c.bold(m.slug)} ${c.dim("(metadata only — start a backend to run it)")}\n`);
+  store.install({ ...metadataOf(m), gguf: m.gguf, file: engine.localPathFor(m.gguf) });
+}
+
+function metadataOf(m) {
+  return {
+    slug: m.slug, base: m.base, sizes: m.sizes, size: m.size,
+    author: m.author, license: m.license, category: m.category,
+  };
 }
 
 async function cmdRun(name, prompt) {
@@ -125,53 +100,49 @@ async function cmdRun(name, prompt) {
   console.log();
   console.log(`  ${c.accent("❯")} arcflare run ${c.bold(name)}`);
 
-  const up = await ollama.isUp();
-  const runnable = up && !["Image", "Audio"].includes(m.category);
-
-  if (runnable) {
-    const backendModel = m.base || m.slug;
-    if (!(await ollama.has(backendModel))) {
-      console.log(`  ${c.dim("pulling " + backendModel + "...")}`);
-      await ollamaPull(backendModel);
+  // No local engine build for this model -> demo.
+  if (!m.gguf) {
+    if (!m.installed) {
+      store.install(metadataOf(m));
+      m = resolve(name);
     }
-    if (!m.installed)
-      store.install({ slug: m.slug, base: m.base, sizes: m.sizes, size: m.size, author: m.author, license: m.license, category: m.category });
     store.touch(m.slug);
-    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} ready  ${c.dim(`(${m.author} · ${m.license})`)}\n`);
-    await liveChat(m, backendModel, prompt);
-    return;
+    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} ready  ${c.dim(`(${m.author} · ${m.license})`)}`);
+    console.log(`  ${c.dim("No local build for this model yet — runnable today:")} ${c.cyan("qwen2.5")}, ${c.cyan("llama3.2")}, ${c.cyan("gemma2")}, ${c.cyan("mistral")}, ${c.cyan("deepseek-r1")}, ${c.cyan("qwen2.5-coder")}.`);
+    if (prompt) return void console.log(`\n  ${c.dim(m.slug + ":")} ${demoReply(prompt, m)}\n`);
+    return demoChat(m);
   }
 
-  // Fallback: no backend running.
-  if (!m.installed) {
-    await installFlow(m);
-    m = resolve(name);
+  // Ensure the GGUF is downloaded, then run it with ArcFlare's engine.
+  if (!engine.isDownloaded(m.gguf)) {
+    console.log(`  pulling ${c.bold(m.slug)} ${c.dim("(" + engine.fileNameFromUrl(m.gguf) + ")")}`);
+    await downloadModel(m.gguf);
   }
+  store.install({ ...metadataOf(m), gguf: m.gguf, file: engine.localPathFor(m.gguf) });
   store.touch(m.slug);
-  console.log(`  ${c.green("✓")} ${c.bold(m.slug)} ready  ${c.dim(`(${m.author} · ${m.license})`)}`);
-  console.log(`  ${c.dim("No backend running. Install Ollama (https://ollama.com) and run")} ${c.cyan("ollama serve")} ${c.dim("for real inference.")}`);
-  if (prompt) {
-    console.log(`\n  ${c.dim(m.slug + ":")} ${demoReply(prompt, m)}\n`);
-    return;
-  }
-  await demoChat(m);
+  console.log(`  ${c.dim("loading " + m.slug + " — first load can take a few seconds...")}\n`);
+  await liveChat(m, engine.localPathFor(m.gguf), prompt);
 }
 
-/** Real streaming chat against the backend, applying the model's SYSTEM prompt. */
-async function liveChat(m, backendModel, prompt) {
-  const messages = [];
-  if (m.system) messages.push({ role: "system", content: m.system });
+/** Real streaming chat with ArcFlare's engine, applying the model's SYSTEM prompt. */
+async function liveChat(m, modelPath, prompt) {
+  let session;
+  try {
+    session = await engine.createSession(modelPath, m.system || undefined);
+  } catch (e) {
+    console.log(`  ${c.red("failed to load model:")} ${e.message}\n`);
+    process.exit(1);
+  }
 
   async function ask(text) {
-    messages.push({ role: "user", content: text });
     process.stdout.write(`  ${c.dim(m.slug + ":")} `);
-    const reply = await ollama.chat(backendModel, messages, (tok) => process.stdout.write(tok));
+    await session.prompt(text, (tok) => process.stdout.write(tok));
     process.stdout.write("\n\n");
-    messages.push({ role: "assistant", content: reply });
   }
 
   if (prompt) {
     await ask(prompt);
+    await session.dispose();
     return;
   }
   console.log(c.dim(`  Chatting with ${c.bold(m.slug)} — type a message, or /bye to exit.\n`));
@@ -187,7 +158,8 @@ async function liveChat(m, backendModel, prompt) {
     }
     rl.prompt();
   });
-  rl.on("close", () => {
+  rl.on("close", async () => {
+    await session.dispose().catch(() => {});
     console.log(c.dim("\n  Bye! ✦"));
     process.exit(0);
   });
@@ -196,11 +168,10 @@ async function liveChat(m, backendModel, prompt) {
 
 function demoReply(input, m) {
   const sys = m.system ? c.dim(`[sys: ${m.system.slice(0, 30)}…] `) : "";
-  return `${sys}(demo) install Ollama for real inference — I'd answer "${input.slice(0, 36)}${input.length > 36 ? "…" : ""}" here.`;
+  return `${sys}(demo) no local build for ${m.slug} yet — I'd answer "${input.slice(0, 36)}${input.length > 36 ? "…" : ""}" here.`;
 }
 
 function demoChat(m) {
-  console.log(c.dim("  No local backend detected (install Ollama for real inference)."));
   if (m.system) console.log(c.dim(`  System: ${m.system}`));
   console.log(c.dim(`  Demo chat with ${c.bold(m.slug)} — type a message, or /bye to exit.\n`));
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: c.accent("› ") });
@@ -435,11 +406,13 @@ function cmdServe(flags) {
         } else {
           messages.push({ role: "user", content: body.prompt || "" });
         }
-        if (await ollama.isUp() && !["Image", "Audio"].includes(m.category)) {
-          const text = await ollama.chat(m.base || m.slug, messages);
+        if (m.gguf && engine.isDownloaded(m.gguf)) {
+          const text = await engine.chatOnce(engine.localPathFor(m.gguf), messages);
           return send(res, 200, { model: m.slug, response: text, message: { role: "assistant", content: text }, done: true }), log(200);
         }
-        const text = demoReply(body.prompt || (body.messages && body.messages.at(-1)?.content) || "", m);
+        const text = m.gguf
+          ? `(not downloaded — run: arcflare pull ${m.slug})`
+          : demoReply(body.prompt || (body.messages && body.messages.at(-1)?.content) || "", m);
         return send(res, 200, { model: m.slug, response: text, message: { role: "assistant", content: text }, done: true }), log(200);
       }
       if (req.method === "DELETE" && p === "/api/delete") {

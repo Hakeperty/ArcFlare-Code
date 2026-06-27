@@ -1,17 +1,19 @@
 # ArcFlare CLI
 
 > Upload, share, and **run** open AI models from your terminal — `arcflare run <model>`.
-> Works like Ollama, kept lean: zero dependencies and instant startup.
+> Inspired by Ollama, but self-contained: ArcFlare runs models **itself** with an
+> embedded [llama.cpp](https://github.com/ggml-org/llama.cpp) engine — no external
+> app or server to install.
 
 This is the command-line tool for [ArcFlare](https://github.com/Hakeperty/ArcFlare)
 (the model-hub website lives in that repo; this repo is the `arcflare` command).
 
 ```
 ❯ arcflare run qwen2.5
-  Pulling manifest...
-  Downloading weights ██████████████████████ 100%
-  Verifying digest...
-  ✓ qwen2.5 ready  (Alibaba Qwen · Apache-2.0)
+  pulling qwen2.5 (qwen2.5-0.5b-instruct-q4_k_m.gguf)
+  ████████████████████ 100%  468.6MB/468.6MB
+  loading qwen2.5 — first load can take a few seconds...
+  qwen2.5: Pandas are fascinating and adorable animals!
 ```
 
 ## Install
@@ -21,12 +23,16 @@ No published package yet — run it straight from the repo:
 ```bash
 git clone https://github.com/Hakeperty/ArcFlare-Code.git
 cd ArcFlare-Code
+npm install         # fetches the prebuilt llama.cpp engine
 npm link            # makes `arcflare` available globally
 # or just:
 node bin/arcflare.js <command>
 ```
 
-Requires Node.js 18+. **No dependencies.**
+Requires Node.js 18+. The only dependency is
+[`node-llama-cpp`](https://github.com/withcatai/node-llama-cpp), which embeds the
+llama.cpp inference engine (CPU by default; GPU when a prebuilt is available).
+Models download as GGUF to `~/.arcflare/models` on first run.
 
 ## Commands
 
@@ -49,7 +55,7 @@ Requires Node.js 18+. **No dependencies.**
 | `arcflare path` | Print the local store directory |
 | `arcflare help` / `version` | Help / version |
 
-## Local backend
+## Local store & custom models
 
 ArcFlare keeps a small on-disk store at `~/.arcflare/store.json` (override with
 `ARCFLARE_HOME`). `pull`/`create` install models there; `list`/`edit`/`rm` work
@@ -86,7 +92,7 @@ arcflare ps               # in another terminal: see the server + its models
 | `POST /api/pull` | `{ name }` | installs the model |
 | `POST /api/show` | `{ name }` | model details + config |
 | `POST /api/create` | `{ name, from, system }` | makes a custom model |
-| `POST /api/generate` | `{ model, prompt }` | a completion (real if a backend is up) |
+| `POST /api/generate` | `{ model, prompt }` | a completion (real once the model is pulled) |
 | `POST /api/chat` | `{ model, messages }` | a chat reply (applies the model's SYSTEM) |
 | `DELETE /api/delete` | `{ name }` | removes a model |
 
@@ -98,31 +104,25 @@ curl -X POST http://127.0.0.1:11435/api/generate -d '{"model":"qwen2.5","prompt"
 
 ## How `run` works
 
-1. Resolves the model from the local store, or the bundled registry of real
-   open-weight models (`qwen2.5`, `llama3.2`, `mistral`, `deepseek-r1`, …).
-2. **If a backend is running** (an [Ollama](https://ollama.com)-compatible server
-   at `127.0.0.1:11434`, override with `OLLAMA_HOST`): pulls the model with a live
-   progress bar if needed, then **streams a real chat** via `/api/chat` — applying
-   the model's `SYSTEM` prompt and keeping conversation history.
-3. **Otherwise**: records the model and drops into a demo chat, with a hint to
-   install Ollama and run `ollama serve`.
+1. Resolves the model from the bundled registry of real open-weight models.
+2. Downloads its GGUF (with a live progress bar) to `~/.arcflare/models` if it
+   isn't there yet.
+3. Loads it with the embedded llama.cpp engine and **streams a real chat** —
+   applying the model's `SYSTEM` prompt and keeping conversation history.
 
-To get real inference:
-
-```bash
-# install Ollama from https://ollama.com, then:
-ollama serve            # starts the backend on :11434
-arcflare run qwen2.5    # streams real output
-```
+**Runnable today** (have a bundled GGUF build): `qwen2.5`, `qwen2.5-coder`,
+`llama3.2`, `gemma2`, `mistral`, `deepseek-r1`. Other registry entries are listed
+for discovery and fall back to a demo until a build is added.
 
 > Image/audio models (FLUX, Stable Diffusion, Whisper) are listed for discovery
-> and run in demo mode — they aren't text-chat models.
+> and aren't text-chat models.
 
-## Why "more efficient"
+## Design
 
-No runtime dependencies, a flat JSON store, and lazy work (nothing runs until you
-ask) keep startup and memory minimal. Heavy inference is delegated to a real
-backend (Ollama) rather than reimplemented.
+A flat JSON store (`~/.arcflare/store.json`), GGUF models in `~/.arcflare/models`,
+and lazy work (nothing loads until you run a model). Inference is handled in-process
+by the embedded llama.cpp engine — ArcFlare is a single self-contained tool, not a
+front-end for another app.
 
 ## License
 
