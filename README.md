@@ -39,8 +39,12 @@ Requires Node.js 18+. **No dependencies.**
 | `arcflare show <model>` | Show model details + config |
 | `arcflare edit <model>` | Edit a model's Modelfile (system, params) |
 | `arcflare create <name> --from <base> [--system "…"]` | Make a custom model |
+| `arcflare create <name> -f Modelfile` | Make a custom model from a Modelfile |
 | `arcflare cp <src> <dst>` | Copy an installed model |
 | `arcflare rm <model>` | Remove an installed model |
+| `arcflare serve` | Start the local HTTP API (default `:11435`) |
+| `arcflare ps` | Show the running server and its models |
+| `arcflare stop` | (models run on demand — nothing stays loaded) |
 | `arcflare push <model>` | Publish a model (coming soon) |
 | `arcflare path` | Print the local store directory |
 | `arcflare help` / `version` | Help / version |
@@ -63,6 +67,32 @@ arcflare run captain "ahoy!"
 FROM qwen2.5
 SYSTEM You are a sea captain.
 PARAMETER temperature 0.7
+```
+
+## HTTP API (`arcflare serve`)
+
+Start a small local server (zero deps, Node `http`) for apps and scripts:
+
+```bash
+arcflare serve            # http://127.0.0.1:11435  (override with --port / ARCFLARE_PORT)
+arcflare ps               # in another terminal: see the server + its models
+```
+
+| Method & path | Body | Returns |
+| --- | --- | --- |
+| `GET /` | — | `ArcFlare is running` |
+| `GET /api/tags` | — | installed models |
+| `GET /api/registry` | — | all available models |
+| `POST /api/pull` | `{ name }` | installs the model |
+| `POST /api/show` | `{ name }` | model details + config |
+| `POST /api/create` | `{ name, from, system }` | makes a custom model |
+| `POST /api/generate` | `{ model, prompt }` | a response (demo, or wire to a backend) |
+| `DELETE /api/delete` | `{ name }` | removes a model |
+
+```bash
+curl http://127.0.0.1:11435/api/tags
+curl -X POST http://127.0.0.1:11435/api/pull -d '{"name":"qwen2.5"}'
+curl -X POST http://127.0.0.1:11435/api/generate -d '{"model":"qwen2.5","prompt":"hi"}'
 ```
 
 ## How `run` works

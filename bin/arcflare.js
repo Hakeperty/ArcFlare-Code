@@ -228,7 +228,27 @@ function cmdEdit(name) {
 }
 
 function cmdCreate(name, flags) {
-  if (!name) return console.log(`\n  ${c.red("✗")} usage: arcflare create <name> --from <base> [--system "..."]\n`);
+  if (!name) return console.log(`\n  ${c.red("✗")} usage: arcflare create <name> --from <base> [--system "..."]\n                 arcflare create <name> -f Modelfile\n`);
+
+  // From a Modelfile: arcflare create mybot -f Modelfile
+  const file = flags.file || flags.f;
+  if (file && typeof file === "string") {
+    let text;
+    try {
+      text = fs.readFileSync(file, "utf8");
+    } catch {
+      return console.log(`\n  ${c.red("✗")} cannot read Modelfile: ${file}\n`);
+    }
+    const mf = parseModelfile(text);
+    const base = mf.base ? registry.find(mf.base) || store.get(mf.base) : null;
+    if (!base) return console.log(`\n  ${c.red("✗")} Modelfile needs a valid ${c.bold("FROM <base>")} line.\n`);
+    store.install({ slug: name, base: base.slug || mf.base, sizes: base.sizes, size: base.size, author: "you", license: "custom", category: base.category });
+    store.setConfig(name, { system: mf.system, params: mf.params });
+    console.log(`\n  ${c.green("✓")} created ${c.bold(name)} ${c.dim("from " + (base.slug || mf.base) + " (Modelfile)")}`);
+    console.log(`  ${c.dim("Run it:")} ${c.accent("arcflare run " + name)}\n`);
+    return;
+  }
+
   const baseName = flags.from;
   const base = baseName ? registry.find(baseName) || store.get(baseName) : null;
   if (!base) return console.log(`\n  ${c.red("✗")} need a valid --from base model (see ${c.cyan("arcflare list")}/${c.cyan("search")})\n`);
@@ -254,15 +274,145 @@ function cmdPush(name) {
   console.log(`  ${c.dim("Share your Modelfile at")} ${c.cyan("https://github.com/Hakeperty/ArcFlare-Code")}\n`);
 }
 
+// ---- serve / ps / stop ----------------------------------------------------
+const DEFAULT_PORT = Number(process.env.ARCFLARE_PORT || 11435);
+
+function cmdServe(flags) {
+  const http = require("http");
+  const port = Number(flags.port || DEFAULT_PORT);
+  const host = flags.host || "127.0.0.1";
+
+  const send = (res, code, body, asText) => {
+    res.writeHead(code, {
+      "content-type": asText ? "text/plain" : "application/json",
+      "access-control-allow-origin": "*",
+    });
+    res.end(asText ? String(body) : JSON.stringify(body, null, 2));
+  };
+  const readBody = (req) =>
+    new Promise((resolve) => {
+      let d = "";
+      req.on("data", (ch) => (d += ch));
+      req.on("end", () => {
+        try {
+          resolve(d ? JSON.parse(d) : {});
+        } catch {
+          resolve({});
+        }
+      });
+    });
+
+  const server = http.createServer(async (req, res) => {
+    const p = req.url.split("?")[0];
+    const log = (code) => console.log(`  ${c.dim(new Date().toISOString().slice(11, 19))} ${req.method} ${p} ${code === 200 ? c.green(code) : c.dim(code)}`);
+    try {
+      if (req.method === "GET" && p === "/") return send(res, 200, "ArcFlare is running", true), log(200);
+      if (req.method === "GET" && p === "/api/tags") return send(res, 200, { models: store.listInstalled() }), log(200);
+      if (req.method === "GET" && p === "/api/registry") return send(res, 200, { models: registry.models }), log(200);
+      if (req.method === "POST" && p === "/api/pull") {
+        const { name } = await readBody(req);
+        const m = resolve(name);
+        if (!m) return send(res, 404, { error: "model not found" }), log(404);
+        if (!m.installed) store.install({ slug: m.slug, base: m.base, sizes: m.sizes, size: m.size, author: m.author, license: m.license, category: m.category });
+        return send(res, 200, { status: "success", model: store.get(m.slug) }), log(200);
+      }
+      if (req.method === "POST" && p === "/api/show") {
+        const { name } = await readBody(req);
+        const m = resolve(name);
+        return m ? (send(res, 200, m), log(200)) : (send(res, 404, { error: "model not found" }), log(404));
+      }
+      if (req.method === "POST" && p === "/api/create") {
+        const { name, from, system } = await readBody(req);
+        const base = from ? registry.find(from) || store.get(from) : null;
+        if (!name || !base) return send(res, 400, { error: "need name + valid 'from'" }), log(400);
+        store.install({ slug: name, base: base.slug || from, sizes: base.sizes, size: base.size, author: "you", license: "custom", category: base.category });
+        if (system) store.setConfig(name, { system });
+        return send(res, 200, { status: "success", model: store.get(name) }), log(200);
+      }
+      if (req.method === "POST" && p === "/api/generate") {
+        const { model, prompt } = await readBody(req);
+        const m = resolve(model);
+        if (!m) return send(res, 404, { error: "model not found" }), log(404);
+        if (!m.installed) store.install({ slug: m.slug, base: m.base, sizes: m.sizes, size: m.size, author: m.author, license: m.license, category: m.category });
+        store.touch(m.slug);
+        return send(res, 200, { model: m.slug, response: demoReply(prompt || "", m), done: true }), log(200);
+      }
+      if (req.method === "DELETE" && p === "/api/delete") {
+        const { name } = await readBody(req);
+        const ok = store.remove(String(name || "").split(":")[0]);
+        return send(res, ok ? 200 : 404, { status: ok ? "success" : "not found" }), log(ok ? 200 : 404);
+      }
+      send(res, 404, { error: "unknown endpoint" });
+      log(404);
+    } catch (e) {
+      send(res, 500, { error: e.message });
+      log(500);
+    }
+  });
+
+  server.on("error", (e) => {
+    console.error(`  ${c.red("serve error:")} ${e.message}`);
+    process.exit(1);
+  });
+  server.listen(port, host, () => {
+    console.log(ui.banner());
+    console.log(`  ${c.green("●")} ArcFlare API on ${c.accent(`http://${host}:${port}`)}\n`);
+    console.log(`  ${c.dim("GET  /api/tags          list installed models")}`);
+    console.log(`  ${c.dim("POST /api/pull          { name }")}`);
+    console.log(`  ${c.dim("POST /api/generate      { model, prompt }")}`);
+    console.log(`  ${c.dim("POST /api/create        { name, from, system }")}`);
+    console.log(`  ${c.dim("DELETE /api/delete      { name }")}\n`);
+    console.log(`  ${c.dim("Ctrl-C to stop.")}\n`);
+  });
+  return new Promise(() => {});
+}
+
+function cmdPs(flags) {
+  const http = require("http");
+  const port = Number(flags.port || DEFAULT_PORT);
+  return new Promise((resolve) => {
+    const req = http.get({ host: "127.0.0.1", port, path: "/api/tags", timeout: 1500 }, (res) => {
+      let d = "";
+      res.on("data", (ch) => (d += ch));
+      res.on("end", () => {
+        try {
+          const models = (JSON.parse(d).models || []);
+          console.log(`\n  ${c.green("●")} ArcFlare server running on ${c.accent(":" + port)}  ${c.dim(`(${models.length} models)`)}`);
+          for (const m of models) console.log(`  ${c.accent(m.slug.padEnd(22))}${c.dim(String(m.size || ""))}`);
+          console.log();
+        } catch {
+          console.log(`\n  ${c.dim("server responded unexpectedly")}\n`);
+        }
+        resolve();
+      });
+    });
+    req.on("error", () => {
+      console.log(`\n  ${c.dim("No ArcFlare server running. Start one with")} ${c.cyan("arcflare serve")}\n`);
+      resolve();
+    });
+    req.on("timeout", () => {
+      req.destroy();
+      console.log(`\n  ${c.dim("No ArcFlare server running. Start one with")} ${c.cyan("arcflare serve")}\n`);
+      resolve();
+    });
+  });
+}
+
+function cmdStop() {
+  console.log(`\n  ${c.dim("ArcFlare runs models on demand — nothing stays loaded to stop.")}`);
+  console.log(`  ${c.dim("Stop a running API server with Ctrl-C in its terminal.")}\n`);
+}
+
 function parseFlags(args) {
   const flags = {};
   const positional = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a.startsWith("--")) {
-      const key = a.slice(2);
+    const isFlag = a.startsWith("--") || (a.startsWith("-") && a.length > 1 && isNaN(Number(a)));
+    if (isFlag) {
+      const key = a.replace(/^--?/, "");
       const next = args[i + 1];
-      if (next && !next.startsWith("--")) {
+      if (next && !next.startsWith("-")) {
         flags[key] = next;
         i++;
       } else flags[key] = true;
@@ -284,6 +434,8 @@ function help() {
     ["create <name> --from <base>", "make a custom model"],
     ["cp <src> <dst>", "copy an installed model"],
     ["rm <model>", "remove an installed model"],
+    ["serve", "start the local HTTP API (default :11435)"],
+    ["ps", "show the running server + its models"],
     ["push <model>", "publish a model (coming soon)"],
     ["help / version", "show help / version"],
   ];
@@ -306,6 +458,9 @@ async function main() {
     case "create": return cmdCreate(positional[0], flags);
     case "cp": return cmdCp(positional[0], positional[1]);
     case "rm": case "remove": return cmdRm(positional[0]);
+    case "serve": return cmdServe(flags);
+    case "ps": return cmdPs(flags);
+    case "stop": return cmdStop();
     case "push": return cmdPush(positional[0]);
     case "path": return console.log(store.DIR);
     case "version": case "-v": case "--version": return console.log(`arcflare v${VERSION}`);
