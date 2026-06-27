@@ -86,7 +86,8 @@ arcflare ps               # in another terminal: see the server + its models
 | `POST /api/pull` | `{ name }` | installs the model |
 | `POST /api/show` | `{ name }` | model details + config |
 | `POST /api/create` | `{ name, from, system }` | makes a custom model |
-| `POST /api/generate` | `{ model, prompt }` | a response (demo, or wire to a backend) |
+| `POST /api/generate` | `{ model, prompt }` | a completion (real if a backend is up) |
+| `POST /api/chat` | `{ model, messages }` | a chat reply (applies the model's SYSTEM) |
 | `DELETE /api/delete` | `{ name }` | removes a model |
 
 ```bash
@@ -99,10 +100,20 @@ curl -X POST http://127.0.0.1:11435/api/generate -d '{"model":"qwen2.5","prompt"
 
 1. Resolves the model from the local store, or the bundled registry of real
    open-weight models (`qwen2.5`, `llama3.2`, `mistral`, `deepseek-r1`, …).
-2. Auto-pulls it if it isn't installed yet, showing pull/load progress.
-3. **If [Ollama](https://ollama.com) is installed**, hands off to
-   `ollama run <model>` for real local inference (names match). **Otherwise** it
-   drops into a small demo chat so you can see the flow.
+2. **If a backend is running** (an [Ollama](https://ollama.com)-compatible server
+   at `127.0.0.1:11434`, override with `OLLAMA_HOST`): pulls the model with a live
+   progress bar if needed, then **streams a real chat** via `/api/chat` — applying
+   the model's `SYSTEM` prompt and keeping conversation history.
+3. **Otherwise**: records the model and drops into a demo chat, with a hint to
+   install Ollama and run `ollama serve`.
+
+To get real inference:
+
+```bash
+# install Ollama from https://ollama.com, then:
+ollama serve            # starts the backend on :11434
+arcflare run qwen2.5    # streams real output
+```
 
 > Image/audio models (FLUX, Stable Diffusion, Whisper) are listed for discovery
 > and run in demo mode — they aren't text-chat models.

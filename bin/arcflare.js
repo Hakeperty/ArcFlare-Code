@@ -8,14 +8,46 @@ const readline = require("readline");
 const { spawnSync } = require("child_process");
 const registry = require("../lib/registry");
 const store = require("../lib/store");
+const ollama = require("../lib/ollama");
 const ui = require("../lib/ui");
 const { c } = ui;
 
 const VERSION = require("../package.json").version;
 const isWin = process.platform === "win32";
 
-function hasOllama() {
-  return spawnSync(isWin ? "where" : "which", ["ollama"], { stdio: "ignore" }).status === 0;
+function humanBytes(n) {
+  if (!n) return "0B";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(n) / Math.log(1024));
+  return `${(n / Math.pow(1024, i)).toFixed(i ? 1 : 0)}${u[i]}`;
+}
+
+/** Pull a model through the Ollama backend with a live progress bar. */
+async function ollamaPull(model) {
+  let lastStatus = "";
+  let lastPct = -1;
+  await ollama.pull(model, (j) => {
+    if (j.error) {
+      process.stdout.write(`\n  ${c.red("pull error:")} ${j.error}\n`);
+      return;
+    }
+    if (j.total && j.completed != null) {
+      const pct = Math.floor((j.completed / j.total) * 100);
+      if (pct !== lastPct) {
+        lastPct = pct;
+        const width = 20;
+        const filled = Math.round((pct / 100) * width);
+        const bar = c.accent("█".repeat(filled)) + c.dim("░".repeat(width - filled));
+        process.stdout.write(
+          `\r  ${bar} ${String(pct).padStart(3)}%  ${c.dim(humanBytes(j.completed) + "/" + humanBytes(j.total))}   `,
+        );
+      }
+    } else if (j.status && j.status !== lastStatus) {
+      lastStatus = j.status;
+      process.stdout.write(`\r  ${c.dim(j.status)}                              \n`);
+    }
+  });
+  process.stdout.write("\n");
 }
 
 function timeAgo(ts) {
@@ -65,12 +97,26 @@ async function cmdPull(name) {
   const m = resolve(name);
   if (!m) return notFound(name), process.exit(1);
   console.log();
+  const up = await ollama.isUp();
+  if (up && !["Image", "Audio"].includes(m.category)) {
+    if (await ollama.has(m.base || m.slug)) {
+      console.log(`  ${c.green("✓")} ${c.bold(m.slug)} is already pulled — up to date.\n`);
+    } else {
+      console.log(`  pulling ${c.bold(m.base || m.slug)} via backend...`);
+      await ollamaPull(m.base || m.slug);
+      console.log(`  ${c.green("✓")} pulled ${c.bold(m.slug)}\n`);
+    }
+    if (!m.installed)
+      store.install({ slug: m.slug, base: m.base, sizes: m.sizes, size: m.size, author: m.author, license: m.license, category: m.category });
+    return;
+  }
+  // No backend (or non-text model): record it in the local store.
   if (m.installed) {
-    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} is already installed — up to date.\n`);
+    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} is already installed.\n`);
     return;
   }
   await installFlow(m);
-  console.log(`  ${c.green("✓")} pulled ${c.bold(m.slug)}\n`);
+  console.log(`  ${c.green("✓")} pulled ${c.bold(m.slug)} ${c.dim("(metadata only — start a backend to run it)")}\n`);
 }
 
 async function cmdRun(name, prompt) {
@@ -78,27 +124,74 @@ async function cmdRun(name, prompt) {
   if (!m) return notFound(name), process.exit(1);
   console.log();
   console.log(`  ${c.accent("❯")} arcflare run ${c.bold(name)}`);
+
+  const up = await ollama.isUp();
+  const runnable = up && !["Image", "Audio"].includes(m.category);
+
+  if (runnable) {
+    const backendModel = m.base || m.slug;
+    if (!(await ollama.has(backendModel))) {
+      console.log(`  ${c.dim("pulling " + backendModel + "...")}`);
+      await ollamaPull(backendModel);
+    }
+    if (!m.installed)
+      store.install({ slug: m.slug, base: m.base, sizes: m.sizes, size: m.size, author: m.author, license: m.license, category: m.category });
+    store.touch(m.slug);
+    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} ready  ${c.dim(`(${m.author} · ${m.license})`)}\n`);
+    await liveChat(m, backendModel, prompt);
+    return;
+  }
+
+  // Fallback: no backend running.
   if (!m.installed) {
     await installFlow(m);
     m = resolve(name);
   }
   store.touch(m.slug);
   console.log(`  ${c.green("✓")} ${c.bold(m.slug)} ready  ${c.dim(`(${m.author} · ${m.license})`)}`);
-  console.log();
-
-  const backend = hasOllama() && !["Image", "Audio"].includes(m.category);
-  if (backend) {
-    console.log(c.dim("  Starting via the Ollama backend...\n"));
-    const args = ["run", m.base || m.slug];
-    if (prompt) args.push(prompt);
-    const r = spawnSync("ollama", args, { stdio: "inherit", shell: isWin });
-    process.exit(r.status == null ? 0 : r.status);
-  }
+  console.log(`  ${c.dim("No backend running. Install Ollama (https://ollama.com) and run")} ${c.cyan("ollama serve")} ${c.dim("for real inference.")}`);
   if (prompt) {
-    console.log(`  ${c.dim(m.slug + ":")} ${demoReply(prompt, m)}\n`);
+    console.log(`\n  ${c.dim(m.slug + ":")} ${demoReply(prompt, m)}\n`);
     return;
   }
   await demoChat(m);
+}
+
+/** Real streaming chat against the backend, applying the model's SYSTEM prompt. */
+async function liveChat(m, backendModel, prompt) {
+  const messages = [];
+  if (m.system) messages.push({ role: "system", content: m.system });
+
+  async function ask(text) {
+    messages.push({ role: "user", content: text });
+    process.stdout.write(`  ${c.dim(m.slug + ":")} `);
+    const reply = await ollama.chat(backendModel, messages, (tok) => process.stdout.write(tok));
+    process.stdout.write("\n\n");
+    messages.push({ role: "assistant", content: reply });
+  }
+
+  if (prompt) {
+    await ask(prompt);
+    return;
+  }
+  console.log(c.dim(`  Chatting with ${c.bold(m.slug)} — type a message, or /bye to exit.\n`));
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: c.accent("› ") });
+  rl.prompt();
+  rl.on("line", async (line) => {
+    const t = line.trim();
+    if (t === "/bye" || t === "/exit") return rl.close();
+    if (t) {
+      rl.pause();
+      try { await ask(t); } catch (e) { console.log(`  ${c.red("error:")} ${e.message}`); }
+      rl.resume();
+    }
+    rl.prompt();
+  });
+  rl.on("close", () => {
+    console.log(c.dim("\n  Bye! ✦"));
+    process.exit(0);
+  });
+  await new Promise(() => {});
 }
 
 function demoReply(input, m) {
@@ -329,13 +422,25 @@ function cmdServe(flags) {
         if (system) store.setConfig(name, { system });
         return send(res, 200, { status: "success", model: store.get(name) }), log(200);
       }
-      if (req.method === "POST" && p === "/api/generate") {
-        const { model, prompt } = await readBody(req);
-        const m = resolve(model);
+      if (req.method === "POST" && (p === "/api/generate" || p === "/api/chat")) {
+        const body = await readBody(req);
+        const m = resolve(body.model);
         if (!m) return send(res, 404, { error: "model not found" }), log(404);
-        if (!m.installed) store.install({ slug: m.slug, base: m.base, sizes: m.sizes, size: m.size, author: m.author, license: m.license, category: m.category });
         store.touch(m.slug);
-        return send(res, 200, { model: m.slug, response: demoReply(prompt || "", m), done: true }), log(200);
+        // Build chat messages (apply the model's SYSTEM prompt).
+        const messages = [];
+        if (m.system) messages.push({ role: "system", content: m.system });
+        if (p === "/api/chat" && Array.isArray(body.messages)) {
+          messages.push(...body.messages);
+        } else {
+          messages.push({ role: "user", content: body.prompt || "" });
+        }
+        if (await ollama.isUp() && !["Image", "Audio"].includes(m.category)) {
+          const text = await ollama.chat(m.base || m.slug, messages);
+          return send(res, 200, { model: m.slug, response: text, message: { role: "assistant", content: text }, done: true }), log(200);
+        }
+        const text = demoReply(body.prompt || (body.messages && body.messages.at(-1)?.content) || "", m);
+        return send(res, 200, { model: m.slug, response: text, message: { role: "assistant", content: text }, done: true }), log(200);
       }
       if (req.method === "DELETE" && p === "/api/delete") {
         const { name } = await readBody(req);
@@ -360,6 +465,7 @@ function cmdServe(flags) {
     console.log(`  ${c.dim("GET  /api/tags          list installed models")}`);
     console.log(`  ${c.dim("POST /api/pull          { name }")}`);
     console.log(`  ${c.dim("POST /api/generate      { model, prompt }")}`);
+    console.log(`  ${c.dim("POST /api/chat          { model, messages }")}`);
     console.log(`  ${c.dim("POST /api/create        { name, from, system }")}`);
     console.log(`  ${c.dim("DELETE /api/delete      { name }")}\n`);
     console.log(`  ${c.dim("Ctrl-C to stop.")}\n`);
