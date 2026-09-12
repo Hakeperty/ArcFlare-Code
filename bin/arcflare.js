@@ -1,604 +1,535 @@
 #!/usr/bin/env node
-"use strict";
+// ArcFlare — run local GGUF models and point any coding harness at them.
+//
+// `arcflare` with no arguments opens a menu: pick a harness, pick a model,
+// pick a context size. Everything else is a shortcut for part of that flow.
 
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const readline = require("readline");
-const { spawnSync } = require("child_process");
-const registry = require("../lib/registry");
-const store = require("../lib/store");
-const engine = require("../lib/engine");
-const gpu = require("../lib/gpu");
+const http = require("http");
+
 const ui = require("../lib/ui");
+const gguf = require("../lib/gguf");
+const models = require("../lib/models");
+const engine = require("../lib/engine");
+const harness = require("../lib/harness");
+
 const { c } = ui;
-
+const HOME = models.HOME;
+const CONFIG = path.join(HOME, "config.json");
+const PRESET = path.join(HOME, "models.ini");
 const VERSION = require("../package.json").version;
-const isWin = process.platform === "win32";
+const DEFAULT_PORT = 11434; // Ollama's port: existing harness configs just work
 
-function humanBytes(n) {
-  if (!n) return "0B";
-  const u = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(n) / Math.log(1024));
-  return `${(n / Math.pow(1024, i)).toFixed(i ? 1 : 0)}${u[i]}`;
+// --------------------------------------------------------------- settings --
+
+function loadConfig() {
+  try { return JSON.parse(fs.readFileSync(CONFIG, "utf8")); } catch { return {}; }
+}
+function saveConfig(cfg) {
+  fs.mkdirSync(HOME, { recursive: true });
+  fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + "\n");
 }
 
-/** Download a model's GGUF via the engine, with a live progress bar. */
-async function downloadModel(url) {
-  let lastPct = -1;
-  await engine.download(url, (done, total) => {
-    if (!total) return;
-    const pct = Math.floor((done / total) * 100);
-    if (pct === lastPct) return;
-    lastPct = pct;
-    const width = 20;
-    const filled = Math.round((pct / 100) * width);
-    const bar = c.accent("█".repeat(filled)) + c.dim("░".repeat(width - filled));
-    process.stdout.write(
-      `\r  ${bar} ${String(pct).padStart(3)}%  ${c.dim(humanBytes(done) + "/" + humanBytes(total))}   `,
-    );
-  });
-  process.stdout.write("\n");
+function die(msg, code = 1) {
+  process.stderr.write(`  ${c.red("✗")} ${msg}\n`);
+  process.exit(code);
 }
 
-function timeAgo(ts) {
-  if (!ts) return "never";
-  const s = Math.round((Date.now() - ts) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
+// ------------------------------------------------------------------ vram ----
+
+/** Free device memory in bytes, best effort. Falls back to free system RAM. */
+function freeDeviceBytes(cfg) {
+  const exe = engine.findServer(cfg.llamaServer);
+  if (exe) {
+    const { spawnSync } = require("child_process");
+    const cli = exe.replace(/llama-server(\.exe)?$/i, (m) => m.replace("server", "cli"));
+    const probe = fs.existsSync(cli) ? cli : exe;
+    const r = spawnSync(probe, ["--list-devices"], {
+      encoding: "utf8", cwd: path.dirname(exe), timeout: 20000,
+    });
+    const txt = (r.stdout || "") + (r.stderr || "");
+    // "Vulkan0: AMD Radeon 8060S (48971 MiB, 46522 MiB free)"
+    const m = /\((\d+)\s*MiB,\s*(\d+)\s*MiB free\)/i.exec(txt);
+    if (m) return Number(m[2]) * 1024 * 1024;
+  }
+  return os.freemem();
 }
 
-/** Resolve a name to an entry from the local store (installed) or registry. */
-function resolve(name) {
-  if (!name) return null;
-  const key = String(name).split(":")[0];
-  const installed = store.get(key);
-  if (installed) return { ...installed, installed: true };
-  const reg = registry.find(key);
-  if (reg) return { ...reg, base: reg.slug, size: reg.sizes[0], installed: false };
-  return null;
+// ------------------------------------------------------------- model list --
+
+function modelLabel(m) {
+  const meta = m.meta;
+  const bits = [];
+  if (meta && meta.quant) bits.push(meta.quant);
+  bits.push(ui.fmtBytes(m.size));
+  if (meta && meta.trainCtx) bits.push(ui.fmtTokens(meta.trainCtx) + " ctx");
+  if (meta && meta.expertCount) bits.push(`MoE ${meta.expertUsed}/${meta.expertCount}`);
+  return bits.join(" · ");
 }
 
-function notFound(name) {
-  console.log(`\n  ${c.red("✗")} model ${c.bold(name)} not found.`);
-  const guess = registry.search(String(name).split(":")[0]).slice(0, 3);
-  if (guess.length)
-    console.log(`  ${c.dim("Did you mean:")} ${guess.map((m) => c.accent(m.slug)).join(", ")}`);
-  console.log(`  ${c.dim("Try")} ${c.cyan("arcflare search <q>")} ${c.dim("or")} ${c.cyan("arcflare list")}\n`);
+function displayName(m) {
+  return (m.meta && m.meta.name) || m.id.split(":")[0];
 }
 
-async function cmdPull(name) {
-  const m = resolve(name);
-  if (!m) return notFound(name), process.exit(1);
-  console.log();
-  if (!m.gguf) {
-    if (!m.installed) store.install(metadataOf(m));
-    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} added ${c.dim("(listed for discovery — no local engine build yet)")}\n`);
+function listModels(all) {
+  if (!all.length) {
+    console.log(`  ${c.dim("no GGUF models found")}`);
+    console.log(`  ${c.dim("searched:")} ${models.roots().join(", ") || "(nothing)"}`);
+    console.log(`  ${c.dim("set ARCFLARE_MODELS or LLAMA_CACHE to point at your models")}`);
     return;
   }
-  if (engine.isDownloaded(m.gguf)) {
-    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} is already downloaded.\n`);
-  } else {
-    console.log(`  pulling ${c.bold(m.slug)} ${c.dim("(" + engine.fileNameFromUrl(m.gguf) + ")")}`);
-    await downloadModel(m.gguf);
-    console.log(`  ${c.green("✓")} pulled ${c.bold(m.slug)}\n`);
+  const w = Math.max(...all.map((m) => m.id.length));
+  for (const m of all) {
+    console.log(`  ${c.accent(m.id.padEnd(w))}  ${c.dim(modelLabel(m))}`);
   }
-  store.install({ ...metadataOf(m), gguf: m.gguf, file: engine.localPathFor(m.gguf) });
 }
 
-function metadataOf(m) {
-  return {
-    slug: m.slug, base: m.base, sizes: m.sizes, size: m.size,
-    author: m.author, license: m.license, category: m.category,
+// --------------------------------------------------------------- context ----
+
+function contextChoices(m, budget) {
+  const meta = m.meta || {};
+  const trained = meta.trainCtx || 32768;
+  const perTokF16 = gguf.kvBytesPerToken(meta, "f16");
+  const perTokQ8 = gguf.kvBytesPerToken(meta, "q8_0");
+
+  // Leave the weights their room; the rest is available for cache.
+  const spare = Math.max(0, budget - m.size - 1.5e9);
+  const items = [];
+
+  const add = (ctx, cacheType, tag) => {
+    const per = cacheType === "q8_0" ? perTokQ8 : perTokF16;
+    const need = per ? per * ctx : null;
+    const fits = need == null ? true : need <= spare;
+    items.push({
+      label: `${ui.fmtTokens(ctx)} tokens`,
+      hint: cacheType === "q8_0" ? "q8_0 cache" : "f16 cache",
+      note: need ? `~${ui.fmtBytes(need)} KV${fits ? "" : "  (too big)"}` : "",
+      value: { ctx, cacheType },
+      disabled: !fits,
+      tag,
+    });
   };
+
+  // Max first — this is the headline ask.
+  add(trained, "q8_0", "max");
+  if (perTokF16 && perTokF16 * trained <= spare) add(trained, "f16", "max-f16");
+  for (const ctx of [131072, 65536, 32768, 16384]) {
+    if (ctx < trained) add(ctx, "f16");
+  }
+  const usable = items.filter((i) => !i.disabled);
+  return { items, best: usable.length ? usable[0].value : { ctx: 16384, cacheType: "f16" } };
 }
 
-async function cmdRun(name, prompt) {
-  let m = resolve(name);
-  if (!m) return notFound(name), process.exit(1);
-  console.log();
-  console.log(`  ${c.accent("❯")} arcflare run ${c.bold(name)}`);
+// ---------------------------------------------------------------- server ----
 
-  // No local engine build for this model -> demo.
-  if (!m.gguf) {
-    if (!m.installed) {
-      store.install(metadataOf(m));
-      m = resolve(name);
-    }
-    store.touch(m.slug);
-    console.log(`  ${c.green("✓")} ${c.bold(m.slug)} ready  ${c.dim(`(${m.author} · ${m.license})`)}`);
-    console.log(`  ${c.dim("No local build for this model yet — runnable today:")} ${c.cyan("qwen2.5")}, ${c.cyan("llama3.2")}, ${c.cyan("gemma2")}, ${c.cyan("mistral")}, ${c.cyan("deepseek-r1")}, ${c.cyan("qwen2.5-coder")}.`);
-    if (prompt) return void console.log(`\n  ${c.dim(m.slug + ":")} ${demoReply(prompt, m)}\n`);
-    return demoChat(m);
+async function ensureServer(cfg, opts = {}) {
+  const port = opts.port || cfg.port || DEFAULT_PORT;
+  const exe = engine.findServer(cfg.llamaServer);
+  if (!exe) {
+    die("llama-server not found.\n" +
+      `      Install llama.cpp, then either put it on PATH or run:\n` +
+      `      ${c.accent("arcflare set-engine <path-to-llama-server>")}`);
   }
 
-  // Ensure the GGUF is downloaded, then run it with ArcFlare's engine.
-  if (!engine.isDownloaded(m.gguf)) {
-    console.log(`  pulling ${c.bold(m.slug)} ${c.dim("(" + engine.fileNameFromUrl(m.gguf) + ")")}`);
-    await downloadModel(m.gguf);
-  }
-  store.install({ ...metadataOf(m), gguf: m.gguf, file: engine.localPathFor(m.gguf) });
-  store.touch(m.slug);
-  console.log(`  ${c.dim("loading " + m.slug + " — first load can take a few seconds...")}\n`);
-  await liveChat(m, engine.localPathFor(m.gguf), prompt);
-}
+  const st = await engine.status(port);
+  if (st.running && !opts.restart) return { port, exe, already: true };
+  if (st.running && opts.restart) { engine.stop(); await new Promise((r) => setTimeout(r, 800)); }
 
-/** Real streaming chat with ArcFlare's engine, applying the model's SYSTEM prompt. */
-async function liveChat(m, modelPath, prompt) {
-  let session;
-  try {
-    session = await engine.createSession(modelPath, m.system || undefined);
-  } catch (e) {
-    console.log(`  ${c.red("failed to load model:")} ${e.message}\n`);
+  // Point the router at wherever the models actually are.
+  const cacheRoot = process.env.LLAMA_CACHE || cfg.modelsRoot || models.roots()[0];
+  const env = {};
+  if (cacheRoot) env.LLAMA_CACHE = cacheRoot;
+
+  const extra = [];
+  if (opts.modelsDir) extra.push();
+  const info = await engine.start({
+    exe,
+    port,
+    preset: fs.existsSync(PRESET) ? PRESET : undefined,
+    modelsDir: opts.modelsDir,
+    extraArgs: opts.extraArgs || [],
+    env,
+  });
+
+  const spin = ui.spinner("starting llama-server…");
+  const ok = await engine.waitReady(port, opts.timeout || 600000, (ms) => {
+    spin.update(`starting llama-server… ${Math.round(ms / 1000)}s`);
+  });
+  if (!ok) {
+    spin.stop(c.red("✗ server did not come up"));
+    console.log(c.dim(engine.tailLog(25)));
     process.exit(1);
   }
-  const backend = await engine.activeBackend();
-  console.log(
-    `  ${c.green("✓")} ${c.bold(m.slug)} running on ${backend ? c.accent("GPU (" + backend + ")") : c.dim("CPU")}` +
-      `${backend ? "" : c.dim("  — run `arcflare gpu` to enable your GPU")}\n`,
-  );
+  spin.stop(`${c.green("✓")} llama-server ready on ${c.accent("127.0.0.1:" + port)}`);
+  return { port, exe, pid: info.pid };
+}
 
-  async function ask(text) {
-    process.stdout.write(`  ${c.dim(m.slug + ":")} `);
-    await session.prompt(text, (tok) => process.stdout.write(tok));
+/** Match our model id to whatever id the router actually advertises. */
+async function servedIdFor(port, model) {
+  const served = await engine.listServed(port);
+  if (!served.length) return model.id;
+  const stem = path.basename(model.file).replace(/\.gguf$/i, "").toLowerCase();
+  const cands = [model.id, stem, model.id.split(":")[0]];
+  for (const cand of cands) {
+    const hit = served.find((s) => s.toLowerCase() === cand);
+    if (hit) return hit;
+  }
+  const loose = served.find((s) => {
+    const t = s.toLowerCase();
+    return t.includes(model.id.split(":")[0]) || stem.includes(t);
+  });
+  return loose || served[0];
+}
+
+// ------------------------------------------------------------------ chat ----
+
+function chatOnce(port, model, messages, onDelta) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ model, messages, stream: true });
+    const req = http.request(
+      {
+        host: "127.0.0.1", port, path: "/v1/chat/completions", method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+      },
+      (res) => {
+        let buf = "";
+        let full = "";
+        res.on("data", (d) => {
+          buf += d.toString();
+          let i;
+          while ((i = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, i).trim();
+            buf = buf.slice(i + 1);
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (payload === "[DONE]") continue;
+            try {
+              const j = JSON.parse(payload);
+              const d0 = j.choices && j.choices[0] && j.choices[0].delta;
+              const piece = d0 && (d0.content || "");
+              if (piece) { full += piece; onDelta(piece); }
+            } catch {}
+          }
+        });
+        res.on("end", () => resolve(full));
+      },
+    );
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+async function repl(port, modelId) {
+  const readline = require("readline");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const history = [];
+  console.log(`  ${c.dim("chatting with")} ${c.accent(modelId)} ${c.dim("— /bye to exit")}\n`);
+  const askOne = () =>
+    new Promise((resolve) => rl.question(`${c.accent("❯")} `, resolve));
+  for (;;) {
+    const line = (await askOne()).trim();
+    if (!line) continue;
+    if (line === "/bye" || line === "/exit" || line === "/quit") break;
+    history.push({ role: "user", content: line });
+    process.stdout.write("\n");
+    let out = "";
+    try {
+      out = await chatOnce(port, modelId, history, (p) => process.stdout.write(p));
+    } catch (e) {
+      console.log(c.red("  request failed: " + e.message));
+      history.pop();
+      continue;
+    }
+    history.push({ role: "assistant", content: out });
     process.stdout.write("\n\n");
   }
-
-  if (prompt) {
-    await ask(prompt);
-    await session.dispose();
-    return;
-  }
-  console.log(c.dim(`  Chatting with ${c.bold(m.slug)} — type a message, or /bye to exit.\n`));
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: c.accent("› ") });
-  rl.prompt();
-  rl.on("line", async (line) => {
-    const t = line.trim();
-    if (t === "/bye" || t === "/exit") return rl.close();
-    if (t) {
-      rl.pause();
-      try { await ask(t); } catch (e) { console.log(`  ${c.red("error:")} ${e.message}`); }
-      rl.resume();
-    }
-    rl.prompt();
-  });
-  rl.on("close", async () => {
-    await session.dispose().catch(() => {});
-    console.log(c.dim("\n  Bye! ✦"));
-    process.exit(0);
-  });
-  await new Promise(() => {});
+  rl.close();
 }
 
-function demoReply(input, m) {
-  const sys = m.system ? c.dim(`[sys: ${m.system.slice(0, 30)}…] `) : "";
-  return `${sys}(demo) no local build for ${m.slug} yet — I'd answer "${input.slice(0, 36)}${input.length > 36 ? "…" : ""}" here.`;
-}
+// ------------------------------------------------------------------ flow -----
 
-function demoChat(m) {
-  if (m.system) console.log(c.dim(`  System: ${m.system}`));
-  console.log(c.dim(`  Demo chat with ${c.bold(m.slug)} — type a message, or /bye to exit.\n`));
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: c.accent("› ") });
-  rl.prompt();
-  rl.on("line", (line) => {
-    const t = line.trim();
-    if (t === "/bye" || t === "/exit") return rl.close();
-    if (t) console.log(`  ${c.dim(m.slug + ":")} ${demoReply(t, m)}\n`);
-    rl.prompt();
-  });
-  rl.on("close", () => {
-    console.log(c.dim("\n  Bye! ✦"));
-    process.exit(0);
-  });
-  return new Promise(() => {});
-}
-
-function cmdList() {
-  const items = store.listInstalled();
-  console.log();
-  if (!items.length) {
-    console.log(`  ${c.dim("No models installed. Pull one with")} ${c.cyan("arcflare pull qwen2.5")}\n`);
-    return;
-  }
-  console.log(`  ${c.bold("NAME".padEnd(22) + "SIZE".padEnd(9) + "USED")}`);
-  for (const m of items) {
-    console.log(`  ${c.accent(m.slug.padEnd(22))}${c.dim(String(m.size).padEnd(9))}${c.dim(timeAgo(m.lastUsed || m.installedAt))}`);
-  }
-  console.log(`\n  ${c.dim(`${items.length} installed · stored in ${store.DIR}`)}\n`);
-}
-
-function cmdSearch(query) {
-  const results = registry.search(query);
-  console.log();
-  if (!results.length) return console.log(`  ${c.dim("No matches for")} "${query}".\n`);
-  for (const m of results) {
-    const mark = store.get(m.slug) ? c.green(" ✓") : "";
-    console.log(`  ${c.accent(m.slug.padEnd(22))}${c.dim(m.description)}${mark}`);
-  }
-  console.log(`\n  ${c.dim("Run")} ${c.cyan("arcflare run <name>")}\n`);
-}
-
-function cmdShow(name) {
-  const m = resolve(name);
-  if (!m) return notFound(name), process.exit(1);
-  console.log();
-  console.log(`  ${c.bold(m.slug)}  ${c.dim("by " + m.author)}  ${m.installed ? c.green("[installed]") : c.dim("[not installed]")}`);
-  if (m.description) console.log(`  ${m.description}`);
-  console.log(`  ${c.dim("Category:")} ${m.category}`);
-  console.log(`  ${c.dim("License: ")} ${m.license}`);
-  if (m.sizes) console.log(`  ${c.dim("Tags:    ")} ${m.sizes.map((s) => c.cyan(`${m.slug}:${s}`)).join("  ")}`);
-  if (m.base && m.base !== m.slug) console.log(`  ${c.dim("Base:    ")} ${m.base}`);
-  if (m.system) console.log(`  ${c.dim("System:  ")} ${m.system}`);
-  if (m.params && Object.keys(m.params).length)
-    console.log(`  ${c.dim("Params:  ")} ${Object.entries(m.params).map(([k, v]) => `${k}=${v}`).join(" ")}`);
-  console.log(`\n  ${c.dim("Run it:")} ${c.accent("arcflare run " + m.slug)}\n`);
-}
-
-function cmdRm(name) {
-  const key = String(name || "").split(":")[0];
-  const ok = store.remove(key);
-  console.log();
-  console.log(ok ? `  ${c.green("✓")} removed ${c.bold(key)}` : `  ${c.dim(key + " is not installed")}`);
-  console.log();
-}
-
-// ---- Modelfile (edit / create) -------------------------------------------
-function modelfileText(m) {
-  return [
-    `# Modelfile for ${m.slug}`,
-    `FROM ${m.base || m.slug}`,
-    `SYSTEM ${m.system || "You are a helpful assistant."}`,
-    `PARAMETER temperature ${m.params && m.params.temperature != null ? m.params.temperature : 0.7}`,
-    "",
-  ].join("\n");
-}
-
-function parseModelfile(text) {
-  const out = { system: "", params: {}, base: null };
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const sp = line.indexOf(" ");
-    const kw = (sp < 0 ? line : line.slice(0, sp)).toUpperCase();
-    const rest = sp < 0 ? "" : line.slice(sp + 1).trim();
-    if (kw === "FROM") out.base = rest.split(":")[0];
-    else if (kw === "SYSTEM") out.system = rest;
-    else if (kw === "PARAMETER") {
-      const [k, v] = rest.split(/\s+/);
-      if (k) out.params[k] = isNaN(Number(v)) ? v : Number(v);
-    }
-  }
-  return out;
-}
-
-function cmdEdit(name) {
-  let m = resolve(name);
-  if (!m) return notFound(name), process.exit(1);
-  if (!m.installed) {
-    store.install({ slug: m.slug, base: m.base, sizes: m.sizes, size: m.size, author: m.author, license: m.license, category: m.category });
-    m = resolve(name);
-  }
-  const tmp = path.join(os.tmpdir(), `arcflare-${m.slug}-${process.pid}.Modelfile`);
-  fs.writeFileSync(tmp, modelfileText(m));
-  const editor = process.env.EDITOR || process.env.VISUAL || (isWin ? "notepad" : "nano");
-  if (!process.stdout.isTTY) {
-    console.log(`\n  ${c.dim("(no TTY) current Modelfile:")}\n`);
-    console.log(fs.readFileSync(tmp, "utf8"));
-    fs.unlinkSync(tmp);
-    return;
-  }
-  console.log(`\n  ${c.dim(`opening ${m.slug} in ${editor}…`)}`);
-  spawnSync(editor, [tmp], { stdio: "inherit", shell: isWin });
-  const parsed = parseModelfile(fs.readFileSync(tmp, "utf8"));
-  store.setConfig(m.slug, { system: parsed.system, params: parsed.params, base: parsed.base || m.base });
-  try { fs.unlinkSync(tmp); } catch {}
-  console.log(`  ${c.green("✓")} saved ${c.bold(m.slug)} ${c.dim("(SYSTEM + parameters)")}\n`);
-}
-
-function cmdCreate(name, flags) {
-  if (!name) return console.log(`\n  ${c.red("✗")} usage: arcflare create <name> --from <base> [--system "..."]\n                 arcflare create <name> -f Modelfile\n`);
-
-  // From a Modelfile: arcflare create mybot -f Modelfile
-  const file = flags.file || flags.f;
-  if (file && typeof file === "string") {
-    let text;
-    try {
-      text = fs.readFileSync(file, "utf8");
-    } catch {
-      return console.log(`\n  ${c.red("✗")} cannot read Modelfile: ${file}\n`);
-    }
-    const mf = parseModelfile(text);
-    const base = mf.base ? registry.find(mf.base) || store.get(mf.base) : null;
-    if (!base) return console.log(`\n  ${c.red("✗")} Modelfile needs a valid ${c.bold("FROM <base>")} line.\n`);
-    store.install({ slug: name, base: base.slug || mf.base, sizes: base.sizes, size: base.size, author: "you", license: "custom", category: base.category });
-    store.setConfig(name, { system: mf.system, params: mf.params });
-    console.log(`\n  ${c.green("✓")} created ${c.bold(name)} ${c.dim("from " + (base.slug || mf.base) + " (Modelfile)")}`);
-    console.log(`  ${c.dim("Run it:")} ${c.accent("arcflare run " + name)}\n`);
-    return;
-  }
-
-  const baseName = flags.from;
-  const base = baseName ? registry.find(baseName) || store.get(baseName) : null;
-  if (!base) return console.log(`\n  ${c.red("✗")} need a valid --from base model (see ${c.cyan("arcflare list")}/${c.cyan("search")})\n`);
-  store.install({ slug: name, base: base.slug || baseName, sizes: base.sizes, size: base.size, author: "you", license: "custom", category: base.category });
-  if (flags.system) store.setConfig(name, { system: flags.system });
-  console.log(`\n  ${c.green("✓")} created ${c.bold(name)} ${c.dim("from " + (base.slug || baseName))}`);
-  console.log(`  ${c.dim("Edit it:")} ${c.accent("arcflare edit " + name)}   ${c.dim("Run it:")} ${c.accent("arcflare run " + name)}\n`);
-}
-
-function cmdCp(src, dst) {
-  const m = store.get(String(src || "").split(":")[0]);
-  if (!m) return console.log(`\n  ${c.red("✗")} ${src} is not installed (only installed models can be copied)\n`);
-  if (!dst) return console.log(`\n  ${c.red("✗")} usage: arcflare cp <source> <dest>\n`);
-  store.install({ slug: dst, base: m.base, size: m.size, author: m.author, license: m.license, category: m.category });
-  store.setConfig(dst, { system: m.system, params: m.params });
-  console.log(`\n  ${c.green("✓")} copied ${c.bold(src)} → ${c.bold(dst)}\n`);
-}
-
-function cmdPush(name) {
-  console.log();
-  console.log(`  ${c.accent("❯")} arcflare push ${c.bold(name || "<model>")}`);
-  console.log(`  ${c.dim("Publishing to the ArcFlare hub is coming soon.")}`);
-  console.log(`  ${c.dim("Share your Modelfile at")} ${c.cyan("https://github.com/Hakeperty/ArcFlare-Code")}\n`);
-}
-
-// ---- serve / ps / stop ----------------------------------------------------
-const DEFAULT_PORT = Number(process.env.ARCFLARE_PORT || 11435);
-
-function cmdServe(flags) {
-  const http = require("http");
-  const port = Number(flags.port || DEFAULT_PORT);
-  const host = flags.host || "127.0.0.1";
-
-  const send = (res, code, body, asText) => {
-    res.writeHead(code, {
-      "content-type": asText ? "text/plain" : "application/json",
-      "access-control-allow-origin": "*",
-    });
-    res.end(asText ? String(body) : JSON.stringify(body, null, 2));
-  };
-  const readBody = (req) =>
-    new Promise((resolve) => {
-      let d = "";
-      req.on("data", (ch) => (d += ch));
-      req.on("end", () => {
-        try {
-          resolve(d ? JSON.parse(d) : {});
-        } catch {
-          resolve({});
-        }
-      });
-    });
-
-  const server = http.createServer(async (req, res) => {
-    const p = req.url.split("?")[0];
-    const log = (code) => console.log(`  ${c.dim(new Date().toISOString().slice(11, 19))} ${req.method} ${p} ${code === 200 ? c.green(code) : c.dim(code)}`);
-    try {
-      if (req.method === "GET" && p === "/") return send(res, 200, "ArcFlare is running", true), log(200);
-      if (req.method === "GET" && p === "/api/tags") return send(res, 200, { models: store.listInstalled() }), log(200);
-      if (req.method === "GET" && p === "/api/registry") return send(res, 200, { models: registry.models }), log(200);
-      if (req.method === "POST" && p === "/api/pull") {
-        const { name } = await readBody(req);
-        const m = resolve(name);
-        if (!m) return send(res, 404, { error: "model not found" }), log(404);
-        if (!m.installed) store.install({ slug: m.slug, base: m.base, sizes: m.sizes, size: m.size, author: m.author, license: m.license, category: m.category });
-        return send(res, 200, { status: "success", model: store.get(m.slug) }), log(200);
-      }
-      if (req.method === "POST" && p === "/api/show") {
-        const { name } = await readBody(req);
-        const m = resolve(name);
-        return m ? (send(res, 200, m), log(200)) : (send(res, 404, { error: "model not found" }), log(404));
-      }
-      if (req.method === "POST" && p === "/api/create") {
-        const { name, from, system } = await readBody(req);
-        const base = from ? registry.find(from) || store.get(from) : null;
-        if (!name || !base) return send(res, 400, { error: "need name + valid 'from'" }), log(400);
-        store.install({ slug: name, base: base.slug || from, sizes: base.sizes, size: base.size, author: "you", license: "custom", category: base.category });
-        if (system) store.setConfig(name, { system });
-        return send(res, 200, { status: "success", model: store.get(name) }), log(200);
-      }
-      if (req.method === "POST" && (p === "/api/generate" || p === "/api/chat")) {
-        const body = await readBody(req);
-        const m = resolve(body.model);
-        if (!m) return send(res, 404, { error: "model not found" }), log(404);
-        store.touch(m.slug);
-        // Build chat messages (apply the model's SYSTEM prompt).
-        const messages = [];
-        if (m.system) messages.push({ role: "system", content: m.system });
-        if (p === "/api/chat" && Array.isArray(body.messages)) {
-          messages.push(...body.messages);
-        } else {
-          messages.push({ role: "user", content: body.prompt || "" });
-        }
-        if (m.gguf && engine.isDownloaded(m.gguf)) {
-          const text = await engine.chatOnce(engine.localPathFor(m.gguf), messages);
-          return send(res, 200, { model: m.slug, response: text, message: { role: "assistant", content: text }, done: true }), log(200);
-        }
-        const text = m.gguf
-          ? `(not downloaded — run: arcflare pull ${m.slug})`
-          : demoReply(body.prompt || (body.messages && body.messages.at(-1)?.content) || "", m);
-        return send(res, 200, { model: m.slug, response: text, message: { role: "assistant", content: text }, done: true }), log(200);
-      }
-      if (req.method === "DELETE" && p === "/api/delete") {
-        const { name } = await readBody(req);
-        const ok = store.remove(String(name || "").split(":")[0]);
-        return send(res, ok ? 200 : 404, { status: ok ? "success" : "not found" }), log(ok ? 200 : 404);
-      }
-      send(res, 404, { error: "unknown endpoint" });
-      log(404);
-    } catch (e) {
-      send(res, 500, { error: e.message });
-      log(500);
-    }
-  });
-
-  server.on("error", (e) => {
-    console.error(`  ${c.red("serve error:")} ${e.message}`);
-    process.exit(1);
-  });
-  server.listen(port, host, () => {
-    console.log(ui.banner());
-    console.log(`  ${c.green("●")} ArcFlare API on ${c.accent(`http://${host}:${port}`)}\n`);
-    console.log(`  ${c.dim("GET  /api/tags          list installed models")}`);
-    console.log(`  ${c.dim("POST /api/pull          { name }")}`);
-    console.log(`  ${c.dim("POST /api/generate      { model, prompt }")}`);
-    console.log(`  ${c.dim("POST /api/chat          { model, messages }")}`);
-    console.log(`  ${c.dim("POST /api/create        { name, from, system }")}`);
-    console.log(`  ${c.dim("DELETE /api/delete      { name }")}\n`);
-    console.log(`  ${c.dim("Ctrl-C to stop.")}\n`);
-  });
-  return new Promise(() => {});
-}
-
-function cmdPs(flags) {
-  const http = require("http");
-  const port = Number(flags.port || DEFAULT_PORT);
-  return new Promise((resolve) => {
-    const req = http.get({ host: "127.0.0.1", port, path: "/api/tags", timeout: 1500 }, (res) => {
-      let d = "";
-      res.on("data", (ch) => (d += ch));
-      res.on("end", () => {
-        try {
-          const models = (JSON.parse(d).models || []);
-          console.log(`\n  ${c.green("●")} ArcFlare server running on ${c.accent(":" + port)}  ${c.dim(`(${models.length} models)`)}`);
-          for (const m of models) console.log(`  ${c.accent(m.slug.padEnd(22))}${c.dim(String(m.size || ""))}`);
-          console.log();
-        } catch {
-          console.log(`\n  ${c.dim("server responded unexpectedly")}\n`);
-        }
-        resolve();
-      });
-    });
-    req.on("error", () => {
-      console.log(`\n  ${c.dim("No ArcFlare server running. Start one with")} ${c.cyan("arcflare serve")}\n`);
-      resolve();
-    });
-    req.on("timeout", () => {
-      req.destroy();
-      console.log(`\n  ${c.dim("No ArcFlare server running. Start one with")} ${c.cyan("arcflare serve")}\n`);
-      resolve();
-    });
-  });
-}
-
-function cmdStop() {
-  console.log(`\n  ${c.dim("ArcFlare runs models on demand — nothing stays loaded to stop.")}`);
-  console.log(`  ${c.dim("Stop a running API server with Ctrl-C in its terminal.")}\n`);
-}
-
-async function cmdGpu() {
-  const g = gpu.detect();
-  console.log();
-  console.log(`  ${c.bold("GPU acceleration")}`);
-  console.log(`  ${c.dim("Platform:")} ${g.platform}    ${c.dim("GPU:")} ${c.accent(g.vendor)}`);
-  console.log(`  ${c.dim("Best backend:")} ${c.bold(g.backend)}`);
-
-  const active = await engine.activeBackend();
-  console.log(`  ${c.dim("Currently active:")} ${active ? c.green(active) : c.dim("cpu")}`);
-  console.log();
-
-  // A GPU backend is already running — we're done.
-  if (active) {
-    console.log(`  ${c.green("✓")} GPU acceleration is active (${active}).`);
-    if (g.backend === "cuda" && active !== "cuda") {
-      console.log(
-        `  ${c.dim("Tip: on NVIDIA, the CUDA Toolkit can be faster than Vulkan — install it, then re-run")} ${c.cyan("arcflare gpu")}.`,
-      );
-    }
-    console.log();
-    return;
-  }
-
-  if (g.backend === "cpu") {
-    console.log(`  ${c.dim(g.note)}\n`);
-    return;
-  }
-
-  console.log(`  Building the ${c.bold(g.backend)} backend ${c.dim("(can take a few minutes)...")}`);
-  try {
-    const got = await engine.buildBackend(g.backend);
-    console.log(`  ${c.green("✓")} ${got} backend ready — ${c.cyan("arcflare run")} now uses your GPU.\n`);
-  } catch {
-    console.log(`  ${c.red("✗")} couldn't build the ${g.backend} backend (the SDK is likely missing).`);
-    console.log(`  ${c.dim(g.note)}`);
-    const guide = g.backend === "cuda" ? "CUDA" : "Vulkan";
-    console.log(`  ${c.dim("Guide:")} ${c.cyan("https://node-llama-cpp.withcat.ai/guide/" + guide)}\n`);
-  }
-}
-
-function parseFlags(args) {
-  const flags = {};
-  const positional = [];
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    const isFlag = a.startsWith("--") || (a.startsWith("-") && a.length > 1 && isNaN(Number(a)));
-    if (isFlag) {
-      const key = a.replace(/^--?/, "");
-      const next = args[i + 1];
-      if (next && !next.startsWith("-")) {
-        flags[key] = next;
-        i++;
-      } else flags[key] = true;
-    } else positional.push(a);
-  }
-  return { flags, positional };
-}
-
-function help() {
+async function interactive(argv) {
+  const cfg = loadConfig();
   console.log(ui.banner());
-  console.log(`  ${c.bold("Usage:")} arcflare <command> [args]\n`);
-  const rows = [
-    ["run <model> [prompt]", "run a model (auto-pulls if needed)"],
-    ["pull <model>", "download a model into the local store"],
-    ["list", "list installed models"],
-    ["search <query>", "search the model registry"],
-    ["show <model>", "show model details + config"],
-    ["edit <model>", "edit a model's Modelfile (system, params)"],
-    ["create <name> --from <base>", "make a custom model"],
-    ["cp <src> <dst>", "copy an installed model"],
-    ["rm <model>", "remove an installed model"],
-    ["serve", "start the local HTTP API (default :11435)"],
-    ["ps", "show the running server + its models"],
-    ["gpu", "detect your GPU and enable acceleration"],
-    ["push <model>", "publish a model (coming soon)"],
-    ["help / version", "show help / version"],
-  ];
-  for (const [cmd, desc] of rows) console.log(`  ${c.accent(cmd.padEnd(30))}${c.dim(desc)}`);
-  console.log(`\n  ${c.dim("Backend:")} delegates to ${c.bold("Ollama")} when installed, else a demo chat.`);
-  console.log(`  ${c.dim("Example:")} ${c.cyan("arcflare run qwen2.5")}\n`);
+
+  const all = models.discover({ meta: true });
+  if (!all.length) {
+    listModels(all);
+    return;
+  }
+
+  // 1. harness
+  const hs = harness.list();
+  const hItems = hs.map((h) => ({
+    label: h.label,
+    hint: h.builtin ? "built in" : h.installed ? "" : c.dim("not installed"),
+    note: h.installed && h.bin && !h.builtin ? "" : "",
+    value: h.id,
+    disabled: !h.installed,
+  }));
+  const hid = await ui.select("Choose a harness", hItems, {
+    subtitle: "ArcFlare will point it at your local model",
+    selected: cfg.lastHarness,
+  });
+  if (!hid) return;
+  const chosen = harness.byId(hid);
+  const det = chosen.detect();
+
+  // 2. model
+  const mItems = all.map((m) => ({
+    label: displayName(m),
+    hint: m.id.includes(":") ? m.id.split(":")[1] : "",
+    note: modelLabel(m),
+    value: m.id,
+  }));
+  const mid = await ui.select("Choose a model", mItems, { selected: cfg.lastModel });
+  if (!mid) return;
+  const model = all.find((m) => m.id === mid);
+
+  // 3. context
+  const budget = freeDeviceBytes(cfg);
+  const { items: cItems, best } = contextChoices(model, budget);
+  const ctxPick = await ui.select("Context size", cItems, {
+    subtitle: `${ui.fmtBytes(budget)} free on device · ${ui.fmtBytes(model.size)} of weights`,
+  });
+  if (!ctxPick) return;
+  const { ctx, cacheType } = ctxPick;
+
+  // Persist the choice as a router preset so the setting survives a reload.
+  const label = displayName(model);
+  writePresetFor(model, ctx, cacheType);
+
+  saveConfig({ ...cfg, lastHarness: hid, lastModel: mid, port: cfg.port || DEFAULT_PORT });
+
+  // 4. server
+  const { port } = await ensureServer(cfg, { restart: true });
+  const servedId = await servedIdFor(port, model);
+
+  // 5. wire the harness up
+  const target = { id: servedId, label, file: model.file };
+  const res = chosen.configure({ port, model: target, ctx, apiKey: "arcflare", bin: det.bin });
+  for (const n of res.notes || []) console.log(`  ${c.dim(n)}`);
+  if (!res.ok) die("could not configure " + chosen.label);
+
+  console.log(`  ${c.green("✓")} ${chosen.label} → ${c.accent(servedId)} @ ${ui.fmtTokens(ctx)} ctx\n`);
+
+  // 6. go
+  if (chosen.builtin) {
+    await repl(port, servedId);
+    return;
+  }
+  const child = chosen.launch({ bin: det.bin, model: target, port, args: argv.slice(1) });
+  if (child) {
+    child.on("exit", (code) => process.exit(code || 0));
+    await new Promise(() => {});
+  }
 }
+
+function writePresetFor(model, ctx, cacheType) {
+  const stem = path.basename(model.file).replace(/\.gguf$/i, "");
+  const opts = {
+    c: ctx,
+    "cache-type-k": cacheType,
+    "cache-type-v": cacheType,
+    "n-gpu-layers": 99,
+    "flash-attn": "on",
+    jinja: true,
+  };
+  if (model.mmproj) opts.mmproj = model.mmproj;
+  // Section names are matched against the router's model ids; write both the
+  // filename stem and our short id so whichever it uses picks the settings up.
+  const per = {};
+  per[stem] = opts;
+  if (model.id !== stem) per[model.id] = opts;
+  engine.writePreset(PRESET, { "n-gpu-layers": 99, "flash-attn": "on" }, per);
+}
+
+// ------------------------------------------------------------------ cmds -----
+
+const HELP = `
+  ${c.bold("arcflare")} ${c.dim("— local models, any harness")}
+
+  ${c.accent("arcflare")}                    open the menu (harness → model → context)
+  ${c.accent("arcflare ls")}                 list discovered GGUF models
+  ${c.accent("arcflare pull")} <repo>[:Q]     download a GGUF from Hugging Face
+  ${c.accent("arcflare run")} <model>        start the server and chat
+  ${c.accent("arcflare use")} <harness> [m]  configure + launch a harness
+  ${c.accent("arcflare serve")} [--port N]   start the server only
+  ${c.accent("arcflare ps")}                 server status and loaded models
+  ${c.accent("arcflare stop")}               stop the server
+  ${c.accent("arcflare logs")} [-n N]        tail the server log
+  ${c.accent("arcflare doctor")}             check engine, GPU and harnesses
+  ${c.accent("arcflare set-engine")} <path>  remember where llama-server lives
+  ${c.accent("arcflare path")}               print the ArcFlare home directory
+  ${c.accent("arcflare version")}
+
+  ${c.dim("Models are found in $ARCFLARE_MODELS, $LLAMA_CACHE, ~/.arcflare/models")}
+  ${c.dim("and ~/llamacpp/models. The server speaks the OpenAI API on :11434.")}
+`;
 
 async function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
-  const { flags, positional } = parseFlags(argv.slice(1));
+  const cfg = loadConfig();
+
+  if (!cmd) return interactive(argv);
+
   switch (cmd) {
-    case "run": return cmdRun(positional[0], positional.slice(1).join(" ") || null);
-    case "pull": return cmdPull(positional[0]);
-    case "list": case "ls": return cmdList();
-    case "search": return cmdSearch(positional[0]);
-    case "show": return cmdShow(positional[0]);
-    case "edit": return cmdEdit(positional[0]);
-    case "create": return cmdCreate(positional[0], flags);
-    case "cp": return cmdCp(positional[0], positional[1]);
-    case "rm": case "remove": return cmdRm(positional[0]);
-    case "serve": return cmdServe(flags);
-    case "ps": return cmdPs(flags);
-    case "stop": return cmdStop();
-    case "gpu": return cmdGpu();
-    case "push": return cmdPush(positional[0]);
-    case "path": return console.log(store.DIR);
-    case "version": case "-v": case "--version": return console.log(`arcflare v${VERSION}`);
-    case undefined: case "help": case "-h": case "--help": return help();
+    case "ls":
+    case "list":
+    case "models":
+      listModels(models.discover({ meta: true }));
+      return;
+
+    case "ps":
+    case "status": {
+      const port = cfg.port || DEFAULT_PORT;
+      const st = await engine.status(port);
+      if (!st.running) { console.log(`  ${c.dim("not running")}`); return; }
+      console.log(`  ${c.green("●")} llama-server on ${c.accent("127.0.0.1:" + port)}` +
+        (st.pid ? c.dim(`  pid ${st.pid}`) : ""));
+      const served = await engine.listServed(port);
+      for (const s of served) console.log(`    ${c.dim("·")} ${s}`);
+      return;
+    }
+
+    case "stop":
+      console.log(engine.stop() ? `  ${c.green("✓")} stopped` : `  ${c.dim("nothing to stop")}`);
+      return;
+
+    case "serve": {
+      const i = argv.indexOf("--port");
+      const port = i >= 0 ? Number(argv[i + 1]) : cfg.port || DEFAULT_PORT;
+      await ensureServer(cfg, { port, restart: argv.includes("--restart") });
+      console.log(`  ${c.dim("OpenAI endpoint:")} http://127.0.0.1:${port}/v1`);
+      return;
+    }
+
+    case "run": {
+      const all = models.discover({ meta: true });
+      const m = models.resolve(all, argv[1]);
+      if (!m) die(`no model matching "${argv[1] || ""}"`);
+      const budget = freeDeviceBytes(cfg);
+      const { best } = contextChoices(m, budget);
+      writePresetFor(m, best.ctx, best.cacheType);
+      const { port } = await ensureServer(cfg, { restart: true });
+      const id = await servedIdFor(port, m);
+      console.log(`  ${c.green("✓")} ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
+      await repl(port, id);
+      return;
+    }
+
+    case "use": {
+      const h = harness.byId(argv[1]);
+      if (!h) die(`unknown harness "${argv[1]}". Try: ` +
+        harness.list().map((x) => x.id).join(", "));
+      const det = h.detect();
+      if (!det.installed) die(`${h.label} is not installed`);
+      const all = models.discover({ meta: true });
+      const m = models.resolve(all, argv[2] || cfg.lastModel) || all[0];
+      if (!m) die("no models found");
+      const budget = freeDeviceBytes(cfg);
+      const { best } = contextChoices(m, budget);
+      writePresetFor(m, best.ctx, best.cacheType);
+      const { port } = await ensureServer(cfg, { restart: true });
+      const id = await servedIdFor(port, m);
+      const r = h.configure({ port, model: { id, label: displayName(m) }, ctx: best.ctx,
+        apiKey: "arcflare", bin: det.bin });
+      for (const n of r.notes || []) console.log(`  ${c.dim(n)}`);
+      console.log(`  ${c.green("✓")} ${h.label} → ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx`);
+      saveConfig({ ...cfg, lastHarness: h.id, lastModel: m.id });
+      if (h.builtin) { await repl(port, id); return; }
+      const child = h.launch({ bin: det.bin, model: { id }, port, args: argv.slice(3) });
+      if (child) child.on("exit", (code) => process.exit(code || 0));
+      return;
+    }
+
+    case "pull": {
+      const ref = argv[1];
+      if (!ref) die('usage: arcflare pull <user>/<repo>[:QUANT]   e.g. unsloth/Qwen3.6-35B-A3B-GGUF:Q5_K_XL');
+      const exe = engine.findServer(cfg.llamaServer);
+      if (!exe) die("llama-server not found — run `arcflare set-engine <path>` first");
+      // The unified `llama` binary ships next to llama-server and owns downloads.
+      const dl = path.join(path.dirname(exe), "llama" + (process.platform === "win32" ? ".exe" : ""));
+      const cacheRoot = process.env.LLAMA_CACHE || cfg.modelsRoot || models.roots()[0] ||
+        path.join(HOME, "models");
+      const { spawn } = require("child_process");
+      const useUnified = fs.existsSync(dl);
+      const bin = useUnified ? dl : exe;
+      const args = useUnified ? ["download", "-hf", ref] : ["-hf", ref, "--no-warmup"];
+      console.log(`  ${c.dim("downloading")} ${c.accent(ref)} ${c.dim("→ " + cacheRoot)}`);
+      const child = spawn(bin, args, {
+        stdio: "inherit",
+        env: { ...process.env, LLAMA_CACHE: cacheRoot },
+      });
+      child.on("exit", (code) => {
+        if (code === 0) console.log(`  ${c.green("✓")} pulled — run ${c.accent("arcflare ls")}`);
+        process.exit(code || 0);
+      });
+      await new Promise(() => {});
+      return;
+    }
+
+    case "logs": {
+      const i = argv.indexOf("-n");
+      console.log(engine.tailLog(i >= 0 ? Number(argv[i + 1]) : 40));
+      return;
+    }
+
+    case "doctor": {
+      const exe = engine.findServer(cfg.llamaServer);
+      console.log(`  ${exe ? c.green("✓") : c.red("✗")} llama-server  ${c.dim(exe || "not found")}`);
+      const budget = freeDeviceBytes(cfg);
+      console.log(`  ${c.green("✓")} device memory ${c.dim(ui.fmtBytes(budget) + " free")}`);
+      const all = models.discover({ meta: true });
+      console.log(`  ${all.length ? c.green("✓") : c.red("✗")} models        ${c.dim(all.length + " found")}`);
+      for (const h of harness.list()) {
+        console.log(`  ${h.installed ? c.green("✓") : c.dim("·")} ${h.label.padEnd(14)} ` +
+          `${c.dim(h.builtin ? "built in" : h.bin || "not installed")}`);
+      }
+      const st = await engine.status(cfg.port || DEFAULT_PORT);
+      console.log(`  ${st.running ? c.green("✓") : c.dim("·")} server        ` +
+        c.dim(st.running ? "running" : "stopped"));
+      return;
+    }
+
+    case "set-engine": {
+      const p = argv[1];
+      if (!p) die("usage: arcflare set-engine <path-to-llama-server>");
+      const found = engine.findServer(p);
+      if (!found) die(`no llama-server at ${p}`);
+      saveConfig({ ...cfg, llamaServer: found });
+      console.log(`  ${c.green("✓")} engine set to ${c.dim(found)}`);
+      return;
+    }
+
+    case "path":
+      console.log(HOME);
+      return;
+
+    case "version":
+    case "--version":
+    case "-v":
+      console.log("arcflare " + VERSION);
+      return;
+
+    case "help":
+    case "--help":
+    case "-h":
+      console.log(HELP);
+      return;
+
     default:
-      console.log(`\n  ${c.red("✗")} unknown command: ${c.bold(cmd)}`);
-      return help();
+      // `arcflare qwen3.8` is a friendly alias for `arcflare run qwen3.8`
+      if (!cmd.startsWith("-")) {
+        process.argv.splice(2, 0, "run");
+        return main();
+      }
+      console.log(HELP);
+      process.exitCode = 1;
   }
 }
 
-main().catch((e) => {
-  console.error(c.red("error:"), e.message);
-  process.exit(1);
-});
+main().catch((e) => die(e && e.stack ? e.stack : String(e)));

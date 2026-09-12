@@ -1,32 +1,14 @@
 {
   "name": "arcflare",
-  "version": "0.6.0",
-  "description": "ArcFlare CLI — upload, share, and run open AI models from the terminal.",
-  "bin": {
-    "arcflare": "bin/arcflare.js"
-  },
+  "version": "1.0.0",
+  "description": "Run local GGUF models and point any coding harness at them.",
+  "bin": { "arcflare": "bin/arcflare.js" },
   "type": "commonjs",
-  "files": [
-    "bin",
-    "lib"
-  ],
-  "scripts": {
-    "start": "node bin/arcflare.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "keywords": [
-    "ai",
-    "llm",
-    "models",
-    "cli",
-    "arcflare",
-    "ollama"
-  ],
+  "files": ["bin", "lib"],
+  "scripts": { "start": "node bin/arcflare.js" },
+  "engines": { "node": ">=18" },
+  "keywords": ["ai", "llm", "gguf", "llama.cpp", "cli", "arcflare", "codex", "opencode", "hermes"],
   "license": "MIT",
   "homepage": "https://github.com/Hakeperty/ArcFlare-Code",
-  "dependencies": {
-    "node-llama-cpp": "^3.18.1"
-  }
+  "dependencies": {}
 }

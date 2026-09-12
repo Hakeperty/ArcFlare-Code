@@ -1,146 +1,176 @@
-# ArcFlare CLI
+# ArcFlare
 
-> Upload, share, and **run** open AI models from your terminal — `arcflare run <model>`.
-> Inspired by Ollama, but self-contained: ArcFlare runs models **itself** with an
-> embedded [llama.cpp](https://github.com/ggml-org/llama.cpp) engine — no external
-> app or server to install.
+> Run local GGUF models and point any coding harness at them — `arcflare`, pick a
+> harness, pick a model, go.
 
-This is the command-line tool for [ArcFlare](https://github.com/Hakeperty/ArcFlare)
-(the model-hub website lives in that repo; this repo is the `arcflare` command).
+ArcFlare is a thin, zero-dependency front end for
+[llama.cpp](https://github.com/ggml-org/llama.cpp). It finds the models you
+already have, starts `llama-server` with sane settings for your GPU, and wires
+up whichever coding agent you want to use — OpenCode, Hermes, Codex — so they
+talk to your local model instead of a cloud API.
 
 ```
-❯ arcflare run qwen2.5
-  pulling qwen2.5 (qwen2.5-0.5b-instruct-q4_k_m.gguf)
-  ████████████████████ 100%  468.6MB/468.6MB
-  loading qwen2.5 — first load can take a few seconds...
-  qwen2.5: Pandas are fascinating and adorable animals!
+❯ arcflare
+
+  ArcFlare · local models, any harness
+
+  Choose a harness
+  ArcFlare will point it at your local model
+
+  ❯ ArcFlare chat   built in
+    OpenCode
+    Hermes
+    Hermes Desktop
+    Codex CLI      not installed
+
+  ↑/↓ move · enter select · esc cancel
 ```
+
+## What changed in 1.0
+
+ArcFlare 0.x embedded llama.cpp in-process through `node-llama-cpp`. 1.0 drives
+the stock `llama-server` binary as a child process instead. That one change
+does most of the work:
+
+| | 0.x | 1.0 |
+| --- | --- | --- |
+| npm dependencies | `node-llama-cpp` (bundled native engine) | **none** |
+| CLI resident memory | Node + native engine + model allocator | **~28 MB RSS** |
+| Engine build | whatever ships with the binding | **your own tuned llama.cpp** |
+| Multiple models | one at a time, in-process | router serves many, loads on demand |
+| Context sizing | fixed 2048 default | **model max, auto-fitted to free VRAM** |
+
+The model is mapped once, by the engine that owns it. ArcFlare just supervises.
 
 ## Install
-
-No published package yet — run it straight from the repo:
 
 ```bash
 git clone https://github.com/Hakeperty/ArcFlare-Code.git
 cd ArcFlare-Code
-npm install         # fetches the prebuilt llama.cpp engine
-npm link            # makes `arcflare` available globally
-# or just:
-node bin/arcflare.js <command>
+npm link          # no install step — there are no dependencies
 ```
 
-Requires Node.js 18+. The only dependency is
-[`node-llama-cpp`](https://github.com/withcatai/node-llama-cpp), which embeds the
-llama.cpp inference engine (CPU by default; GPU when a prebuilt is available).
-Models download as GGUF to `~/.arcflare/models` on first run.
+Requires Node 18+ and a llama.cpp build. ArcFlare looks for `llama-server` on
+`PATH`, then in `~/llamacpp/{vulkan,cuda,rocm}` and the usual places. If it
+lives somewhere else:
+
+```bash
+arcflare set-engine /path/to/llama-server
+```
+
+Check everything at once:
+
+```bash
+arcflare doctor
+```
+
+```
+  ✓ llama-server  C:\Users\harry\llamacpp\vulkan\llama-server.exe
+  ✓ device memory 45.4 GB free
+  ✓ models        3 found
+  ✓ ArcFlare chat  built in
+  ✓ OpenCode       ...\hermes\node\opencode
+  ✓ Hermes         ...\hermes\bin\hermes.exe
+  ✓ Hermes Desktop ...\hermes\bin\hermes.exe
+  · Codex CLI      not installed
+  · server        stopped
+```
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `arcflare run <model> [prompt]` | Run a model (auto-pulls if needed) |
-| `arcflare pull <model>` | Download a model into the local store |
-| `arcflare list` | List installed models |
-| `arcflare search <query>` | Search the model registry |
-| `arcflare show <model>` | Show model details + config |
-| `arcflare edit <model>` | Edit a model's Modelfile (system, params) |
-| `arcflare create <name> --from <base> [--system "…"]` | Make a custom model |
-| `arcflare create <name> -f Modelfile` | Make a custom model from a Modelfile |
-| `arcflare cp <src> <dst>` | Copy an installed model |
-| `arcflare rm <model>` | Remove an installed model |
-| `arcflare serve` | Start the local HTTP API (default `:11435`) |
-| `arcflare ps` | Show the running server and its models |
-| `arcflare stop` | (models run on demand — nothing stays loaded) |
-| `arcflare push <model>` | Publish a model (coming soon) |
-| `arcflare path` | Print the local store directory |
-| `arcflare help` / `version` | Help / version |
+| `arcflare` | The menu: harness → model → context |
+| `arcflare ls` | List discovered GGUF models |
+| `arcflare pull <repo>[:Q]` | Download a GGUF from Hugging Face |
+| `arcflare run <model>` | Start the server and chat |
+| `arcflare use <harness> [model]` | Configure and launch a harness |
+| `arcflare serve [--port N]` | Start the server only |
+| `arcflare ps` | Server status and loaded models |
+| `arcflare stop` | Stop the server |
+| `arcflare logs [-n N]` | Tail the server log |
+| `arcflare doctor` | Check engine, GPU and harnesses |
+| `arcflare set-engine <path>` | Remember where `llama-server` lives |
 
-## Local store & custom models
+`arcflare <model>` is shorthand for `arcflare run <model>`.
 
-ArcFlare keeps a small on-disk store at `~/.arcflare/store.json` (override with
-`ARCFLARE_HOME`). `pull`/`create` install models there; `list`/`edit`/`rm` work
-against it; `run` records last-used. Custom models keep a `base` and a `SYSTEM`
-prompt — define them with a Modelfile, just like Ollama:
+## Models
 
-```bash
-arcflare create captain --from qwen2.5 --system "You are a sea captain."
-arcflare edit captain         # opens a Modelfile in $EDITOR
-arcflare run captain "ahoy!"
+ArcFlare doesn't keep its own model store. It reads the GGUFs you already have,
+searching in order:
+
+1. `$ARCFLARE_MODELS`
+2. `$LLAMA_CACHE` — the llama.cpp download cache
+3. `~/.arcflare/models`
+4. `~/llamacpp/models`
+5. the platform llama.cpp cache
+
+It understands the Hugging Face cache layout, groups multi-part shards, and
+picks up `mmproj-*.gguf` (vision) and `mtp-*.gguf` (speculative decoding)
+sidecars sitting next to a model.
+
+```
+❯ arcflare ls
+  qwen3.6-35b-a3b:ud-q6_k_xl  Q6_K · 30.4 GB · 256K ctx · MoE 8/256
+  qwen3.6-35b-a3b:ud-q5_k_xl  Q5_K_M · 25.3 GB · 256K ctx · MoE 8/256
+  qwen3.8-27b:ud-q5_k_m       Q5_K_M · 18.4 GB · 256K ctx
 ```
 
-```
-# Modelfile
-FROM qwen2.5
-SYSTEM You are a sea captain.
-PARAMETER temperature 0.7
-```
+## Context sizing
 
-## HTTP API (`arcflare serve`)
+ArcFlare reads each model's GGUF header and works out what a given context
+actually costs, then offers the largest size that fits your free VRAM — with
+the model's trained maximum first in the list.
 
-Start a small local server (zero deps, Node `http`) for apps and scripts:
+It accounts for **hybrid attention**. On Qwen3.5/3.6/3.8-class models only every
+Nth layer keeps a growing KV cache; the rest are linear-attention layers with
+fixed-size state. Assuming every layer attends overestimates the cache by 4× and
+makes max context look impossible when it isn't:
 
-```bash
-arcflare serve            # http://127.0.0.1:11435  (override with --port / ARCFLARE_PORT)
-arcflare ps               # in another terminal: see the server + its models
-```
+| model | layers | attending | KV/token (f16) | 256K context |
+| --- | --- | --- | --- | --- |
+| Qwen3.8-27B | 65 | 16 | 64 KiB | 17.2 GB |
+| Qwen3.6-35B-A3B | 41 | 10 | 20 KiB | 5.4 GB |
 
-| Method & path | Body | Returns |
-| --- | --- | --- |
-| `GET /` | — | `ArcFlare is running` |
-| `GET /api/tags` | — | installed models |
-| `GET /api/registry` | — | all available models |
-| `POST /api/pull` | `{ name }` | installs the model |
-| `POST /api/show` | `{ name }` | model details + config |
-| `POST /api/create` | `{ name, from, system }` | makes a custom model |
-| `POST /api/generate` | `{ model, prompt }` | a completion (real once the model is pulled) |
-| `POST /api/chat` | `{ model, messages }` | a chat reply (applies the model's SYSTEM) |
-| `DELETE /api/delete` | `{ name }` | removes a model |
+MLA models (DeepSeek, GLM-lite) are handled too — there the cache is one
+compressed latent per layer rather than separate K and V.
 
-```bash
-curl http://127.0.0.1:11435/api/tags
-curl -X POST http://127.0.0.1:11435/api/pull -d '{"name":"qwen2.5"}'
-curl -X POST http://127.0.0.1:11435/api/generate -d '{"model":"qwen2.5","prompt":"hi"}'
-```
+On top of that, the server is started with llama.cpp's `--fit on`, so any
+size that would still overshoot gets reduced by the engine instead of failing
+to allocate.
 
-## How `run` works
+## Harnesses
 
-1. Resolves the model from the bundled registry of real open-weight models.
-2. Downloads its GGUF (with a live progress bar) to `~/.arcflare/models` if it
-   isn't there yet.
-3. Loads it with the embedded llama.cpp engine and **streams a real chat** —
-   applying the model's `SYSTEM` prompt and keeping conversation history.
+ArcFlare serves the OpenAI API on **port 11434** — Ollama's port — so tools
+already pointed at a local Ollama work with no config change.
 
-**Runnable today** (have a bundled GGUF build): `qwen2.5`, `qwen2.5-coder`,
-`llama3.2`, `gemma2`, `mistral`, `deepseek-r1`. Other registry entries are listed
-for discovery and fall back to a demo until a build is added.
+When it does need to write config, it backs the file up first
+(`<file>.arcflare-bak`) and only touches the keys it owns.
 
-> Image/audio models (FLUX, Stable Diffusion, Whisper) are listed for discovery
-> and aren't text-chat models.
-
-## GPU acceleration
-
-ArcFlare auto-detects your hardware and uses the best llama.cpp backend, falling
-back to CPU:
-
-| Platform / GPU | Backend |
+| Harness | How it's wired |
 | --- | --- |
-| Apple Silicon (Mac) | **Metal** (works out of the box) |
-| NVIDIA | **CUDA** (or Vulkan) |
-| AMD / Intel | **Vulkan** |
-| anything else | CPU |
+| **ArcFlare chat** | Built-in streaming REPL |
+| **OpenCode** | Adds an `arcflare` provider to `opencode.json(c)` with the real context limit |
+| **Hermes** | Uses `hermes config set` — its own tool, never hand-edited YAML |
+| **Hermes Desktop** | Same config, launched via `hermes desktop` |
+| **Codex CLI** | `[model_providers.arcflare]` in `~/.codex/config.toml`, `wire_api = "chat"` |
 
-`arcflare run` prints which backend it's using (e.g. `running on GPU (vulkan)`).
-Run **`arcflare gpu`** to see what was detected and enable acceleration. CUDA and
-Vulkan builds require the matching SDK (CUDA Toolkit / Vulkan SDK); Metal needs
-nothing extra.
+```bash
+arcflare use opencode qwen3.6-35b-a3b     # configure and launch
+arcflare use hermes                       # last model, or pick one
+```
 
-## Design
+## Layout
 
-A flat JSON store (`~/.arcflare/store.json`), GGUF models in `~/.arcflare/models`,
-and lazy work (nothing loads until you run a model). Inference is handled in-process
-by the embedded llama.cpp engine — ArcFlare is a single self-contained tool, not a
-front-end for another app.
+```
+bin/arcflare.js   CLI and the interactive menu
+lib/ui.js         colours, arrow-key select, spinner
+lib/gguf.js       GGUF metadata reader + KV cache maths
+lib/models.js     model discovery
+lib/engine.js     llama-server supervision
+lib/harness.js    harness detection, config wiring, launch
+```
 
-## License
+## Licence
 
 MIT
