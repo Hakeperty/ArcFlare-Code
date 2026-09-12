@@ -70,6 +70,27 @@ function freeDeviceBytes(cfg) {
   return deviceMemory(cfg).freeBytes;
 }
 
+/**
+ * Free memory to plan a *new* model load against.
+ *
+ * Our own server may already hold the model we are about to reload, and
+ * counting that as unavailable makes ArcFlare pick a tiny context for a model
+ * that would comfortably fit. Every caller of this restarts the server anyway,
+ * so stop it first and measure the real floor.
+ */
+async function planningBudget(cfg) {
+  const st = await engine.status(cfg.port || DEFAULT_PORT);
+  if (st.running) {
+    engine.stop();
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+  const backend = require("../lib/backend");
+  return backend.deviceMemory(
+    backend.choose(backend.survey(path.join(HOME, "backends.json")), cfg.backend),
+    { fresh: true },
+  ).freeBytes || os.freemem();
+}
+
 // ------------------------------------------------------------- model list --
 
 function modelLabel(m) {
@@ -320,7 +341,7 @@ async function interactive(argv) {
   const model = all.find((m) => m.id === mid);
 
   // 3. context
-  const budget = freeDeviceBytes(cfg);
+  const budget = await planningBudget(cfg);
   const { items: cItems, best } = contextChoices(model, budget);
   const ctxPick = await ui.select("Context size", cItems, {
     subtitle: `${ui.fmtBytes(budget)} free on device · ${ui.fmtBytes(model.size)} of weights`,
@@ -530,7 +551,7 @@ async function main() {
       const all = models.discover({ meta: true });
       const m = models.resolve(all, argv[1]);
       if (!m) die(`no model matching "${argv[1] || ""}"`);
-      const budget = freeDeviceBytes(cfg);
+      const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
       const { port, servedId: id } = await prepareModel(cfg, m, best.ctx, best.cacheType);
       console.log(`  ${c.green("✓")} ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
@@ -547,7 +568,7 @@ async function main() {
       const all = models.discover({ meta: true });
       const m = models.resolve(all, argv[2] || cfg.lastModel) || all[0];
       if (!m) die("no models found");
-      const budget = freeDeviceBytes(cfg);
+      const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
       const { port, servedId: id } = await prepareModel(cfg, m, best.ctx, best.cacheType);
       const r = h.configure({ port, model: { id, label: displayName(m) }, ctx: best.ctx,
@@ -660,7 +681,7 @@ async function main() {
       const wanted = argv.slice(1).find((a) => !a.startsWith("-"));
       const m = models.resolve(all, wanted || cfg.lastModel) || all[0];
       if (!m) die("no models found");
-      const budget = freeDeviceBytes(cfg);
+      const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
       const prep = await prepareModel(cfg, m, best.ctx, best.cacheType);
       if (prep.failed) die("could not load the model");
