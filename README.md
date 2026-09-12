@@ -89,6 +89,8 @@ arcflare doctor
 | `arcflare ps` | Server status and loaded models |
 | `arcflare stop` | Stop the server |
 | `arcflare logs [-n N]` | Tail the server log |
+| `arcflare backend [kind]` | List or select a llama.cpp backend (vulkan/rocm/cuda) |
+| `arcflare memory [profile]` | `lean` \| `balanced` \| `max` |
 | `arcflare doctor` | Check engine, GPU and harnesses |
 | `arcflare set-engine <path>` | Remember where `llama-server` lives |
 
@@ -135,9 +137,69 @@ makes max context look impossible when it isn't:
 MLA models (DeepSeek, GLM-lite) are handled too — there the cache is one
 compressed latent per layer rather than separate K and V.
 
-On top of that, the server is started with llama.cpp's `--fit on`, so any
-size that would still overshoot gets reduced by the engine instead of failing
-to allocate.
+On top of that, ArcFlare **verifies rather than predicts**. Reported free memory
+is a budget, not a promise: llama.cpp printed "46522 MiB free" both while a 30 GB
+model was resident and immediately after that process exited. So ArcFlare
+cross-checks against what the OS reports as in use, then loads the model and
+halves the context if the device still refuses it:
+
+```
+  loading Qwen3.6-35B-A3B @ 256K ctx...
+  . did not fit - retrying at 128K
+  + loaded at 128K context  (reduced from 256K - device could not fit it)
+```
+
+You get the largest context that genuinely works, rather than a confident number
+and an `ErrorOutOfDeviceMemory` at first request.
+
+## Backends
+
+Shipping kernels for your GPU is not the same as being able to use it. ArcFlare
+finds every llama.cpp build on the machine and asks each one what devices it can
+actually see:
+
+```
+> arcflare backend
+  OK  vulkan:vulkan        ~/llamacpp/vulkan  <- active
+      Vulkan0  AMD Radeon(TM) 8060S Graphics (47.8 GB, 45.4 GB free)
+  --  rocm:rocm            ~/llamacpp/rocm
+      build loads but enumerates no device (driver or runtime)
+      kernels present: gfx1010 ... gfx1151 ... gfx1250
+      the build is fine - the driver is not exposing the GPU to HIP.
+      update the AMD driver, or stay on Vulkan.
+```
+
+That distinction is the useful part: the ROCm build above *does* contain gfx1151
+kernels, so the build is not the problem and reinstalling it will not help.
+
+Probing runs with the working directory set to each build's own folder. On
+Windows the DLL search path includes the current directory, so probing a ROCm
+build from inside a Vulkan build's folder silently loads the Vulkan backend and
+reports a device the ROCm build cannot use.
+
+## Memory
+
+llama-server's stock defaults assume RAM to spare - an 8192 MiB host prompt
+cache and up to four models resident. On a machine whose RAM is mostly carved
+out for VRAM, that is the biggest avoidable cost.
+
+```
+> arcflare memory
+    lean       prompt cache 512 MiB - 1 model resident - sleeps after 5 min idle
+  > balanced   prompt cache 2048 MiB - 1 model resident - sleeps after 15 min idle
+    max        prompt cache 8192 MiB - 4 models resident - never sleeps
+```
+
+## Tests
+
+```bash
+npm test
+```
+
+20 tests covering the places where being wrong is silent and expensive: the KV
+cache maths, model id parsing, and the harness config writers - including that
+they preserve unrelated settings, back files up, and refuse to overwrite a
+config they cannot parse.
 
 ## Harnesses
 
