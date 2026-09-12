@@ -190,13 +190,66 @@ out for VRAM, that is the biggest avoidable cost.
     max        prompt cache 8192 MiB - 4 models resident - never sleeps
 ```
 
+## The agent
+
+`arcflare agent` is a coding agent built for a model on your own GPU. Everything
+about it follows from two facts: generation runs at tens of tokens a second, and
+llama.cpp reuses its prompt cache only for the longest *unchanged* prefix.
+
+So the prompt is append-only. The system message and the tool array are fixed
+for the whole session. Discovered MCP tools and skill bodies arrive as tool
+*results* rather than being spliced into the prefix - editing the prefix throws
+the cache away and re-reads the session, and at ~250 tok/s prefill a 20k-token
+session costs about 80 seconds to re-read.
+
+```
+> arcflare agent
+
+  + 1 skill greet
+  + mcp blender 67 tools
+  + mcp desktop 23 tools
+  + mcp ollama-subagents 9 tools
+  + mcp ollama-research 8 tools
+  prefix 1064 tok - window 256K - 107 mcp tools indexed (schemas on demand)
+
+> widget.js has a bug in add(). Fix it and verify with node.
+
+  * read_file widget.js
+  * edit_file widget.js
+  * bash node -e "const {add}=require('./widget.js'); console.log(add(2,3));"
+    5
+
+  Fixed. The bug was `a - b` instead of `a + b`.
+```
+
+**MCP.** Servers are connected over stdio and their tools namespaced
+`server__tool`. The model sees a one-line index, then calls `tool_search` to
+pull the schemas it actually needs and `mcp_call` to run one. For 120 tools that
+is 1,072 tokens instead of 7,573 - about 7x cheaper - and because the tool array
+never changes, the cache survives every turn.
+
+**Skills.** A skill is a directory with `SKILL.md` and YAML frontmatter.
+Discovery reads only the first 4 KB of each file, so the index costs ~15 tokens
+per skill and a body (often 1000+) loads only when the model asks for it.
+`~/.arcflare/skills`, `.arcflare/skills`, and existing `.claude/skills` are all
+picked up.
+
+**Context.** Compaction trims the oldest tool results first, then drops whole
+early turns - never the system prompt and never recent turns, so the cached
+prefix stays intact.
+
+**Tools.** `read_file`, `write_file`, `edit_file`, `list_dir`, `glob`, `grep`,
+`bash`, plus `skill_load`, `tool_search` and `mcp_call`. Edits fail loudly on an
+ambiguous or missing match rather than guessing. Shell commands go through an
+approval prompt (`--yolo` to skip) and a refusal list for unrecoverable ones.
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-20 tests covering the places where being wrong is silent and expensive: the KV
+56 tests covering the places where being wrong is silent and expensive: the KV
 cache maths, model id parsing, and the harness config writers - including that
 they preserve unrelated settings, back files up, and refuse to overwrite a
 config they cannot parse.
