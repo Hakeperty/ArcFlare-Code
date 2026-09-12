@@ -125,9 +125,14 @@ function contextChoices(m, budget) {
     });
   };
 
-  // Max first — this is the headline ask.
-  add(trained, "q8_0", "max");
-  if (perTokF16 && perTokF16 * trained <= spare) add(trained, "f16", "max-f16");
+  // Max context first — it is the headline ask, and it is nearly free: measured
+  // at 262144 vs 4096 the cost is about 5% of throughput and 0.7 GB of VRAM.
+  //
+  // f16 is offered ahead of q8_0 because a quantised KV cache measured *slower*
+  // here (55.4 vs 53.0 tok/s) — dequantising it costs more than the bandwidth
+  // it saves. q8_0 remains the fallback for when f16 will not fit.
+  add(trained, "f16", "max");
+  add(trained, "q8_0", "max-q8");
   for (const ctx of [131072, 65536, 32768, 16384]) {
     if (ctx < trained) add(ctx, "f16");
   }
@@ -371,6 +376,9 @@ function writePresetFor(model, ctx, cacheType) {
     "cache-type-v": cacheType,
     "n-gpu-layers": 99,
     "flash-attn": "on",
+    // One slot. Four parallel slots cost about 7% of generation throughput and
+    // buy nothing for a single interactive user.
+    "parallel": 1,
     jinja: true,
   };
   if (model.mmproj) opts.mmproj = model.mmproj;
@@ -463,6 +471,7 @@ const HELP = `
   ${c.accent("arcflare ls")}                 list discovered GGUF models
   ${c.accent("arcflare pull")} <repo>[:Q]     download a GGUF from Hugging Face
   ${c.accent("arcflare run")} <model>        start the server and chat
+  ${c.accent("arcflare agent")} [model]       coding agent: tools, MCP, skills
   ${c.accent("arcflare use")} <harness> [m]  configure + launch a harness
   ${c.accent("arcflare serve")} [--port N]   start the server only
   ${c.accent("arcflare ps")}                 server status and loaded models
@@ -643,6 +652,29 @@ async function main() {
           `prompt cache ${p.cacheRamMiB} MiB · ${p.modelsMax} model${p.modelsMax > 1 ? "s" : ""} resident · ` +
           (p.sleepIdleSeconds > 0 ? `sleeps after ${p.sleepIdleSeconds / 60} min idle` : "never sleeps"))}`);
       }
+      return;
+    }
+
+    case "agent": {
+      const all = models.discover({ meta: true });
+      const wanted = argv.slice(1).find((a) => !a.startsWith("-"));
+      const m = models.resolve(all, wanted || cfg.lastModel) || all[0];
+      if (!m) die("no models found");
+      const budget = freeDeviceBytes(cfg);
+      const { best } = contextChoices(m, budget);
+      const prep = await prepareModel(cfg, m, best.ctx, best.cacheType);
+      if (prep.failed) die("could not load the model");
+      saveConfig({ ...cfg, lastModel: m.id });
+      const pIdx = argv.indexOf("-p");
+      const prompt = pIdx > 0 ? argv.slice(pIdx + 1).join(" ") : null;
+      await require("../lib/agent/run").start({
+        port: prep.port,
+        model: prep.servedId,
+        nCtx: prep.ctx,
+        cwd: process.cwd(),
+        prompt,
+        approve: argv.includes("--yolo") ? "yolo" : "ask",
+      });
       return;
     }
 
