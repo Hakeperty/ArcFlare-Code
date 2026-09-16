@@ -216,7 +216,12 @@ test("codex config is replaced cleanly, not appended twice", () => {
   const modelLines = txt.match(/^model = .*/gm) || [];
   assert.strictEqual(modelLines.length, 1, "exactly one model line");
   assert.match(txt, /model = "m2"/);
-  assert.match(txt, /wire_api = "chat"/);
+  assert.match(txt, /wire_api = "responses"/);
+  // Every key we own has to be stripped before rewrite, or a second `use`
+  // leaves two of them and Codex reads whichever it happens to hit first.
+  const compact = txt.match(/^model_auto_compact_token_limit = .*/gm) || [];
+  assert.strictEqual(compact.length, 1, "exactly one compaction limit");
+  assert.strictEqual(compact[0], "model_auto_compact_token_limit = 104857");
   fs.rmSync(d, { recursive: true, force: true });
 });
 
@@ -246,4 +251,311 @@ test("every harness exposes the interface the CLI relies on", () => {
 
 test("BASE builds a v1 endpoint", () => {
   assert.strictEqual(harness.BASE(11434), "http://127.0.0.1:11434/v1");
+});
+
+// The agent is the one harness whose tools ArcFlare runs itself, so it is the
+// one entry the `tools` flag belongs on — everything else runs its own.
+test("the agent is offered as a harness and is the only one with tools", () => {
+  const list = harness.list();
+  const agent = list.find((h) => h.id === "agent");
+  assert.ok(agent, "the agent is in the menu");
+  assert.strictEqual(agent.installed, true, "built in, so never greyed out");
+  assert.deepStrictEqual(list.filter((h) => h.tools).map((h) => h.id), ["agent"]);
+});
+
+// ------------------------------------------------------------- auto mode ----
+
+// The menu asks about tool approval for every harness that has an auto mode, so
+// a missing descriptor silently drops the question for that harness. The plain
+// chat is the only entry that should not be asked: it has no tools to approve.
+test("every harness that runs tools has an auto mode, and chat does not", () => {
+  const list = harness.list();
+  assert.deepStrictEqual(
+    list.filter((h) => !h.auto).map((h) => h.id), ["chat"]);
+  for (const h of list.filter((x) => x.auto)) {
+    assert.ok(h.auto.label, `${h.id} says what auto mode does`);
+    assert.ok(h.auto.note, `${h.id} says what auto mode costs`);
+    // The agent's auto mode is a mode it starts in; every other harness needs
+    // something concrete to pass to someone else's binary.
+    if (h.id !== "agent") {
+      assert.ok(h.auto.flags || h.auto.env,
+        `${h.id} has a flag or a variable to set`);
+    }
+  }
+});
+
+test("auto mode arguments are added only when auto mode is on", () => {
+  const oc = harness.byId("opencode");
+  assert.deepStrictEqual(harness.autoArgs(oc.auto, "yolo", []), ["--auto"]);
+  assert.deepStrictEqual(harness.autoArgs(oc.auto, "ask", []), []);
+  assert.deepStrictEqual(harness.autoArgs(oc.auto, undefined, []), []);
+  // The agent has no binary to pass anything to.
+  assert.deepStrictEqual(harness.autoArgs(harness.byId("agent").auto, "yolo", []), []);
+  assert.deepStrictEqual(harness.autoArgs(harness.byId("hermes").auto, "yolo", []), ["--yolo"]);
+  assert.deepStrictEqual(
+    harness.autoArgs(harness.byId("codex").auto, "yolo", []),
+    ["--dangerously-bypass-approvals-and-sandbox"]);
+});
+
+// A user who typed their own approval argument has answered the question. Two
+// answers on one command line is how you end up running under the wrong one.
+test("an explicit approval argument wins over auto mode", () => {
+  const codex = harness.byId("codex").auto;
+  assert.deepStrictEqual(harness.autoArgs(codex, "yolo", ["-s", "read-only"]), []);
+  assert.deepStrictEqual(harness.autoArgs(codex, "yolo", ["--ask-for-approval=on-request"]), []);
+  assert.deepStrictEqual(harness.autoArgs(codex, "yolo", ["--cd", "."]),
+    ["--dangerously-bypass-approvals-and-sandbox"], "unrelated arguments change nothing");
+  const hermes = harness.byId("hermes").auto;
+  assert.deepStrictEqual(harness.autoArgs(hermes, "yolo", ["--safe-mode"]), []);
+  assert.deepStrictEqual(harness.autoArgs(hermes, "yolo", ["--yolo"]), [],
+    "the flag is not passed twice when the user typed it");
+});
+
+// Hermes Desktop has no flag to take: the toggle lives in the app. The variable
+// is read once at backend start, so it has to be in the environment we launch
+// with rather than anything written afterwards.
+test("hermes desktop carries auto mode in the environment", () => {
+  const desktop = harness.byId("hermes-desktop").auto;
+  assert.deepStrictEqual(harness.autoEnv(desktop, "yolo"), { HERMES_YOLO_MODE: "1" });
+  assert.deepStrictEqual(harness.autoEnv(desktop, "ask"), {});
+  assert.deepStrictEqual(harness.autoArgs(desktop, "yolo", []), [],
+    "nothing on the command line — `hermes desktop` would reject it");
+  // The CLI takes the flag instead, so it must not also set the variable.
+  assert.deepStrictEqual(harness.autoEnv(harness.byId("hermes").auto, "yolo"), {});
+});
+
+// ------------------------------------------------------- draft sidecars --
+
+// The HF cache splits one model across two repos: ggml-org ships the MTP draft
+// for Qwen3.8-27B while unsloth ships the weights. A same-directory scan finds
+// nothing, and speculative decoding then stays off without ever saying so.
+
+function put(...parts) {
+  const file = path.join(...parts);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "x");
+  return file;
+}
+
+// Only models under the temp root — the machine's real ones are also on the
+// search path, and a fixture that collided with them would prove nothing.
+function discoverIn(d) {
+  return models.discover({ roots: [d] }).filter((m) => m.file.startsWith(d));
+}
+
+function repo(d, vendor, family) {
+  return path.join(d, `models--${vendor}--${family}-GGUF`, "snapshots", vendor);
+}
+
+test("a draft model in a sibling repo is still attached", () => {
+  const d = tmpdir("mtp-split");
+  put(repo(d, "vendora", "Zephyrtest-9Z"), "mtp-Zephyrtest-9Z-Q8_0.gguf");
+  put(repo(d, "vendorb", "Zephyrtest-9Z"), "Zephyrtest-9Z-UD-Q5_K_M.gguf");
+
+  const found = discoverIn(d);
+  assert.strictEqual(found.length, 1, "the draft is a sidecar, not a model");
+  assert.ok(found[0].mtp, "draft attached across repos");
+  assert.match(path.basename(found[0].mtp), /^mtp-Zephyrtest-9Z/);
+  assert.strictEqual(found[0].mtpFromOtherRepo, true);
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test("a draft beside the weights is used and not flagged cross-repo", () => {
+  const d = tmpdir("mtp-local");
+  const r = repo(d, "vendorb", "Zephyrtest-9Z");
+  put(r, "Zephyrtest-9Z-UD-Q5_K_M.gguf");
+  put(r, "mtp-Zephyrtest-9Z-Q8_0.gguf");
+
+  const [m] = discoverIn(d);
+  assert.strictEqual(path.dirname(m.mtp), r);
+  assert.strictEqual(m.mtpFromOtherRepo, undefined);
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test("a draft is not borrowed by an unrelated model family", () => {
+  const d = tmpdir("mtp-unrelated");
+  put(repo(d, "vendora", "Betatest-2B"), "mtp-Betatest-2B-Q8_0.gguf");
+  put(repo(d, "vendorb", "Alphatest-1A"), "Alphatest-1A-UD-Q5_K_M.gguf");
+
+  const [m] = discoverIn(d);
+  assert.strictEqual(m.id.split(":")[0], "alphatest-1a");
+  assert.strictEqual(m.mtp, undefined, "a draft for another model is not a draft");
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test("a vision projector is never borrowed from another repo", () => {
+  const d = tmpdir("mmproj-split");
+  put(repo(d, "vendora", "Zephyrtest-9Z"), "mmproj-F16.gguf");
+  put(repo(d, "vendorb", "Zephyrtest-9Z"), "Zephyrtest-9Z-UD-Q5_K_M.gguf");
+
+  const [m] = discoverIn(d);
+  assert.strictEqual(m.mmproj, undefined,
+    "pairing a projector with another repo's weights would be a real mistake");
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------- hermes wiring --
+
+// Hermes' tools do not follow the process working directory, and neither
+// `--in` nor `--no-restore-cwd` moves them: `terminal.cwd` is the only lever,
+// and its default resolves to the user's home. Without this key, `arcflare use
+// hermes` inside a project hands you an agent editing files in ~.
+test("hermes is pointed at the directory arcflare was run from", () => {
+  const d = tmpdir("hermes-cwd");
+  const log = path.join(d, "calls.txt");
+  const win = process.platform === "win32";
+  const shim = path.join(d, win ? "fakehermes.cmd" : "fakehermes.sh");
+  if (win) fs.writeFileSync(shim, `@echo off\r\n>>"${log}" echo %*\r\n`);
+  else {
+    fs.writeFileSync(shim, `#!/bin/sh\necho "$@" >> "${log}"\n`);
+    fs.chmodSync(shim, 0o755);
+  }
+
+  const r = harness.byId("hermes").configure({
+    port: 11434,
+    model: { id: "m1", label: "m1" },
+    bin: shim,
+    cwd: path.join(d, "proj"),
+  });
+
+  assert.ok(r.ok, "configure succeeded against the stand-in binary");
+  const txt = fs.readFileSync(log, "utf8");
+  assert.match(txt, /terminal\.cwd/, "terminal.cwd is set");
+  assert.ok(txt.includes(path.join(d, "proj")), "set to the directory we passed");
+  assert.match(txt, /model\.default/, "still sets the keys it always did");
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+// `hermes desktop` reinstalls workspace deps and rebuilds the Electron app on
+// every launch - minutes, with no output - even when the packaged app already
+// exists. We skip that only when we can actually see the built artefact.
+test("hermes desktop rebuild is skipped only when the built app is visible", () => {
+  const d = tmpdir("hermes-desktop");
+  const bin = path.join(d, "bin", "hermes");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, "");
+
+  assert.strictEqual(harness.desktopPrebuilt(bin), false,
+    "nothing built yet - let Hermes build rather than pass --skip-build");
+
+  const rel = path.join(d, "hermes-agent", "apps", "desktop", "release", "win-unpacked");
+  fs.mkdirSync(rel, { recursive: true });
+  fs.writeFileSync(path.join(rel, "Hermes.exe"), "");
+  assert.strictEqual(harness.desktopPrebuilt(bin), true, "built app is found");
+
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test("an empty release directory does not count as built", () => {
+  const d = tmpdir("hermes-desktop-empty");
+  const bin = path.join(d, "bin", "hermes");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, "");
+  fs.mkdirSync(path.join(d, "hermes-agent", "apps", "desktop", "release", "win-unpacked"),
+    { recursive: true });
+  assert.strictEqual(harness.desktopPrebuilt(bin), false);
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+// ------------------------------------------------------ agent model choice --
+
+// `arcflare agent -p "read package.json ..."` used to scan the prompt for a
+// model name, fail to match "read", and then silently load the largest model
+// on disk instead of the one you had been using.
+const cli = require("../bin/arcflare.js");
+
+const CATALOG = [
+  { id: "qwen3.6-35b-a3b:ud-q6_k_xl", name: "a.gguf" },   // largest, sorts first
+  { id: "tiel-coder-35b-a3b-mtp:ud-q5_k_xl", name: "b.gguf" },
+];
+const LAST = "tiel-coder-35b-a3b-mtp:ud-q5_k_xl";
+
+test("prompt words are not mistaken for a model name", () => {
+  const argv = ["agent", "-p", "Read", "package.json", "and", "report", "the", "version"];
+  const sel = cli.pickModel(CATALOG, argv, LAST);
+  assert.strictEqual(sel.error, undefined);
+  assert.strictEqual(sel.model.id, LAST, "falls back to the model you last used");
+});
+
+test("an explicit model before the prompt still wins", () => {
+  const argv = ["agent", "qwen3.6-35b-a3b", "-p", "tiel-coder is just a word here"];
+  const sel = cli.pickModel(CATALOG, argv, LAST);
+  assert.strictEqual(sel.model.id, "qwen3.6-35b-a3b:ud-q6_k_xl");
+});
+
+test("a model name that matches nothing is an error, not a fallback", () => {
+  const sel = cli.pickModel(CATALOG, ["agent", "no-such-model"], LAST);
+  assert.match(sel.error, /no model matching "no-such-model"/);
+  assert.strictEqual(sel.model, undefined);
+});
+
+test("flags are skipped when looking for the model name", () => {
+  const sel = cli.pickModel(CATALOG, ["agent", "--yolo"], LAST);
+  assert.strictEqual(sel.error, undefined);
+  assert.strictEqual(sel.model.id, LAST);
+});
+
+test("with no model named and nothing remembered, the first is used", () => {
+  const sel = cli.pickModel(CATALOG, ["agent"], null);
+  assert.strictEqual(sel.model.id, "qwen3.6-35b-a3b:ud-q6_k_xl");
+});
+
+test("an empty catalog yields no model rather than throwing", () => {
+  const sel = cli.pickModel([], ["agent"], null);
+  assert.strictEqual(sel.model, null);
+});
+
+// ---------------------------------------------------------- sampling ----
+
+// Qwen3-class files publish the sampling they were tuned for, and the thinking
+// and non-thinking presets differ (top_p 0.95 vs 0.8). These models think, so
+// inheriting the wrong preset quietly costs output quality.
+test("declared sampling is read from GGUF metadata", () => {
+  const s = gguf.summarize({
+    "general.architecture": "qwen35moe",
+    "general.sampling.temp": 1,
+    "general.sampling.top_p": 0.949999988079071, // float32 round-trip
+    "general.sampling.top_k": 20,
+  });
+  assert.deepStrictEqual(s.sampling, { temperature: 1, top_p: 0.95, top_k: 20 });
+});
+
+test("a file that declares no sampling reports none, rather than a guess", () => {
+  const s = gguf.summarize({ "general.architecture": "llama" });
+  assert.strictEqual(s.sampling, null);
+});
+
+test("nonsense sampling values are ignored", () => {
+  const s = gguf.summarize({
+    "general.architecture": "llama",
+    "general.sampling.temp": "hot",
+    "general.sampling.top_p": NaN,
+    "general.sampling.top_k": 20,
+  });
+  assert.deepStrictEqual(s.sampling, { top_k: 20 });
+});
+
+// ------------------------------------------------------------- batch size --
+
+// Physical batch trades VRAM for prefill speed. Measured on a 35B-A3B at Q5,
+// three runs each with under 1% spread: a 1.4k prompt prefills at 369 tok/s
+// against 265 at the stock 512, while an 8k prompt gives back 6.5%.
+test("batch size defaults, and a configured value wins", () => {
+  assert.strictEqual(cli.ubatchFor({}), cli.DEFAULT_UBATCH);
+  assert.strictEqual(cli.ubatchFor(undefined), cli.DEFAULT_UBATCH);
+  assert.strictEqual(cli.ubatchFor({ ubatch: 512 }), 512);
+  assert.strictEqual(cli.ubatchFor({ ubatch: "1024" }), 1024);
+});
+
+test("a nonsense batch size falls back rather than reaching llama-server", () => {
+  for (const bad of [0, -1, "abc", null, NaN, 12]) {
+    assert.strictEqual(cli.ubatchFor({ ubatch: bad }), cli.DEFAULT_UBATCH,
+      `ubatch ${String(bad)} should not be honoured`);
+  }
+});
+
+test("the fallback batch is llama.cpp's own default", () => {
+  // Context is what we protect; batch is what we give up to protect it.
+  assert.strictEqual(cli.MIN_UBATCH, 512);
+  assert.ok(cli.DEFAULT_UBATCH > cli.MIN_UBATCH);
 });

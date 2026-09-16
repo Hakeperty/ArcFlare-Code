@@ -135,3 +135,23 @@ test("token counts abbreviate the way people write them", () => {
   assert.strictEqual(ui.fmtTokens(4096), "4K");
   assert.strictEqual(ui.fmtTokens(1048576), "1M");
 });
+
+test("hints stay readable without colour", async () => {
+  // With NO_COLOR the label and its hint must not run together into one phrase.
+  const { out } = await withFakeTty([ENTER], (io) => ui.select("Pick", ITEMS, io));
+  if (!ui.useColor) {
+    assert.ok(out.includes("(built in)"),
+      "hint should be bracketed when colour is unavailable");
+    assert.ok(!out.includes("ArcFlare chat built in"),
+      "label and hint must not read as one phrase");
+  } else {
+    assert.ok(out.includes("built in"));
+  }
+});
+
+test("notes are separated without colour too", async () => {
+  const items = [{ label: "Qwen3.6", note: "30.4 GB", value: "a" }];
+  const { out } = await withFakeTty([ENTER], (io) => ui.select("Pick", items, io));
+  if (!ui.useColor) assert.ok(out.includes("- 30.4 GB"));
+  else assert.ok(out.includes("30.4 GB"));
+});

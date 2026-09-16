@@ -32,6 +32,18 @@ const MEMORY_PROFILES = {
 };
 const DEFAULT_PROFILE = "balanced";
 
+// Physical batch size (llama.cpp -ub). See writePresetFor for the measurements.
+// MIN_UBATCH is llama.cpp's own default, and the value we fall back to when a
+// model would otherwise not fit — batch is cheap to give up, context is not.
+const DEFAULT_UBATCH = 2048;
+const MIN_UBATCH = 512;
+const UBATCH_SIZES = [512, 1024, 2048, 4096];
+
+function ubatchFor(cfg) {
+  const n = Number(cfg && cfg.ubatch);
+  return Number.isFinite(n) && n >= 64 ? Math.floor(n) : DEFAULT_UBATCH;
+}
+
 // --------------------------------------------------------------- settings --
 
 function loadConfig() {
@@ -278,10 +290,25 @@ async function repl(port, modelId) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const history = [];
   console.log(`  ${c.dim("chatting with")} ${c.accent(modelId)} ${c.dim("— /bye to exit")}\n`);
+  // stdin can end under us — piped input running out, or Ctrl-D. readline
+  // then never answers the question, and asking again throws
+  // ERR_USE_AFTER_CLOSE. Treat a close as an answer of null and leave quietly.
+  let closed = false;
+  let pending = null;
+  rl.on("close", () => {
+    closed = true;
+    if (pending) { const resolve = pending; pending = null; resolve(null); }
+  });
   const askOne = () =>
-    new Promise((resolve) => rl.question(`${c.accent("❯")} `, resolve));
+    new Promise((resolve) => {
+      if (closed) return resolve(null);
+      pending = resolve;
+      rl.question(`${c.accent("❯")} `, (answer) => { pending = null; resolve(answer); });
+    });
   for (;;) {
-    const line = (await askOne()).trim();
+    const answer = await askOne();
+    if (answer === null) break;
+    const line = answer.trim();
     if (!line) continue;
     if (line === "/bye" || line === "/exit" || line === "/quit") break;
     history.push({ role: "user", content: line });
@@ -349,27 +376,68 @@ async function interactive(argv) {
   if (!ctxPick) return;
   const { ctx, cacheType } = ctxPick;
 
+  // 4. auto mode
+  //
+  // Every harness that runs tools is asked, because every one of them can be
+  // started with its approvals off: opencode's --auto, Codex's bypass flag,
+  // Hermes' --yolo, the agent's own mode. The plain chat is the one entry with
+  // no tools to approve, so it is the one the question would be noise for. The
+  // answer is remembered, because a person who wants auto mode wants it every
+  // time — and left alone when we did not ask, so picking chat for one session
+  // does not quietly turn the agent's auto mode off.
+  let approve = "ask";
+  if (chosen.auto) {
+    const pick = await ui.select("Tool approval", [
+      { label: "Ask first", hint: "confirm each command and tool call", value: "ask" },
+      { label: "Auto mode", hint: "run tools without asking", value: "yolo",
+        note: chosen.auto.note },
+    ], {
+      subtitle: chosen.builtin
+        ? "the agent can edit files, run commands and test what it builds"
+        : `ArcFlare starts ${chosen.label} with ${chosen.auto.label}`,
+      selected: cfg.autoMode ? "yolo" : "ask",
+    });
+    if (!pick) return;
+    approve = pick;
+  }
+
   // Persist the choice as a router preset so the setting survives a reload.
   const label = displayName(model);
-  saveConfig({ ...cfg, lastHarness: hid, lastModel: mid, port: cfg.port || DEFAULT_PORT });
+  saveConfig({
+    ...cfg, lastHarness: hid, lastModel: mid,
+    autoMode: chosen.auto ? approve === "yolo" : cfg.autoMode,
+    port: cfg.port || DEFAULT_PORT,
+  });
 
-  // 4. server, keyed preset, restart
-  const { port, servedId } = await prepareModel(cfg, model, ctx, cacheType);
+  // 5. server, keyed preset, restart
+  const { port, servedId, ctx: loadedCtx } = await prepareModel(cfg, model, ctx, cacheType);
 
-  // 5. wire the harness up
+  // 6. wire the harness up
   const target = { id: servedId, label, file: model.file };
   const res = chosen.configure({ port, model: target, ctx, apiKey: "arcflare", bin: det.bin });
   for (const n of res.notes || []) console.log(`  ${c.dim(n)}`);
   if (!res.ok) die("could not configure " + chosen.label);
 
-  console.log(`  ${c.green("✓")} ${chosen.label} → ${c.accent(servedId)} @ ${ui.fmtTokens(ctx)} ctx\n`);
+  console.log(`  ${c.green("✓")} ${chosen.label} → ${c.accent(servedId)} @ ${ui.fmtTokens(ctx)} ctx` +
+    (chosen.auto ? c.dim(`  ${approve === "yolo" ? "auto mode" : "approval: ask"}`) : "") + "\n");
 
-  // 6. go
+  // 7. go
+  if (chosen.id === "agent") {
+    await require("../lib/agent/run").start({
+      port,
+      model: servedId,
+      nCtx: loadedCtx || ctx,
+      sampling: (models.loadMeta(model) || {}).sampling || null,
+      cwd: process.cwd(),
+      approve,
+    });
+    return;
+  }
   if (chosen.builtin) {
     await repl(port, servedId);
     return;
   }
-  const child = chosen.launch({ bin: det.bin, model: target, port, args: argv.slice(1) });
+  const child = chosen.launch({ bin: det.bin, model: target, port, args: argv.slice(1), approve });
   if (child) {
     child.on("exit", (code) => process.exit(code || 0));
     await new Promise(() => {});
@@ -389,7 +457,7 @@ function presetIdFor(model) {
   return model.id;
 }
 
-function writePresetFor(model, ctx, cacheType) {
+function writePresetFor(model, ctx, cacheType, ubatch = DEFAULT_UBATCH) {
   const opts = {
     model: model.file,
     c: ctx,
@@ -400,6 +468,16 @@ function writePresetFor(model, ctx, cacheType) {
     // One slot. Four parallel slots cost about 7% of generation throughput and
     // buy nothing for a single interactive user.
     "parallel": 1,
+    // Physical batch, measured at the full 262144 context people actually run.
+    // Short prompts gain a lot and long ones lose, and how much they lose is
+    // model-dependent: on a 35B-A3B at Q5, 2048 buys +39% at 1.4k tokens and
+    // costs 10.7% at 8k; on the same architecture at Q6, +47% and -25%. Agent
+    // turns skew short - a cached session re-prefills only what changed - so
+    // the default takes the gain, and `arcflare batch 512` reverses it for
+    // long-prompt work. It also costs VRAM, which is why prepareModel gives
+    // this up before it gives up context.
+    ub: ubatch,
+    b: Math.max(2048, ubatch),
     jinja: true,
   };
   if (model.mmproj) opts.mmproj = model.mmproj;
@@ -424,11 +502,17 @@ async function prepareModel(cfg, model, ctx, cacheType) {
   // Try the requested context, and step down if the device cannot actually
   // take it. Reported free memory is a budget, not a promise — and a model is
   // only truly loadable once it has loaded — so we verify rather than predict.
+  //
+  // A large physical batch also costs VRAM, and it is worth far less than
+  // context: giving it up trades a few percent of prefill, while halving the
+  // window changes what the model can do at all. So the first retry shrinks
+  // the batch and keeps the context, and only then do we start halving.
   let tryCtx = ctx;
+  let tryUb = ubatchFor(cfg);
   let port = cfg.port || DEFAULT_PORT;
   const floor = 8192;
-  for (let attempt = 0; attempt < 6; attempt++) {
-    writePresetFor(model, tryCtx, cacheType);
+  for (let attempt = 0; attempt < 7; attempt++) {
+    writePresetFor(model, tryCtx, cacheType, tryUb);
     ({ port } = await ensureServer(cfg, { restart: true }));
     // Ask the router what it decided to call this file.
     servedId = (await engine.servedIdForFile(port, model.file)) || servedId;
@@ -445,6 +529,11 @@ async function prepareModel(cfg, model, ctx, cacheType) {
       spin.stop(`${c.red("✗")} ${String(r.error || "model failed to load").slice(0, 120)}`);
       console.log(c.dim(engine.tailLog(12)));
       return { port, servedId, ctx: tryCtx, failed: true };
+    }
+    if (tryUb > MIN_UBATCH) {
+      tryUb = MIN_UBATCH;
+      spin.stop(`${c.dim("·")} did not fit — retrying with a smaller batch, same context`);
+      continue;
     }
     tryCtx = Math.max(floor, Math.floor(tryCtx / 2 / 1024) * 1024);
     spin.stop(`${c.dim("·")} did not fit — retrying at ${ui.fmtTokens(tryCtx)}`);
@@ -493,13 +582,16 @@ const HELP = `
   ${c.accent("arcflare pull")} <repo>[:Q]     download a GGUF from Hugging Face
   ${c.accent("arcflare run")} <model>        start the server and chat
   ${c.accent("arcflare agent")} [model]       coding agent: tools, MCP, skills
-  ${c.accent("arcflare use")} <harness> [m]  configure + launch a harness
+  ${c.accent("arcflare mcp")} [--install]     machine server: run, open, build, test
+  ${c.accent("arcflare mcp login")} [server]  sign in to a hosted MCP server
+  ${c.accent("arcflare use")} <harness> [m]  configure + launch (--no-launch, --yolo, --ask)
   ${c.accent("arcflare serve")} [--port N]   start the server only
   ${c.accent("arcflare ps")}                 server status and loaded models
   ${c.accent("arcflare stop")}               stop the server
   ${c.accent("arcflare logs")} [-n N]        tail the server log
   ${c.accent("arcflare backend")} [kind]     list or select a llama.cpp backend
   ${c.accent("arcflare memory")} [profile]    lean | balanced | max
+  ${c.accent("arcflare batch")} [size]       physical batch (prefill speed vs VRAM)
   ${c.accent("arcflare doctor")}             check engine, GPU and harnesses
   ${c.accent("arcflare set-engine")} <path>  remember where llama-server lives
   ${c.accent("arcflare path")}               print the ArcFlare home directory
@@ -508,6 +600,136 @@ const HELP = `
   ${c.dim("Models are found in $ARCFLARE_MODELS, $LLAMA_CACHE, ~/.arcflare/models")}
   ${c.dim("and ~/llamacpp/models. The server speaks the OpenAI API on :11434.")}
 `;
+
+/**
+ * Which model a command line asked for.
+ *
+ * Two things this has to get right, both of which were once wrong:
+ * anything after the prompt flag is prose rather than a model name, and an
+ * explicit name matching nothing is a typo — not licence to load whichever
+ * model happens to sort first.
+ */
+function pickModel(all, argv, lastModel, promptFlag = "-p") {
+  const i = argv.indexOf(promptFlag);
+  const head = i > 0 ? argv.slice(1, i) : argv.slice(1);
+  const wanted = head.find((a) => !a.startsWith("-"));
+  const picked = wanted ? models.resolve(all, wanted) : null;
+  if (wanted && !picked) return { error: `no model matching "${wanted}"` };
+  return { model: picked || models.resolve(all, lastModel) || all[0] || null };
+}
+
+// ------------------------------------------------------------------- mcp ----
+
+/** How another program should spawn our MCP server. */
+function mcpSpawnSpec() {
+  // `arcflare` on PATH is the readable form and survives the repo moving, but
+  // a clone that was never linked has no such command — fall back to this file.
+  const onPath = require("../lib/mcp/apps").onPath("arcflare");
+  return onPath
+    ? { command: "arcflare", args: ["mcp"] }
+    : { command: process.execPath, args: [path.join(__dirname, "arcflare-mcp.js")] };
+}
+
+/** Register the machine server so harnesses pick it up without hand-editing JSON. */
+function installMcp(cfg, argv) {
+  const spec = mcpSpawnSpec();
+  const file = argv.includes("--project")
+    ? path.join(process.cwd(), ".arcflare", "mcp.json")
+    : path.join(HOME, "mcp.json");
+
+  let json = {};
+  let seeded = null;
+  try { json = JSON.parse(fs.readFileSync(file, "utf8")); }
+  catch {
+    // Creating this file makes it the one the agent reads, and the search stops
+    // at the first file that has servers — so a new file holding only ourselves
+    // would silently hide every server the user already had. Carry them over.
+    const existing = require("../lib/agent/run").loadMcpConfig(process.cwd());
+    if (existing.file && existing.file !== file && Object.keys(existing.servers).length) {
+      json = { mcpServers: { ...existing.servers } };
+      seeded = existing.file;
+    }
+  }
+  json.mcpServers = json.mcpServers || {};
+  json.mcpServers.arcflare = spec;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
+
+  console.log(`  ${c.green("✓")} registered in ${c.dim(file)}`);
+  if (seeded) {
+    console.log(`  ${c.dim(`carried over ${Object.keys(json.mcpServers).length - 1} server(s) from ${seeded}`)}`);
+  }
+  console.log(`  ${c.dim("command:")} ${spec.command} ${spec.args.join(" ")}`);
+  console.log("");
+  console.log(`  ${c.dim("for Claude Code:")} claude mcp add arcflare -- ${spec.command} ${spec.args.join(" ")}`);
+  console.log(`  ${c.dim("for anything else, in mcp.json:")}`);
+  console.log(c.dim(`    { "mcpServers": { "arcflare": ${JSON.stringify(spec)} } }`));
+}
+
+/**
+ * `arcflare mcp login [server]` — sign in to a hosted MCP server.
+ *
+ * Everything up to the consent screen is automatic: discovery, dynamic client
+ * registration, PKCE. The consent itself is a person clicking approve, which is
+ * the whole point of it, so the browser opens and this waits.
+ */
+async function mcpAuth(argv) {
+  const oauth = require("../lib/agent/oauth");
+  const { loadMcpConfig, McpServer } = require("../lib/agent/mcp");
+  const { servers, file } = loadMcpConfig(process.cwd());
+  const hosted = Object.entries(servers).filter(([, s]) => s && s.url);
+
+  let name = argv[2];
+  if (!name) {
+    if (!hosted.length) die("no hosted MCP servers in your config (they need a url)");
+    if (hosted.length === 1) name = hosted[0][0];
+    else {
+      const pick = await ui.select("Which server?", hosted.map(([n, s]) => ({
+        label: n, note: s.url, value: n,
+      })));
+      if (!pick) return;
+      name = pick;
+    }
+  }
+  const cfg = servers[name];
+  if (!cfg || !cfg.url) die(`"${name}" is not a hosted server in ${file || "your config"}`);
+
+  if (argv[1] === "logout") {
+    console.log(oauth.forget(name)
+      ? `  ${c.green("✓")} forgot the credentials for ${c.accent(name)}`
+      : `  ${c.dim(`nothing stored for ${name}`)}`);
+    return;
+  }
+
+  console.log(`\n  ${c.bold("Signing in to")} ${c.accent(name)} ${c.dim(cfg.url)}`);
+  const rec = await oauth.login({
+    name,
+    url: cfg.url,
+    onUrl: async (url) => {
+      console.log(`  ${c.dim("opening your browser — approve there, then come back")}\n`);
+      console.log(`  ${c.dim(url)}\n`);
+      try { require("../lib/mcp/apps").openWith(url); }
+      catch { console.log(`  ${c.dim("(could not open a browser; paste the link above)")}`); }
+      process.stdout.write(`  ${c.dim("waiting…")}\n`);
+    },
+  }).catch((e) => die(e.message));
+
+  console.log(`  ${c.green("✓")} signed in ${c.dim(`scope: ${rec.scope}`)}` +
+    (rec.refreshToken ? c.dim("  (refresh token stored)") : ""));
+
+  // A token that cannot list tools is not a working connection, so prove it.
+  const probe = new McpServer(name, cfg);
+  try {
+    await probe.start(30000);
+    console.log(`  ${c.green("✓")} ${probe.tools.length} tools from ` +
+      `${c.accent((probe.serverInfo && probe.serverInfo.name) || name)}`);
+    console.log(`  ${c.dim(probe.tools.slice(0, 8).map((t) => t.name).join(", "))}`);
+  } catch (e) {
+    die(`signed in, but the server still refused us: ${e.message}`);
+  } finally {
+    probe.stop();
+  }
+}
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -560,24 +782,53 @@ async function main() {
     }
 
     case "use": {
-      const h = harness.byId(argv[1]);
-      if (!h) die(`unknown harness "${argv[1]}". Try: ` +
+      // --no-launch wires the config and stops there. Setting a machine up
+      // should not mean four editors opening on top of each other.
+      const noLaunch = argv.includes("--no-launch");
+      // Auto mode is remembered from the menu; --yolo and --ask win for one run.
+      // Both are consumed here rather than passed on: --yolo is also Hermes' own
+      // spelling of it, and every harness gets whichever flag it actually wants
+      // from its auto descriptor.
+      const wantAuto = argv.includes("--yolo") || (cfg.autoMode && !argv.includes("--ask"));
+      const rest = argv.slice(1)
+        .filter((a) => a !== "--no-launch" && a !== "--yolo" && a !== "--ask");
+      const h = harness.byId(rest[0]);
+      if (!h) die(`unknown harness "${rest[0] || ""}". Try: ` +
         harness.list().map((x) => x.id).join(", "));
       const det = h.detect();
       if (!det.installed) die(`${h.label} is not installed`);
       const all = models.discover({ meta: true });
-      const m = models.resolve(all, argv[2] || cfg.lastModel) || all[0];
+      // The model is optional, so anything starting with a dash in its place is
+      // an argument for the harness — `arcflare use codex -s read-only` means
+      // the remembered model and Codex's own flag, not a model called "-s".
+      const want = rest[1] && !rest[1].startsWith("-") ? rest[1] : null;
+      const extra = rest.slice(want ? 2 : 1);
+      const m = models.resolve(all, want || cfg.lastModel) || all[0];
       if (!m) die("no models found");
       const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
-      const { port, servedId: id } = await prepareModel(cfg, m, best.ctx, best.cacheType);
+      const { port, servedId: id, ctx: loadedCtx } =
+        await prepareModel(cfg, m, best.ctx, best.cacheType);
       const r = h.configure({ port, model: { id, label: displayName(m) }, ctx: best.ctx,
         apiKey: "arcflare", bin: det.bin });
       for (const n of r.notes || []) console.log(`  ${c.dim(n)}`);
-      console.log(`  ${c.green("✓")} ${h.label} → ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx`);
+      const approve = h.auto && wantAuto ? "yolo" : "ask";
+      console.log(`  ${c.green("✓")} ${h.label} → ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx` +
+        (h.auto ? c.dim(`  ${approve === "yolo" ? "auto mode" : "approval: ask"}`) : ""));
       saveConfig({ ...cfg, lastHarness: h.id, lastModel: m.id });
+      if (noLaunch) return;
+      // `use agent` means the agent, not the chat REPL that both builtins would
+      // otherwise fall through to.
+      if (h.id === "agent") {
+        await require("../lib/agent/run").start({
+          port, model: id, nCtx: loadedCtx || best.ctx,
+          sampling: (models.loadMeta(m) || {}).sampling || null,
+          cwd: process.cwd(), approve,
+        });
+        return;
+      }
       if (h.builtin) { await repl(port, id); return; }
-      const child = h.launch({ bin: det.bin, model: { id }, port, args: argv.slice(3) });
+      const child = h.launch({ bin: det.bin, model: { id }, port, args: extra, approve });
       if (child) child.on("exit", (code) => process.exit(code || 0));
       return;
     }
@@ -655,6 +906,33 @@ async function main() {
       return;
     }
 
+    case "batch": {
+      const want = argv[1];
+      if (want) {
+        const n = Number(want);
+        if (!Number.isFinite(n) || n < 64 || n > 16384) {
+          die(`batch size must be between 64 and 16384 (got "${want}")`);
+        }
+        saveConfig({ ...cfg, ubatch: Math.floor(n) });
+        console.log(`  ${c.green("✓")} physical batch set to ${c.accent(String(Math.floor(n)))} ` +
+          c.dim("(restart the server to apply)"));
+        return;
+      }
+      const cur = ubatchFor(cfg);
+      for (const n of UBATCH_SIZES) {
+        const mark = n === cur ? c.accent("❯") : " ";
+        const note = n === MIN_UBATCH
+          ? "llama.cpp default · best on long prompts"
+          : n === DEFAULT_UBATCH
+            ? "ArcFlare default · ~39% faster on ~1k prompts, ~6% slower at 8k"
+            : "";
+        console.log(`  ${mark} ${String(n).padEnd(10)} ${c.dim(note)}`);
+      }
+      console.log(`\n  ${c.dim("Larger batches also cost VRAM. If a model will not fit,")}`);
+      console.log(`  ${c.dim("ArcFlare drops the batch before it reduces context.")}`);
+      return;
+    }
+
     case "memory": {
       const want = argv[1];
       if (want) {
@@ -678,24 +956,39 @@ async function main() {
 
     case "agent": {
       const all = models.discover({ meta: true });
-      const wanted = argv.slice(1).find((a) => !a.startsWith("-"));
-      const m = models.resolve(all, wanted || cfg.lastModel) || all[0];
+      const sel = pickModel(all, argv, cfg.lastModel);
+      if (sel.error) die(sel.error);
+      const m = sel.model;
       if (!m) die("no models found");
+      const pIdx = argv.indexOf("-p");
       const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
       const prep = await prepareModel(cfg, m, best.ctx, best.cacheType);
       if (prep.failed) die("could not load the model");
       saveConfig({ ...cfg, lastModel: m.id });
-      const pIdx = argv.indexOf("-p");
       const prompt = pIdx > 0 ? argv.slice(pIdx + 1).join(" ") : null;
+      // Auto mode is remembered from the menu; --yolo and --ask still win.
+      const auto = argv.includes("--yolo") ||
+        (cfg.autoMode && !argv.includes("--ask"));
       await require("../lib/agent/run").start({
         port: prep.port,
         model: prep.servedId,
         nCtx: prep.ctx,
+        sampling: (models.loadMeta(m) || {}).sampling || null,
         cwd: process.cwd(),
         prompt,
-        approve: argv.includes("--yolo") ? "yolo" : "ask",
+        approve: auto ? "yolo" : "ask",
+        machine: !argv.includes("--no-machine"),
       });
+      return;
+    }
+
+    // The machine server: a client spawns `arcflare mcp` and talks JSON-RPC on
+    // stdio, so nothing here may print to stdout.
+    case "mcp": {
+      if (argv.includes("--install")) return installMcp(cfg, argv);
+      if (argv[1] === "login" || argv[1] === "logout") return mcpAuth(argv);
+      require("./arcflare-mcp.js").main(argv.slice(1));
       return;
     }
 
@@ -725,6 +1018,24 @@ async function main() {
       for (const h of harness.list()) {
         console.log(`  ${h.installed ? c.green("✓") : c.dim("·")} ${h.label.padEnd(14)} ` +
           `${c.dim(h.builtin ? "built in" : h.bin || "not installed")}`);
+      }
+      const mcpTools = require("../lib/mcp/tools").createServer({}).list().length;
+      console.log(`  ${c.green("✓")} mcp server    ${c.dim(`${mcpTools} tools · arcflare mcp`)}`);
+
+      // Blender is the one application ArcFlare knows about by name, because
+      // the Blender MCP tools are unusable until a live one answers and the
+      // failure otherwise reads as a broken server.
+      const bl = require("../lib/mcp/blender");
+      const install = bl.find();
+      if (install) {
+        const live = await bl.bridgeStatus({ timeoutMs: 1500 });
+        console.log(`  ${c.green("✓")} blender       ${c.dim(install.path)}`);
+        console.log(`  ${live.reachable ? c.green("✓") : c.dim("·")} blender bridge ` +
+          c.dim(live.reachable
+            ? `answering on port ${live.port}`
+            : `port ${live.port} — not running (headless still works)`));
+      } else {
+        console.log(`  ${c.dim("·")} blender       ${c.dim("not found")}`);
       }
       const st = await engine.status(cfg.port || DEFAULT_PORT);
       console.log(`  ${st.running ? c.green("✓") : c.dim("·")} server        ` +
@@ -769,4 +1080,10 @@ async function main() {
   }
 }
 
-main().catch((e) => die(e && e.stack ? e.stack : String(e)));
+// Guarded so the tests can require this file for its pure helpers without
+// the CLI running itself on import.
+if (require.main === module) {
+  main().catch((e) => die(e && e.stack ? e.stack : String(e)));
+}
+
+module.exports = { pickModel, ubatchFor, DEFAULT_UBATCH, MIN_UBATCH };
