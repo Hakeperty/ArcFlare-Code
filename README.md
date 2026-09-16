@@ -104,6 +104,7 @@ arcflare doctor
 | `arcflare backend [kind]` | List or select a llama.cpp backend (vulkan/rocm/cuda) |
 | `arcflare memory [profile]` | `lean` \| `balanced` \| `max` |
 | `arcflare batch [size]` | Physical batch: prefill speed against VRAM |
+| `arcflare fit [model]` | What fits, and with `--run` what actually runs best |
 | `arcflare doctor` | Check engine, GPU and harnesses |
 | `arcflare set-engine <path>` | Remember where `llama-server` lives |
 
@@ -233,6 +234,122 @@ Because the batch also costs VRAM, it is the first thing given up when a model
 does not fit: ArcFlare shrinks the batch and retries at the *same* context
 before it considers halving the window. A few percent of prefill is worth far
 less than the context it would otherwise buy.
+
+## What runs best
+
+Two questions, and they cost wildly different amounts to answer.
+
+**What fits** is arithmetic over the GGUF header and your free VRAM. Every
+model, instantly, nothing loaded:
+
+```
+> arcflare fit
+
+  What fits  45.4 GB free on device
+
+  + qwen3.6-35b-a3b:ud-q8_k_xl         36.4 GB  20 KiB/tok  256K  full 256K context - 5.0 GB of cache, 2.6 GB left over
+  + qwen3.6-35b-a3b:ud-q6_k_xl         30.4 GB  20 KiB/tok  256K  full 256K context - 5.0 GB of cache, 8.7 GB left over
+  + qwen3.6-35b-a3b:ud-q5_k_xl         25.3 GB  20 KiB/tok  256K  full 256K context - 5.0 GB of cache, 13.7 GB left over
+  + tiel-coder-35b-a3b-mtp:ud-q5_k_xl  25.1 GB  20 KiB/tok  256K  full 256K context - 5.0 GB of cache, 13.9 GB left over
+  + qwen3.8-27b:ud-q5_k_m              18.4 GB  64 KiB/tok  256K  full 256K context - 16.0 GB of cache, 9.6 GB left over
+```
+
+"Left over" is what remains *after* the cache that line just promised, not
+before it. The 27B is the interesting row: the smallest file on the list, and
+the only one whose cache costs more than a third of the device, because it is
+dense - every layer attends, at 64 KiB a token against the MoE's 20.
+
+**What runs best** cannot be computed. `arcflare fit --run` loads each model in
+turn, at the context it would really use, and times it:
+
+```
+> arcflare fit --run
+
+  qwen3.6-35b-a3b:ud-q5_k_xl         23.6 s  610 tok/s  57.5 tok/s  5/5 probes  256K ctx
+  tiel-coder-35b-a3b-mtp:ud-q5_k_xl  24.8 s  509 tok/s  57.4 tok/s  5/5 probes  256K ctx
+  qwen3.6-35b-a3b:ud-q6_k_xl         28.3 s  514 tok/s  53.6 tok/s  4/5 probes  256K ctx
+    missed: code (hit the cap, still thinking)
+  qwen3.6-35b-a3b:ud-q8_k_xl         32.1 s  551 tok/s  46.4 tok/s  5/5 probes  256K ctx
+  qwen3.8-27b:ud-q5_k_m              31.8 s  176 tok/s  19.4 tok/s  5/5 probes  256K ctx
+
+  Verdict
+
+  fastest       qwen3.6-35b-a3b:ud-q5_k_xl  57.5 tok/s generating
+  best prefill  qwen3.6-35b-a3b:ud-q5_k_xl  610 tok/s reading a prompt
+  most context  qwen3.6-35b-a3b:ud-q8_k_xl  256K loaded
+  most capable  qwen3.6-35b-a3b:ud-q5_k_xl  5 of 5 probes
+
+  > use         qwen3.6-35b-a3b:ud-q5_k_xl
+    fastest of the 4 that answered every probe
+```
+
+The headline on this machine: **a smaller model is not a faster model.** The
+dense 27B is the smallest file here and generates at a third the speed of a 35B
+that is twice its size, because the 35B is a MoE running 8 experts of 256. File
+size predicts whether a model *fits*. It predicts nothing about how it runs.
+
+### Which of these numbers to believe
+
+Run the same measurement twice and the three columns behave completely
+differently, so they are worth different amounts:
+
+| | run 1 | run 2 | |
+| --- | --- | --- | --- |
+| generation, Q5 | 57.5 | 57.5 | **reproducible** - trust it |
+| generation, 27B | 21.1 | 19.4 | ~8% |
+| prefill, Q8 | 622 | 551 | ~11% - do not rank quants on this |
+| load, Q8 | 1m 19s | 32.1 s | **meaningless** - the first run read 36 GB off a cold disk |
+
+Generation is the number that holds still, which is lucky, because it is also
+the one you feel. Prefill moves enough between runs that a 10% gap between two
+quants is not a finding. Load time mostly measures your page cache.
+
+### The probes
+
+Five, run after the timings, checking that a model still does the things a
+harness needs of it: obey an exact output format, emit clean JSON, do
+arithmetic it cannot pattern-match, write a function that *actually runs* (in a
+fresh V8 context with no `require`, no `process` and a timeout), and recall one
+planted line from 4k tokens back.
+
+Five probes cannot rank models on how well they write code, and this does not
+pretend to. They catch something narrower: a model that has stopped being
+usable as a tool-caller. That is why the recommendation is **gated** on them
+rather than scored against them - of the models that answered every probe, the
+fastest. A single blended score would look authoritative, encode nothing but
+whichever weights got picked, and cheerfully recommend a model that cannot emit
+JSON on the grounds that it cannot emit JSON quickly.
+
+These models think before they answer, and thinking is charged to the same
+budget as the answer. The first version of this scored three Qwen3.6 quants
+4 of 5, all missing the same probe - not because they cannot write `add(a, b)`
+but because they were still reasoning about it when the tokens ran out. A cap
+that decides the verdict is measuring the cap, so running out of room now buys
+one retry at triple the budget, which moved two of those three to 5 of 5. The
+one that still misses it was still going after 4,608 tokens, and that is a fact
+about the model rather than about the cap.
+
+| flag | |
+| --- | --- |
+| `--run [model]` | load and measure - everything, or one model |
+| `--quick` | a 2k prefill and a shorter sample |
+| `--no-probes` | timings only |
+| `--json` | the same data, machine-readable |
+| `--clear` | forget every measurement |
+
+Results are kept in `~/.arcflare/fit.json` and saved after each model, so a
+twenty-minute run interrupted at model four keeps the three it paid for. They
+also show up in `arcflare ls`, because a measured number beats anything a
+header can tell you:
+
+```
+> arcflare ls
+  qwen3.6-35b-a3b:ud-q8_k_xl         Q8_0 - 36.4 GB - 256K ctx - MoE 8/256    46.4 tok/s
+  qwen3.6-35b-a3b:ud-q5_k_xl         Q5_K_M - 25.3 GB - 256K ctx - MoE 8/256  57.5 tok/s
+```
+
+A measurement of a file that has changed size since is flagged rather than
+trusted - the same name over different weights is a different model.
 
 ## The agent
 
@@ -523,13 +640,21 @@ the client that connected to it.
 npm test
 ```
 
-153 tests covering the places where being wrong is silent and expensive: the KV
+189 tests covering the places where being wrong is silent and expensive: the KV
 cache maths, model id parsing, and the harness config writers - including that
 they preserve unrelated settings, back files up, and refuse to overwrite a
 config they cannot parse. The machine server adds its own: the JSON-RPC
 handshake, process supervision, project detection, the test-output parsers, and
 one end-to-end test that spawns the real server over stdio with ArcFlare's own
 MCP client and has it build, test and smoke-test a throwaway project.
+
+`arcflare fit` is tested without a GPU, by injecting the chat call: what gets
+asked, in what order, with what token budget, and how the answers are judged.
+That covers the parts a benchmark can be confidently wrong about in silence -
+that prefill is measured on a prompt the cache has never seen, that generation
+excludes prefill rather than blaming the model for a long prompt, that probe
+code runs sealed off from the machine grading it, and that the recommendation
+stays gated on the probes instead of trading them against tokens per second.
 
 The Blender group is tested against the failures that look like successes -
 a traceback under a zero exit code, a render whose output file never appeared,
@@ -565,6 +690,7 @@ arcflare use hermes                       # last model, or pick one
 bin/arcflare.js   CLI and the interactive menu
 lib/ui.js         colours, arrow-key select, spinner
 lib/gguf.js       GGUF metadata reader + KV cache maths
+lib/fit.js        what fits, and what measurably runs best
 lib/models.js     model discovery
 lib/engine.js     llama-server supervision
 lib/harness.js    harness detection, config wiring, launch

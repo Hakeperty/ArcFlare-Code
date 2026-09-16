@@ -11,6 +11,7 @@ const http = require("http");
 
 const ui = require("../lib/ui");
 const gguf = require("../lib/gguf");
+const fit = require("../lib/fit");
 const models = require("../lib/models");
 const engine = require("../lib/engine");
 const harness = require("../lib/harness");
@@ -127,8 +128,16 @@ function listModels(all) {
     return;
   }
   const w = Math.max(...all.map((m) => m.id.length));
+  // Anything `arcflare fit --run` has measured is worth more than anything the
+  // header can tell you, so it goes on the same line rather than in its own
+  // command someone has to know to run.
+  const measured = fit.load().rows;
   for (const m of all) {
-    console.log(`  ${c.accent(m.id.padEnd(w))}  ${c.dim(modelLabel(m))}`);
+    const r = measured[m.id];
+    const rate = r && r.gen && typeof r.gen.tokPerSec === "number"
+      ? `  ${c.green(fit.fmtRate(r.gen.tokPerSec))}`
+      : "";
+    console.log(`  ${c.accent(m.id.padEnd(w))}  ${c.dim(modelLabel(m))}${rate}`);
   }
 }
 
@@ -592,6 +601,7 @@ const HELP = `
   ${c.accent("arcflare backend")} [kind]     list or select a llama.cpp backend
   ${c.accent("arcflare memory")} [profile]    lean | balanced | max
   ${c.accent("arcflare batch")} [size]       physical batch (prefill speed vs VRAM)
+  ${c.accent("arcflare fit")} [model]        what fits — ${c.accent("--run")} to load each and time it
   ${c.accent("arcflare doctor")}             check engine, GPU and harnesses
   ${c.accent("arcflare set-engine")} <path>  remember where llama-server lives
   ${c.accent("arcflare path")}               print the ArcFlare home directory
@@ -930,6 +940,103 @@ async function main() {
       }
       console.log(`\n  ${c.dim("Larger batches also cost VRAM. If a model will not fit,")}`);
       console.log(`  ${c.dim("ArcFlare drops the batch before it reduces context.")}`);
+      return;
+    }
+
+    // Which model actually runs best here. Static fit is arithmetic and free;
+    // measuring means loading every model in turn, so it only happens on --run.
+    case "fit":
+    case "bench": {
+      if (argv.includes("--clear")) {
+        console.log(fit.clear()
+          ? `  ${c.green("✓")} forgot every measurement`
+          : `  ${c.dim("nothing measured yet")}`);
+        return;
+      }
+      const all = models.discover({ meta: true });
+      if (!all.length) { listModels(all); return; }
+
+      const wantJson = argv.includes("--json");
+      const quick = argv.includes("--quick");
+      const probes = !argv.includes("--no-probes");
+      const run = argv.includes("--run") || argv.includes("-r");
+      const db = fit.load();
+
+      // A named model measures just that one. `arcflare fit qwen3.8` is a
+      // reasonable thing to type when only one model has changed.
+      const want = argv.slice(1).find((a) => !a.startsWith("-"));
+      const one = want ? models.resolve(all, want) : null;
+      if (want && !one) die(`no model matching "${want}"`);
+      const targets = one ? [one] : all;
+
+      if (!run) {
+        // Report against memory as it is *now*, with our own server included in
+        // whatever is using it — stopping someone's loaded model to print a
+        // table would be a rude way to answer a question about arithmetic.
+        const mem = deviceMemory(cfg);
+        const fits = targets.map((m) => fit.staticFit(m, mem.freeBytes));
+        const rows = fit.rowsFor(db, targets);
+        if (wantJson) {
+          console.log(JSON.stringify({ freeBytes: mem.freeBytes, fits, measured: rows }, null, 2));
+          return;
+        }
+        console.log(ui.banner());
+        const st = await engine.status(cfg.port || DEFAULT_PORT);
+        for (const l of fit.renderStatic(fits, mem.freeBytes,
+          st.running ? "server running — a model is holding some of it" : "")) console.log(l);
+        for (const l of fit.renderMeasured(rows)) console.log(l);
+        for (const l of fit.renderVerdict(rows)) console.log(l);
+        console.log("");
+        return;
+      }
+
+      console.log(ui.banner());
+      console.log(`  ${c.dim(`measuring ${targets.length} model${targets.length > 1 ? "s" : ""} — ` +
+        `each one is loaded for real, so this takes minutes, not seconds`)}\n`);
+
+      for (const m of targets) {
+        // Budget is re-measured per model with the server stopped: the model we
+        // measured a minute ago is still resident until the next restart, and
+        // counting its VRAM as unavailable would hand the next model a tiny
+        // context and call the result a measurement.
+        const budget = await planningBudget(cfg);
+        const { best } = contextChoices(m, budget);
+        const t0 = Date.now();
+        const prep = await prepareModel(cfg, m, best.ctx, best.cacheType);
+        const loadMs = Date.now() - t0;
+
+        let row;
+        if (prep.failed) {
+          row = { id: m.id, error: "did not load" };
+        } else {
+          const spin = ui.spinner(`${displayName(m)} — measuring…`);
+          try {
+            row = await fit.measure({
+              port: prep.port, id: prep.servedId, quick, probes,
+              onStep: (s) => spin.update(`${displayName(m)} — ${s}`),
+            });
+            spin.stop(`  ${c.green("✓")} ${c.accent(m.id)} ${c.dim(
+              `${fit.fmtRate(row.gen && row.gen.tokPerSec)} generate · ` +
+              `${fit.fmtRate(row.prefill && row.prefill.tokPerSec)} prefill` +
+              (row.probes ? ` · ${row.probes.passed}/${row.probes.total} probes` : ""))}`);
+          } catch (e) {
+            row = { id: m.id, error: e.message };
+            spin.stop(`  ${c.red("✗")} ${m.id} ${c.dim(e.message.slice(0, 80))}`);
+          }
+        }
+        Object.assign(row, {
+          id: m.id, size: m.size, ctx: prep.ctx, loadMs, at: Date.now(),
+        });
+        // Saved after every model, not at the end: a twenty-minute run that is
+        // interrupted at model four should keep the three it already paid for.
+        fit.save(fit.record(db, row));
+      }
+
+      const rows = fit.rowsFor(db, all);
+      if (wantJson) { console.log(JSON.stringify({ measured: rows }, null, 2)); return; }
+      for (const l of fit.renderMeasured(rows)) console.log(l);
+      for (const l of fit.renderVerdict(rows)) console.log(l);
+      console.log("");
       return;
     }
 
