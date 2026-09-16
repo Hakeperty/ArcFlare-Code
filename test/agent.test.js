@@ -11,7 +11,7 @@ const path = require("path");
 const tools = require("../lib/agent/tools");
 const ctxmod = require("../lib/agent/context");
 const skills = require("../lib/agent/skills");
-const { McpRegistry } = require("../lib/agent/mcp");
+const { McpRegistry, signature, describeTool, trimSentences } = require("../lib/agent/mcp");
 const { buildSystem } = require("../lib/agent/agent");
 
 function tmpdir(n) { return fs.mkdtempSync(path.join(os.tmpdir(), "af-" + n + "-")); }
@@ -255,4 +255,255 @@ test("the system prompt indexes MCP tools rather than inlining schemas", () => {
   assert.match(sys, /deploy: ship it/);
   // The whole point: a 200-tool server must not blow up the prefix.
   assert.ok(ctxmod.estimate(sys) < 600, `prefix was ${ctxmod.estimate(sys)} tokens`);
+});
+
+// A `tool` message whose `tool_calls` message was dropped answers nothing.
+// llama-server tolerates it (measured), but it spends context the model cannot
+// use - during compaction, which only runs because context is already scarce -
+// and stricter OpenAI-compatible servers reject the request outright.
+function orphans(messages) {
+  const bad = [];
+  for (let j = 0; j < messages.length; j++) {
+    if (messages[j].role !== "tool") continue;
+    let k = j - 1;
+    while (k >= 0 && messages[k].role === "tool") k--;
+    const call = messages[k];
+    const ok = call && call.role === "assistant" && call.tool_calls &&
+      (!messages[j].tool_call_id ||
+        call.tool_calls.some((t) => t.id === messages[j].tool_call_id));
+    if (!ok) bad.push(j);
+  }
+  return bad;
+}
+
+test("dropping a tool call also drops the results answering it", () => {
+  const hugeArgs = JSON.stringify({ path: "x".repeat(6000) });
+  const m = [
+    { role: "system", content: "sys" },
+    { role: "assistant", content: null,
+      tool_calls: [{ id: "c1", function: { name: "read_file", arguments: hugeArgs } }] },
+    { role: "tool", tool_call_id: "c1", content: "short" },
+    { role: "user", content: "q2" },
+    { role: "assistant", content: "a2" },
+    { role: "user", content: "q3" },
+    { role: "assistant", content: "a3" },
+  ];
+  const r = ctxmod.compact(m, 120, { keepRecent: 4 });
+  assert.ok(r.changed);
+  assert.deepStrictEqual(orphans(r.messages), [], "no tool result left without its call");
+});
+
+test("a call answered by several results keeps all of them", () => {
+  const m = [
+    { role: "system", content: "sys" },
+    { role: "user", content: "q".repeat(3000) },
+    { role: "assistant", content: null, tool_calls: [
+      { id: "c1", function: { name: "f", arguments: "{}" } },
+      { id: "c2", function: { name: "g", arguments: "{}" } },
+    ] },
+    { role: "tool", tool_call_id: "c1", content: "r1" },
+    { role: "tool", tool_call_id: "c2", content: "r2" },
+    { role: "user", content: "q2" },
+    { role: "assistant", content: "a2" },
+  ];
+  const r = ctxmod.compact(m, 200, { keepRecent: 4 });
+  assert.deepStrictEqual(orphans(r.messages), []);
+  const kept = r.messages.filter((x) => x.role === "tool").map((x) => x.tool_call_id);
+  assert.deepStrictEqual(kept, ["c1", "c2"], "sibling results are not split up");
+});
+
+test("an already-orphaned tool result is cleaned up", () => {
+  const m = [
+    { role: "system", content: "sys" },
+    { role: "tool", tool_call_id: "gone", content: "y".repeat(4000) },
+    { role: "user", content: "q" },
+    { role: "assistant", content: "a" },
+  ];
+  const r = ctxmod.compact(m, 100, { keepRecent: 2 });
+  assert.deepStrictEqual(orphans(r.messages), []);
+});
+
+test("heavy compaction still never leaves an orphan", () => {
+  for (const budget of [80, 200, 500, 1500, 4000]) {
+    const m = convo(10, 3000);
+    const r = ctxmod.compact(m, budget);
+    assert.deepStrictEqual(orphans(r.messages), [], `orphan at budget ${budget}`);
+    assert.strictEqual(r.messages[0].role, "system", `system lost at budget ${budget}`);
+  }
+});
+
+// ----------------------------------------------------------- tool retrieval --
+//
+// A missed search costs two turns on a model generating at tens of tokens a
+// second, so ranking is part of the token budget rather than a nicety.
+
+test("matching only the common words in a query is not a match at all", () => {
+  const reg = new McpRegistry();
+  reg.servers.set("blender", {
+    tools: [{ name: "screenshot_render", description: "Run a real render and return the image.", inputSchema: {} }],
+  });
+  reg.servers.set("other", {
+    // The defect this replaces: each of these contains "the", the old scorer
+    // gave every one of them a point for it, and with 170 such tools in a real
+    // config they buried the answer. None of them is about rendering.
+    tools: Array.from({ length: 30 }, (_, i) => ({
+      name: `add_text_layer_${i}`,
+      description: "Add a text layer to the composition in the timeline.",
+      inputSchema: {},
+    })),
+  });
+  const hits = reg.search("render the image");
+  assert.strictEqual(hits[0].id, "blender__screenshot_render");
+  assert.ok(!hits.some((t) => t.server === "other"),
+    "tools that only matched stop words should not be in the results at all");
+});
+
+test("a word in the tool name beats the same word in prose", () => {
+  const reg = new McpRegistry();
+  reg.servers.set("s", {
+    tools: [
+      { name: "other", description: "this one mentions render several times: render, render", inputSchema: {} },
+      { name: "render", description: "unrelated prose", inputSchema: {} },
+    ],
+  });
+  assert.strictEqual(reg.search("render")[0].id, "s__render");
+});
+
+test("naming the server narrows the search to it", () => {
+  const reg = new McpRegistry();
+  reg.servers.set("blender", { tools: [{ name: "model_export", description: "export a mesh", inputSchema: {} }] });
+  reg.servers.set("figma", { tools: [{ name: "export", description: "export a frame", inputSchema: {} }] });
+  assert.strictEqual(reg.search("blender export")[0].server, "blender");
+  assert.strictEqual(reg.search("figma export")[0].server, "figma");
+});
+
+test("covering the whole query beats matching one word loudly", () => {
+  const reg = new McpRegistry();
+  reg.servers.set("s", {
+    tools: [
+      { name: "screenshot_viewport", description: "viewport capture", inputSchema: {} },
+      { name: "screenshot_screenshot_screenshot", description: "screenshot screenshot", inputSchema: {} },
+    ],
+  });
+  assert.strictEqual(reg.search("screenshot viewport")[0].id, "s__screenshot_viewport");
+});
+
+test("between two names containing the word, the plain one wins", () => {
+  const reg = new McpRegistry();
+  reg.servers.set("s", {
+    tools: [
+      { name: "screenshot_wireframe_overlay", description: "x", inputSchema: {} },
+      { name: "screenshot", description: "x", inputSchema: {} },
+    ],
+  });
+  assert.strictEqual(reg.search("screenshot")[0].id, "s__screenshot");
+});
+
+test("a query of nothing but common words still searches", () => {
+  // "what is on screen" is all stop words except one; dropping every term
+  // would make the search return nothing at all.
+  const reg = new McpRegistry();
+  reg.servers.set("d", { tools: [{ name: "screen_capture", description: "grab the screen", inputSchema: {} }] });
+  assert.strictEqual(reg.search("what is on the screen")[0].id, "d__screen_capture");
+});
+
+test("ranking is deterministic across identical registries", () => {
+  const build = () => {
+    const r = new McpRegistry();
+    r.servers.set("a", { tools: [{ name: "x_tool", description: "does x", inputSchema: {} }] });
+    r.servers.set("b", { tools: [{ name: "x_tool", description: "does x", inputSchema: {} }] });
+    return r;
+  };
+  assert.deepStrictEqual(
+    build().search("x tool").map((t) => t.id),
+    build().search("x tool").map((t) => t.id));
+});
+
+// ---------------------------------------------------------------- signatures --
+
+test("a schema renders as a signature instead of raw JSON", () => {
+  const s = signature({
+    type: "object",
+    properties: {
+      command: { type: "string" },
+      lines: { type: "integer", default: 80 },
+      shell: { type: "string", enum: ["auto", "bash", "cmd"] },
+    },
+    required: ["command"],
+  });
+  assert.match(s, /command: string/);
+  assert.match(s, /lines\?: integer=80/);
+  assert.match(s, /shell\?: auto\|bash\|cmd/);
+});
+
+test("required arguments come first, where a caller looks", () => {
+  const s = signature({
+    properties: { a: { type: "string" }, b: { type: "string" }, c: { type: "string" } },
+    required: ["c"],
+  });
+  assert.ok(s.indexOf("c:") < s.indexOf("a?"), s);
+});
+
+test("an optional-or-null union reads as one optional type", () => {
+  // This is the shape every Pydantic-generated server emits, and spelling it
+  // out costs about forty characters to say "?".
+  const s = signature({
+    properties: {
+      camera: { anyOf: [{ type: "string" }, { type: "null" }], default: null, title: "Camera" },
+      size: { anyOf: [{ items: { type: "integer" }, type: "array" }, { type: "null" }] },
+    },
+    required: [],
+  });
+  assert.match(s, /camera\?: string/);
+  assert.match(s, /size\?: integer\[\]/);
+  assert.ok(!/anyOf|null|title/.test(s), s);
+});
+
+test("a tool with no arguments says so briefly", () => {
+  assert.strictEqual(signature({ type: "object", properties: {} }), "()");
+  assert.strictEqual(signature(null), "()");
+});
+
+test("rendering a tool costs a fraction of its raw schema", () => {
+  const tool = {
+    id: "blender__screenshot_render",
+    name: "screenshot_render",
+    server: "blender",
+    description: "Run a real render and return the image.",
+    schema: {
+      type: "object",
+      title: "screenshot_renderArguments",
+      properties: {
+        engine: { default: "EEVEE", title: "Engine", type: "string" },
+        samples: { default: 64, title: "Samples", type: "integer" },
+        resolution: { anyOf: [{ items: { type: "integer" }, type: "array" }, { type: "null" }], default: null, title: "Resolution" },
+        camera: { anyOf: [{ type: "string" }, { type: "null" }], default: null, title: "Camera" },
+        filepath: { anyOf: [{ type: "string" }, { type: "null" }], default: null, title: "Filepath" },
+      },
+    },
+  };
+  const rendered = describeTool(tool);
+  const raw = `## ${tool.id}\n${tool.description}\nargs: ${JSON.stringify(tool.schema)}`;
+  assert.ok(rendered.length * 2 < raw.length,
+    `expected at least 2x smaller; got ${rendered.length} vs ${raw.length}`);
+  // Smaller, but it still has to be callable: every argument survives.
+  for (const k of Object.keys(tool.schema.properties)) assert.match(rendered, new RegExp(k));
+});
+
+test("argument documentation survives, because a wrong call costs a round trip", () => {
+  const out = describeTool({
+    id: "s__run", name: "run", server: "s", description: "Run a command.",
+    schema: {
+      properties: { shell: { type: "string", description: "Shell to run through. auto picks bash on Windows." } },
+      required: [],
+    },
+  });
+  assert.match(out, /shell — Shell to run through/);
+});
+
+test("a long description is cut at a boundary, not mid-clause", () => {
+  const long = "First sentence here. Second sentence carries the warning. " + "x".repeat(400);
+  const out = trimSentences(long, 60);
+  assert.ok(out.length <= 60, out);
+  assert.ok(!out.endsWith("—") && !out.endsWith(";"), out);
 });
