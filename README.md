@@ -66,7 +66,7 @@ arcflare doctor
 ```
 
 ```
-  ✓ llama-server  C:\Users\harry\llamacpp\vulkan\llama-server.exe
+  ✓ llama-server  home_directory\llamacpp\vulkan\llama-server.exe
   ✓ backend       vulkan  AMD Radeon(TM) 8060S Graphics (active)
   · backend       rocm    build loads but enumerates no device (driver or runtime)
   ✓ memory        balanced profile
