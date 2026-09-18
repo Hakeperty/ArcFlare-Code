@@ -66,7 +66,7 @@ arcflare doctor
 ```
 
 ```
-  ✓ llama-server  home_directory\llamacpp\vulkan\llama-server.exe
+  ✓ llama-server  ~\llamacpp\vulkan\llama-server.exe
   ✓ backend       vulkan  AMD Radeon(TM) 8060S Graphics (active)
   · backend       rocm    build loads but enumerates no device (driver or runtime)
   ✓ memory        balanced profile
@@ -501,7 +501,7 @@ mocha - and leads with the thing you needed:
 
 ```
 tests FAILED - 1 of 3 failed - node:test - 216ms
-$ node --test   (C:\Users\harry\demo)
+$ node --test   (~\demo)
 failing:
   - this one is broken
 --- output ---
@@ -575,7 +575,7 @@ that. They cover the part that has to be true before it can answer at all.
 ```
 > blender
   blender  5.2.1
-    exe    C:\Program Files\Blender Foundation\Blender 5.2\blender.exe
+    exe    ~\Blender Foundation\Blender 5.2\blender.exe
     bridge port 9886: ECONNREFUSED
            nothing is listening - Blender is closed, or the MCP bridge addon is disabled
 ```
@@ -625,7 +625,7 @@ whatever it exited with.
 ```
 > blender_render  blend: scene.blend, engine: BLENDER_WORKBENCH
   render ok · 9.2s · 1 file(s)
-    C:\...\arcblend-KwyZW3\frame_0001.png  1314 KB
+    ~\...\arcblend-KwyZW3\frame_0001.png  1314 KB
 ```
 
 **Limits.** The refusal list the agent uses applies here too, so `rm -rf /` and
