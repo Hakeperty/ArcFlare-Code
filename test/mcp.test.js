@@ -258,6 +258,36 @@ not ok 2 - subtracts
   assert.deepStrictEqual(s.failing, ["subtracts"]);
 });
 
+test("summarizeTests reads node:test's spec reporter (Node 23+ default)", () => {
+  const s = project.summarizeTests(`
+✔ passes (0.4ms)
+✖ fails (0.5ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ skipped 0
+
+✖ failing tests:
+
+test at test\\a.test.js:3:1
+✖ fails (0.5ms)
+  AssertionError [ERR_ASSERTION]: 4 !== 5
+`);
+  assert.strictEqual(s.framework, "node:test");
+  assert.strictEqual(s.passed, 1);
+  assert.strictEqual(s.failed, 1);
+  assert.strictEqual(s.ok, false);
+  assert.deepStrictEqual(s.failing, ["fails"], "named once, from the failing-tests list");
+});
+
+test("PowerShell JSON with a raw control character in a string still parses", () => {
+  const raw = '[{"title":"song \u0007 artist","pid":1}]';
+  assert.deepStrictEqual(desktop.parseJsonLoose(raw), [{ title: "song \u0007 artist", pid: 1 }]);
+  assert.strictEqual(desktop.parseJsonLoose(""), null);
+  assert.strictEqual(desktop.parseJsonLoose("not json"), "not json");
+});
+
 test("summarizeTests reads jest, pytest, cargo, go and mocha", () => {
   const jest = project.summarizeTests("Tests:       2 failed, 1 skipped, 5 passed, 8 total");
   assert.strictEqual(jest.failed, 2);
