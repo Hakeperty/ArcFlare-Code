@@ -711,8 +711,10 @@ GPU job that outlives its client holds VRAM nobody can see.
 ```
 
 That run is real, on a Radeon 8060S through ROCm, with torch borrowed by
-`--torch-from`. Most of the 43 seconds is loading the model; every command
-starts a fresh process.
+`--torch-from`. Measured with the model kept loaded between requests (the
+resident worker, below), generation itself runs at roughly 8-9 seconds per
+second of audio on this GPU. Loading is a few seconds, not the bulk of it.
+A CUDA card should be much faster; this is an integrated AMD GPU.
 
 | Model | Size | Clones | |
 | --- | --- | --- | --- |
@@ -737,6 +739,14 @@ without the clip's transcript. The worker measures the file it wrote, and a
 "success" that produced no audio is reported as the failure it is.
 
 The machine server exposes it as `generate_speech`.
+
+**Resident workers.** A long-lived program (the desktop app) runs the worker
+as `worker.py --serve` through `lib/gen/resident.js`: one process per
+environment, jobs as JSON lines, the last model kept loaded so the next
+request skips start-up and loading. It holds one model at a time, unloads
+after 10 idle minutes and exits after 30, so idle generators give VRAM back.
+The CLI still runs one-shot. `generate()` and `speak()` take the pool as a
+`runner`.
 
 ## The shop
 

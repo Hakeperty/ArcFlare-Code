@@ -16,44 +16,28 @@ const models = require("../lib/models");
 const engine = require("../lib/engine");
 const harness = require("../lib/harness");
 
+const serve = require("../lib/serve");
+
 const { c } = ui;
 const HOME = models.HOME;
-const CONFIG = path.join(HOME, "config.json");
-const PRESET = path.join(HOME, "models.ini");
 const VERSION = require("../package.json").version;
-const DEFAULT_PORT = 11434; // Ollama's port: existing harness configs just work
+// Model loading lives in lib/serve.js so the desktop app shares it; these
+// names are kept so the rest of this file reads as it did.
+const {
+  CONFIG, PRESET, DEFAULT_PORT, MEMORY_PROFILES, DEFAULT_PROFILE,
+  DEFAULT_UBATCH, MIN_UBATCH, UBATCH_SIZES, ubatchFor, loadConfig, saveConfig,
+  deviceMemory, freeDeviceBytes, planningBudget, servedIdFor, presetIdFor,
+  writePresetFor, warmup,
+} = serve;
 
-// llama-server's stock defaults assume a machine with RAM to spare: an 8192 MiB
-// host prompt cache and up to 4 models resident. On a box whose RAM is mostly
-// carved out for VRAM that is the biggest avoidable cost, so we set it.
-const MEMORY_PROFILES = {
-  lean:     { cacheRamMiB: 512,  modelsMax: 1, sleepIdleSeconds: 300 },
-  balanced: { cacheRamMiB: 2048, modelsMax: 1, sleepIdleSeconds: 900 },
-  max:      { cacheRamMiB: 8192, modelsMax: 4, sleepIdleSeconds: -1 },
-};
-const DEFAULT_PROFILE = "balanced";
 
-// Physical batch size (llama.cpp -ub). See writePresetFor for the measurements.
-// MIN_UBATCH is llama.cpp's own default, and the value we fall back to when a
-// model would otherwise not fit — batch is cheap to give up, context is not.
-const DEFAULT_UBATCH = 2048;
-const MIN_UBATCH = 512;
-const UBATCH_SIZES = [512, 1024, 2048, 4096];
 
-function ubatchFor(cfg) {
-  const n = Number(cfg && cfg.ubatch);
-  return Number.isFinite(n) && n >= 64 ? Math.floor(n) : DEFAULT_UBATCH;
-}
+
 
 // --------------------------------------------------------------- settings --
 
-function loadConfig() {
-  try { return JSON.parse(fs.readFileSync(CONFIG, "utf8")); } catch { return {}; }
-}
-function saveConfig(cfg) {
-  fs.mkdirSync(HOME, { recursive: true });
-  fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + "\n");
-}
+
+
 
 function die(msg, code = 1) {
   process.stderr.write(`  ${c.red("✗")} ${msg}\n`);
@@ -108,47 +92,11 @@ async function wantMachine(cfg, { assume } = {}) {
 
 // ------------------------------------------------------------------ vram ----
 
-/**
- * Device memory we can actually plan against.
- *
- * llama.cpp's own "N MiB free" is a static heap budget and does not fall when
- * another process loads a model, so we cross-check it against what the OS says
- * is in use. Getting this wrong is the difference between "max context" working
- * and a bare ErrorOutOfDeviceMemory at first request.
- */
-function deviceMemory(cfg) {
-  const backend = require("../lib/backend");
-  const surveyed = backend.survey(path.join(HOME, "backends.json"));
-  const active = backend.choose(surveyed, cfg.backend);
-  const mem = backend.deviceMemory(active);
-  if (mem.freeBytes == null) return { freeBytes: os.freemem(), totalBytes: null, usedBytes: null };
-  return mem;
-}
 
-function freeDeviceBytes(cfg) {
-  return deviceMemory(cfg).freeBytes;
-}
 
-/**
- * Free memory to plan a *new* model load against.
- *
- * Our own server may already hold the model we are about to reload, and
- * counting that as unavailable makes ArcFlare pick a tiny context for a model
- * that would comfortably fit. Every caller of this restarts the server anyway,
- * so stop it first and measure the real floor.
- */
-async function planningBudget(cfg) {
-  const st = await engine.status(cfg.port || DEFAULT_PORT);
-  if (st.running) {
-    engine.stop();
-    await new Promise((r) => setTimeout(r, 1200));
-  }
-  const backend = require("../lib/backend");
-  return backend.deviceMemory(
-    backend.choose(backend.survey(path.join(HOME, "backends.json")), cfg.backend),
-    { fresh: true },
-  ).freeBytes || os.freemem();
-}
+
+
+
 
 // ------------------------------------------------------------- model list --
 
@@ -190,117 +138,37 @@ function listModels(all) {
 // --------------------------------------------------------------- context ----
 
 function contextChoices(m, budget) {
-  const meta = m.meta || {};
-  const trained = meta.trainCtx || 32768;
-  const perTokF16 = gguf.kvBytesPerToken(meta, "f16");
-  const perTokQ8 = gguf.kvBytesPerToken(meta, "q8_0");
-
-  // Leave the weights their room; the rest is available for cache.
-  const spare = Math.max(0, budget - m.size - 1.5e9);
-  const items = [];
-
-  const add = (ctx, cacheType, tag) => {
-    const per = cacheType === "q8_0" ? perTokQ8 : perTokF16;
-    const need = per ? per * ctx : null;
-    const fits = need == null ? true : need <= spare;
-    items.push({
-      label: `${ui.fmtTokens(ctx)} tokens`,
-      hint: cacheType === "q8_0" ? "q8_0 cache" : "f16 cache",
-      note: need ? `~${ui.fmtBytes(need)} KV${fits ? "" : "  (too big)"}` : "",
-      value: { ctx, cacheType },
-      disabled: !fits,
-      tag,
-    });
-  };
-
-  // Max context first — it is the headline ask, and it is nearly free: measured
-  // at 262144 vs 4096 the cost is about 5% of throughput and 0.7 GB of VRAM.
-  //
-  // f16 is offered ahead of q8_0 because a quantised KV cache measured *slower*
-  // here (55.4 vs 53.0 tok/s) — dequantising it costs more than the bandwidth
-  // it saves. q8_0 remains the fallback for when f16 will not fit.
-  add(trained, "f16", "max");
-  add(trained, "q8_0", "max-q8");
-  for (const ctx of [131072, 65536, 32768, 16384]) {
-    if (ctx < trained) add(ctx, "f16");
-  }
-  const usable = items.filter((i) => !i.disabled);
-  return { items, best: usable.length ? usable[0].value : { ctx: 16384, cacheType: "f16" } };
+  return serve.contextChoices(m, budget, { tokens: ui.fmtTokens, bytes: ui.fmtBytes });
 }
 
 // ---------------------------------------------------------------- server ----
 
 async function ensureServer(cfg, opts = {}) {
-  const port = opts.port || cfg.port || DEFAULT_PORT;
-  const exe = engine.findServer(cfg.llamaServer, cfg.backend);
-  if (!exe) {
-    die("llama-server not found.\n" +
-      `      Install llama.cpp, then either put it on PATH or run:\n` +
-      `      ${c.accent("arcflare set-engine <path-to-llama-server>")}`);
-  }
-
-  const st = await engine.status(port);
-  if (st.running && !opts.restart) return { port, exe, already: true };
-  if (st.running && opts.restart) { engine.stop(); await new Promise((r) => setTimeout(r, 800)); }
-
-  // Point the router at wherever the models actually are.
-  const cacheRoot = process.env.LLAMA_CACHE || cfg.modelsRoot || models.roots()[0];
-  const env = {};
-  if (cacheRoot) env.LLAMA_CACHE = cacheRoot;
-
-  const extra = [];
-  if (opts.modelsDir) extra.push();
-  const profile = MEMORY_PROFILES[cfg.memoryProfile || DEFAULT_PROFILE] ||
-    MEMORY_PROFILES[DEFAULT_PROFILE];
-  const info = await engine.start({
-    exe,
-    port,
-    preset: fs.existsSync(PRESET) ? PRESET : undefined,
-    modelsDir: opts.modelsDir,
-    memory: profile,
-    extraArgs: opts.extraArgs || [],
-    env,
-  });
-
-  const spin = ui.spinner("starting llama-server…");
-  const ok = await engine.waitReady(port, opts.timeout || 600000, (ms) => {
-    spin.update(`starting llama-server… ${Math.round(ms / 1000)}s`);
-  });
-  if (!ok) {
-    spin.stop(c.red("✗ server did not come up"));
-    console.log(c.dim(engine.tailLog(25)));
+  let spin = null;
+  try {
+    const r = await serve.ensureServer(cfg, {
+      ...opts,
+      onProgress: (p) => {
+        if (p.stage !== "server-starting") return;
+        const text = `starting llama-server… ${Math.round(p.ms / 1000)}s`;
+        if (!spin) spin = ui.spinner(text); else spin.update(text);
+      },
+    });
+    if (spin) spin.stop(`${c.green("✓")} llama-server ready on ${c.accent("127.0.0.1:" + r.port)}`);
+    return r;
+  } catch (e) {
+    if (spin) spin.stop(c.red("✗ server did not come up"));
+    if (e.code === "NO_ENGINE") {
+      die("llama-server not found.\n" +
+        `      Install llama.cpp, then either put it on PATH or run:\n` +
+        `      ${c.accent("arcflare set-engine <path-to-llama-server>")}`);
+    }
+    if (e.log) console.log(c.dim(e.log));
     process.exit(1);
   }
-  spin.stop(`${c.green("✓")} llama-server ready on ${c.accent("127.0.0.1:" + port)}`);
-  return { port, exe, pid: info.pid };
 }
 
-/** Match our model id to whatever id the router actually advertises. */
-async function servedIdFor(port, model) {
-  const served = await engine.listServed(port);
-  if (!served.length) return model.id;
-  const stem = path.basename(model.file).replace(/\.gguf$/i, "").toLowerCase();
-  const base = model.id.split(":")[0];
-  const quant = (model.id.split(":")[1] || "").replace(/^ud-/, "");
 
-  for (const cand of [model.id, stem]) {
-    const hit = served.find((s) => s.toLowerCase() === cand);
-    if (hit) return hit;
-  }
-  // Score: the base name must match, and the quant must match too — otherwise
-  // Q5_K_XL and Q6_K_XL of the same model are indistinguishable.
-  let best = null;
-  let bestScore = 0;
-  for (const s of served) {
-    const t = s.toLowerCase();
-    let score = 0;
-    if (t.includes(base)) score += 2;
-    if (quant && t.includes(quant)) score += 3;
-    if (stem.includes(t.split("/").pop().split(":")[0])) score += 1;
-    if (score > bestScore) { bestScore = score; best = s; }
-  }
-  return bestScore >= 2 ? best : served[0];
-}
 
 // ------------------------------------------------------------------ chat ----
 
@@ -520,133 +388,42 @@ async function interactive(argv) {
   }
 }
 
-/**
- * Write a router preset section for one model.
- *
- * The section name becomes the model id the router advertises, and the `model`
- * key makes the section self-sufficient. Both matter: a section named after
- * something the router does not already know about creates a phantom entry with
- * no --model argument, which sits in "loading" forever instead of failing.
- * Naming the section ourselves also gives stable, Ollama-shaped ids.
- */
-function presetIdFor(model) {
-  return model.id;
-}
 
-function writePresetFor(model, ctx, cacheType, ubatch = DEFAULT_UBATCH) {
-  const opts = {
-    model: model.file,
-    c: ctx,
-    "cache-type-k": cacheType,
-    "cache-type-v": cacheType,
-    "n-gpu-layers": 99,
-    "flash-attn": "on",
-    // One slot. Four parallel slots cost about 7% of generation throughput and
-    // buy nothing for a single interactive user.
-    "parallel": 1,
-    // Physical batch, measured at the full 262144 context people actually run.
-    // Short prompts gain a lot and long ones lose, and how much they lose is
-    // model-dependent: on a 35B-A3B at Q5, 2048 buys +39% at 1.4k tokens and
-    // costs 10.7% at 8k; on the same architecture at Q6, +47% and -25%. Agent
-    // turns skew short - a cached session re-prefills only what changed - so
-    // the default takes the gain, and `arcflare batch 512` reverses it for
-    // long-prompt work. It also costs VRAM, which is why prepareModel gives
-    // this up before it gives up context.
-    ub: ubatch,
-    b: Math.max(2048, ubatch),
-    jinja: true,
-  };
-  if (model.mmproj) opts.mmproj = model.mmproj;
-  if (model.mtp) {
-    opts["model-draft"] = model.mtp;
-    opts["spec-type"] = "draft-mtp";
-  }
-  const per = {};
-  per[presetIdFor(model)] = opts;
-  engine.writePreset(PRESET, { "n-gpu-layers": 99, "flash-attn": "on" }, per);
-  return presetIdFor(model);
-}
+
+
 
 /**
- * Bring the server up, learn the id the router gave this model, write a preset
- * keyed to it, and restart so the preset takes effect. Router startup does not
- * load any weights, so the extra round trip costs about a second.
+ * Load a model, stepping down if it does not fit (see lib/serve.js), with the
+ * CLI's spinners on top.
  */
 async function prepareModel(cfg, model, ctx, cacheType) {
-  let servedId = presetIdFor(model);
-
-  // Try the requested context, and step down if the device cannot actually
-  // take it. Reported free memory is a budget, not a promise — and a model is
-  // only truly loadable once it has loaded — so we verify rather than predict.
-  //
-  // A large physical batch also costs VRAM, and it is worth far less than
-  // context: giving it up trades a few percent of prefill, while halving the
-  // window changes what the model can do at all. So the first retry shrinks
-  // the batch and keeps the context, and only then do we start halving.
-  let tryCtx = ctx;
-  let tryUb = ubatchFor(cfg);
-  let port = cfg.port || DEFAULT_PORT;
-  const floor = 8192;
-  for (let attempt = 0; attempt < 7; attempt++) {
-    writePresetFor(model, tryCtx, cacheType, tryUb);
-    ({ port } = await ensureServer(cfg, { restart: true }));
-    // Ask the router what it decided to call this file.
-    servedId = (await engine.servedIdForFile(port, model.file)) || servedId;
-    const spin = ui.spinner(
-      `loading ${displayName(model)} @ ${ui.fmtTokens(tryCtx)} ctx…`);
-    const r = await warmup(port, servedId);
-    if (r.ok) {
-      spin.stop(`${c.green("✓")} loaded at ${c.accent(ui.fmtTokens(tryCtx))} context` +
-        (tryCtx < ctx ? c.dim(`  (reduced from ${ui.fmtTokens(ctx)} — device could not fit it)`) : ""));
-      return { port, servedId, ctx: tryCtx };
-    }
-    const oom = /out of device memory|outofdevice|failed to load|alloc/i.test(r.error || "");
-    if (!oom || tryCtx <= floor) {
-      spin.stop(`${c.red("✗")} ${String(r.error || "model failed to load").slice(0, 120)}`);
-      console.log(c.dim(engine.tailLog(12)));
-      return { port, servedId, ctx: tryCtx, failed: true };
-    }
-    if (tryUb > MIN_UBATCH) {
-      tryUb = MIN_UBATCH;
-      spin.stop(`${c.dim("·")} did not fit — retrying with a smaller batch, same context`);
-      continue;
-    }
-    tryCtx = Math.max(floor, Math.floor(tryCtx / 2 / 1024) * 1024);
-    spin.stop(`${c.dim("·")} did not fit — retrying at ${ui.fmtTokens(tryCtx)}`);
-  }
-  return { port, servedId, ctx: tryCtx, failed: true };
-}
-
-/** Force the router to actually load a model, so failures surface here. */
-function warmup(port, modelId, timeoutMs = 900000) {
-  return new Promise((resolve) => {
-    const body = JSON.stringify({
-      model: modelId,
-      messages: [{ role: "user", content: "hi" }],
-      max_tokens: 1,
-    });
-    const req = http.request({
-      host: "127.0.0.1", port, path: "/v1/chat/completions", method: "POST",
-      timeout: timeoutMs,
-      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
-    }, (res) => {
-      let out = "";
-      res.on("data", (d) => (out += d));
-      res.on("end", () => {
-        if (res.statusCode < 400) return resolve({ ok: true });
-        let msg = out.slice(0, 300);
-        try { msg = JSON.parse(out).error.message; } catch {}
-        // The router reports "failed to load"; the reason is in the server log.
-        const log = engine.tailLog(60);
-        const m = /(ErrorOutOfDeviceMemory|out of device memory|failed to allocate[^\n]*)/i.exec(log);
-        resolve({ ok: false, error: m ? `${msg} (${m[1]})` : msg });
-      });
-    });
-    req.on("error", (e) => resolve({ ok: false, error: e.message }));
-    req.on("timeout", () => { req.destroy(); resolve({ ok: false, error: "load timed out" }); });
-    req.end(body);
+  let spin = null;
+  const r = await serve.prepareModel(cfg, model, ctx, cacheType, {
+    onProgress: (p) => {
+      if (p.stage === "loading") {
+        spin = ui.spinner(`loading ${displayName(model)} @ ${ui.fmtTokens(p.ctx)} ctx…`);
+      } else if (p.stage === "loaded" && spin) {
+        spin.stop(`${c.green("✓")} loaded at ${c.accent(ui.fmtTokens(p.ctx))} context` +
+          (p.reducedFrom ? c.dim(`  (reduced from ${ui.fmtTokens(p.reducedFrom)} — device could not fit it)`) : ""));
+      } else if (p.stage === "retry" && spin) {
+        spin.stop(p.reason === "batch"
+          ? `${c.dim("·")} did not fit — retrying with a smaller batch, same context`
+          : `${c.dim("·")} did not fit — retrying at ${ui.fmtTokens(p.ctx)}`);
+      } else if (p.stage === "failed" && spin) {
+        spin.stop(`${c.red("✗")} ${String(p.error).slice(0, 120)}`);
+        if (p.log) console.log(c.dim(p.log));
+      }
+    },
+  }).catch((e) => {
+    if (spin) spin.stop(c.red("✗ " + e.message));
+    if (e.code === "NO_ENGINE") die(e.message);
+    if (e.log) console.log(c.dim(e.log));
+    process.exit(1);
   });
+  return r;
 }
+
+
 
 // ------------------------------------------------------------------ cmds -----
 

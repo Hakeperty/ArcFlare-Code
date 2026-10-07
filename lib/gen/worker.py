@@ -21,10 +21,46 @@ _REAL_STDOUT = sys.stdout
 sys.stdout = sys.stderr
 
 
+# In resident mode every event carries the job it belongs to.
+CURRENT_JOB = None
+
+
 def emit(event, **kw):
     kw["event"] = event
+    if CURRENT_JOB is not None:
+        kw["job"] = CURRENT_JOB
     _REAL_STDOUT.write(json.dumps(kw) + "\n")
     _REAL_STDOUT.flush()
+
+
+# ------------------------------------------------------------- model cache --
+#
+# Loading is most of the cost: Qwen3-TTS took ~35 s of a 43 s run just to load.
+# A resident worker (--serve) keeps the last model, so the second request is
+# only synthesis. Exactly one is kept: holding several would quietly fill VRAM
+# that the chat model also needs, so a different model evicts the previous one.
+
+_CACHE = {"key": None, "obj": None}
+
+
+def cached(key, loader):
+    if _CACHE["key"] == key and _CACHE["obj"] is not None:
+        emit("info", cache="hit", model=str(key))
+        return _CACHE["obj"]
+    if _CACHE["obj"] is not None:
+        _CACHE["obj"] = None
+        _CACHE["key"] = None
+        free_vram()
+    obj = loader()
+    _CACHE["key"] = key
+    _CACHE["obj"] = obj
+    return obj
+
+
+def unload():
+    _CACHE["obj"] = None
+    _CACHE["key"] = None
+    free_vram()
 
 
 def stage(name, **kw):
@@ -172,16 +208,21 @@ def gen_hunyuan(spec, device):
         image = image.convert("RGBA")
 
     stage("load-model", repo=spec["hf"], subfolder=spec.get("subfolder"))
-    kwargs = {"subfolder": spec["subfolder"], "use_safetensors": True, "device": device}
-    if family == "hunyuan3d-2.1":
-        pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(spec["hf"], **kwargs)
-    else:
-        try:
-            pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(spec["hf"], variant="fp16", **kwargs)
-        except Exception:  # noqa: BLE001 - not every subfolder ships an fp16 variant
-            pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(spec["hf"], **kwargs)
-    if spec.get("turbo") and hasattr(pipe, "enable_flashvdm"):
-        pipe.enable_flashvdm()
+
+    def load():
+        kwargs = {"subfolder": spec["subfolder"], "use_safetensors": True, "device": device}
+        if family == "hunyuan3d-2.1":
+            p = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(spec["hf"], **kwargs)
+        else:
+            try:
+                p = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(spec["hf"], variant="fp16", **kwargs)
+            except Exception:  # noqa: BLE001 - not every subfolder ships an fp16 variant
+                p = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(spec["hf"], **kwargs)
+        if spec.get("turbo") and hasattr(p, "enable_flashvdm"):
+            p.enable_flashvdm()
+        return p
+
+    pipe = cached(("hunyuan", spec["hf"], spec.get("subfolder"), device), load)
 
     stage("shape", steps=spec["steps"], octree=spec["octree"])
     gen = torch.Generator(device="cpu").manual_seed(int(spec["seed"]))
@@ -199,8 +240,9 @@ def gen_hunyuan(spec, device):
             mesh = FaceReducer()(mesh, max_facenum=int(spec["faces"]))
 
     if spec.get("texture"):
+        # The paint model needs the room: drop the shape model, cached or not.
         del pipe
-        free_vram()
+        unload()
         stage("texture")
         from hy3dgen.texgen import Hunyuan3DPaintPipeline
         paint = Hunyuan3DPaintPipeline.from_pretrained("tencent/Hunyuan3D-2")
@@ -230,9 +272,14 @@ def gen_triposr(spec, device):
     image = Image.fromarray((arr * 255.0).astype(np.uint8))
 
     stage("load-model", repo=spec["hf"])
-    model = TSR.from_pretrained(spec["hf"], config_name="config.yaml", weight_name="model.ckpt")
-    model.renderer.set_chunk_size(8192)
-    model.to(device)
+
+    def load():
+        m = TSR.from_pretrained(spec["hf"], config_name="config.yaml", weight_name="model.ckpt")
+        m.renderer.set_chunk_size(8192)
+        m.to(device)
+        return m
+
+    model = cached(("triposr", spec["hf"], device), load)
 
     stage("shape", resolution=spec["octree"])
     t0 = time.time()
@@ -286,10 +333,13 @@ def tts_qwen3(spec, device):
               "dtype": torch.bfloat16 if gpu else torch.float32}
     # flash-attn is optional and rarely installed (never on Windows); sdpa is
     # torch's own attention and needs nothing extra.
-    try:
-        model = Qwen3TTSModel.from_pretrained(spec["hf"], attn_implementation="sdpa", **kwargs)
-    except TypeError:
-        model = Qwen3TTSModel.from_pretrained(spec["hf"], **kwargs)
+    def load():
+        try:
+            return Qwen3TTSModel.from_pretrained(spec["hf"], attn_implementation="sdpa", **kwargs)
+        except TypeError:
+            return Qwen3TTSModel.from_pretrained(spec["hf"], **kwargs)
+
+    model = cached(("qwen3-tts", spec["hf"], device), load)
 
     lang = spec.get("lang") or "Auto"
     lang = QWEN_LANGS.get(lang.lower(), lang)
@@ -320,10 +370,14 @@ def tts_kokoro(spec, device):
     # English, bf_* British, jf_* Japanese and so on.
     lang = spec.get("lang") or voice[0]
     stage("load-model", repo=spec["hf"])
-    try:
-        pipe = KPipeline(lang_code=lang, device=device)
-    except TypeError:
-        pipe = KPipeline(lang_code=lang)
+
+    def load():
+        try:
+            return KPipeline(lang_code=lang, device=device)
+        except TypeError:
+            return KPipeline(lang_code=lang)
+
+    pipe = cached(("kokoro", lang, device), load)
     stage("synthesize", voice=voice)
     parts = [to_numpy(audio) for _, _, audio in pipe(spec["text"], voice=voice, speed=spec.get("speed") or 1)]
     if not parts:
@@ -339,11 +393,11 @@ def tts_chatterbox(spec, device):
     stage("load-model", repo=spec["hf"])
     if lang != "en":
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-        model = ChatterboxMultilingualTTS.from_pretrained(device=device)
+        model = cached(("chatterbox-mtl", device), lambda: ChatterboxMultilingualTTS.from_pretrained(device=device))
         kw = {"language_id": lang}
     else:
         from chatterbox.tts import ChatterboxTTS
-        model = ChatterboxTTS.from_pretrained(device=device)
+        model = cached(("chatterbox", device), lambda: ChatterboxTTS.from_pretrained(device=device))
         kw = {}
     if spec.get("ref"):
         kw["audio_prompt_path"] = spec["ref"]
@@ -358,7 +412,7 @@ def tts_voxcpm(spec, device):
     from voxcpm import VoxCPM
 
     stage("load-model", repo=spec["hf"])
-    model = VoxCPM.from_pretrained(spec["hf"], load_denoiser=False)
+    model = cached(("voxcpm", spec["hf"]), lambda: VoxCPM.from_pretrained(spec["hf"], load_denoiser=False))
     stage("synthesize")
     wav = model.generate(text=spec["text"], cfg_value=2.0, inference_timesteps=10)
     sf.write(spec["out"], to_numpy(wav), model.tts_model.sample_rate)
@@ -369,7 +423,8 @@ def tts_outetts(spec, device):
     from outetts import Interface, ModelConfig, GenerationConfig, Backend, Models
 
     stage("load-model", repo=spec["hf"])
-    interface = Interface(ModelConfig.auto_config(model=Models.VERSION_1_0_SIZE_0_6B, backend=Backend.HF))
+    interface = cached(("outetts", spec["hf"]),
+                       lambda: Interface(ModelConfig.auto_config(model=Models.VERSION_1_0_SIZE_0_6B, backend=Backend.HF)))
     if spec.get("ref"):
         stage("clone-voice", ref=spec["ref"])
         speaker = interface.create_speaker(spec["ref"])
@@ -392,9 +447,7 @@ TTS = {
 
 # ---------------------------------------------------------------------- main --
 
-def main():
-    with open(sys.argv[1], encoding="utf-8") as f:
-        spec = json.load(f)
+def run(spec):
     if spec.get("action") == "check":
         return do_check(spec)
     device = pick_device(spec.get("device"))
@@ -411,13 +464,57 @@ def main():
     raise ValueError(f"unknown family {family!r}")
 
 
+def error_message(e):
+    msg = f"{type(e).__name__}: {e}"
+    if "out of memory" in str(e).lower():
+        msg += " -- try a smaller model, a lower --octree, or close what else is on the GPU"
+    return msg
+
+
+def serve():
+    """Resident mode: one JSON job per stdin line, the model kept between jobs.
+
+    {"id": "j1", "spec": {...}} runs a job; {"id": "x", "cmd": "unload"} frees
+    the cached model; end of stdin exits. Every event carries its job id, and a
+    failed job reports an error and leaves the worker running.
+    """
+    global CURRENT_JOB
+    emit("ready", python=sys.executable)
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            emit("error", message="bad job line")
+            continue
+        CURRENT_JOB = msg.get("id")
+        try:
+            if msg.get("cmd") == "unload":
+                unload()
+                emit("done", unloaded=True)
+            else:
+                run(msg["spec"])
+        except Exception as e:  # noqa: BLE001 - a job failing must not end the worker
+            traceback.print_exc()
+            emit("error", message=error_message(e))
+        finally:
+            CURRENT_JOB = None
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--serve":
+        return serve()
+    with open(sys.argv[1], encoding="utf-8") as f:
+        spec = json.load(f)
+    return run(spec)
+
+
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # noqa: BLE001 - report every failure on the protocol
         traceback.print_exc()
-        msg = f"{type(e).__name__}: {e}"
-        if "out of memory" in str(e).lower():
-            msg += " -- try a smaller model, a lower --octree, or close what else is on the GPU"
-        emit("error", message=msg)
+        emit("error", message=error_message(e))
         sys.exit(1)
