@@ -116,6 +116,16 @@ test("a failed send resolves with the GitHub issues fallback", async () => {
   assert.strictEqual(bad.error, "too many");
 });
 
+test("a site that can't store reports hands back a pre-filled issue", async () => {
+  const issue = "https://github.com/Hakeperty/ArcFlare-Code/issues/new?title=x";
+  const r = await report.send({}, { fetchImpl: async () => ({ ok: true, status: 202, json: async () => ({ ok: false, fallback: "github", issue }) }) });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.issue, issue);
+  const plain = { green: (s) => s, red: (s) => s, accent: (s) => s };
+  assert.match(report.outcome(r, plain), /almost there[\s\S]*issues\/new/);
+  assert.match(report.outcome({ ok: true }, plain), /sent/);
+});
+
 // ---------------------------------------------------------------- harness ----
 
 test("harness updates use each tool's own updater, where it was installed", () => {

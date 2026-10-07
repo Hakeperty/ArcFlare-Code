@@ -997,10 +997,8 @@ async function reportCommand(argv) {
   if (v.error) die(`${v.error}${interactive ? "" : " — usage: arcflare report --title \"…\" --body \"…\" [--kind bug] [--where cli]"}`);
   const spin = ui.spinner("sending");
   const r = await rep.send(v.payload);
-  if (r.ok) return spin.stop(`${c.green("✓")} sent — thank you`);
-  spin.stop(`${c.red("✗")} couldn't send (${r.error})`);
-  console.log(`  ${c.dim("open an issue instead:")} ${r.fallback}`);
-  process.exitCode = 1;
+  spin.stop(rep.outcome(r, c));
+  if (!r.ok && !r.issue) process.exitCode = 1;
 }
 
 /** `/report <what happened>` in a session: one line, sent as a CLI bug. */
@@ -1012,7 +1010,7 @@ async function slashReport(line) {
   const v = rep.validate({ kind: "bug", where: "cli", title, body: text, version: VERSION });
   if (v.error) return console.log(`  ${c.red("✗")} ${v.error}`);
   const r = await rep.send(v.payload);
-  console.log(r.ok ? `  ${c.green("✓")} report sent — thank you` : `  ${c.red("✗")} couldn't send (${r.error}) · ${r.fallback}`);
+  console.log(`  ${rep.outcome(r, c)}`);
 }
 
 // ---------------------------------------------------------------- harness ----
