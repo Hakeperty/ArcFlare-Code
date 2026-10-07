@@ -111,7 +111,7 @@ arcflare doctor
 | `arcflare gen tts "text"` | Text → `.wav` speech (Qwen3-TTS, Kokoro, Chatterbox, VoxCPM2, OuteTTS) |
 | `arcflare shop [search]` | Browse the model hub: what fits your GPU, and download it (`--fits`, `--cat`, `--json`, `show <model>`) |
 | `arcflare uninstall` | Remove ArcFlare and its files; lists everything first (`--dry-run`, `--models`, `--keep-cli`) |
-| `arcflare rc` | Remote control: your key, your relay (`/rc` inside a session) |
+| `arcflare rc` | Remote control: QR code, key and relay (`/rc` inside a session; `arcflare rc qr` for just the code) |
 | `arcflare update` | Show what's new and install it (`--check`, `--yes`, `--pack`, `--from <tgz\|dir>` offline) |
 | `arcflare harness update [id]` | Update Codex, OpenCode, Hermes and Claude Code with their own updaters (default: all installed) |
 | `arcflare report` | Send a bug, complaint or idea to [arcflare.net/report](https://arcflare.net/report) (`--title`, `--body`, `--kind`); `/report` in a session |
@@ -788,13 +788,27 @@ Type `/rc` in `arcflare agent` or `arcflare run`:
 
 ```
   Remote control on · relay connected
+
+  ██████████████████████████████████
+  ██ ▄▄▄▄▄ █▄▀█▄ ▄▄██▀ ▄▀ ▀█ ▄▄▄▄▄ ██     a QR code of the link
+  ██ █   █ █▀ ▄ █▀█▀▀   ▄▄█ █   █ ██
+  …
+  scan with your phone camera — or open the link below
+
   key   afrc_…
-  open  https://your-site/remote#k=afrc_…
+  open  https://arcflare.net/remote#k=afrc_…
 ```
 
-Open the link on any device, or paste the key into `/remote` on the site. You
-see the session as it happens, and what you type goes to the model on your
-machine.
+Scan the code with your phone's camera, open the link on any device, or paste
+the key into `/remote` on the site. You see the session as it happens, and what
+you type goes to the model on your machine, from any network: the default relay
+is arcflare.net, so the phone and the computer never need to share a Wi-Fi.
+
+The QR code is drawn with the encoder in `lib/qr.js` (no dependencies). With
+colour it is painted black on white so it scans on any terminal theme; with
+`NO_COLOR` the light modules are drawn instead, which suits a dark terminal.
+`/rc qr` or `arcflare rc qr` shows just the code, and `--no-qr` leaves it out.
+The desktop app shows the same code under **Phone** in Chat.
 
 - **Outbound only.** The session long-polls the relay (the website's
   `/api/rc/*` routes). Nothing listens on a port, so NAT and firewalls don't
@@ -868,13 +882,15 @@ want real isolation.
 npm test
 ```
 
-253 tests covering the places where being wrong is silent and expensive: the KV
+264 tests covering the places where being wrong is silent and expensive: the KV
 cache maths, model id parsing, and the harness config writers - including that
 they preserve unrelated settings, back files up, and refuse to overwrite a
 config they cannot parse. The machine server adds its own: the JSON-RPC
 handshake, process supervision, project detection, the test-output parsers, and
 one end-to-end test that spawns the real server over stdio with ArcFlare's own
-MCP client and has it build, test and smoke-test a throwaway project.
+MCP client and has it build, test and smoke-test a throwaway project. The QR
+encoder is checked against the spec's worked examples and read back by an
+independent decoder for every version and mask it produces.
 
 `arcflare fit` is tested without a GPU, by injecting the chat call: what gets
 asked, in what order, with what token budget, and how the answers are judged.

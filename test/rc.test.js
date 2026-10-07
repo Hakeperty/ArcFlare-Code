@@ -214,3 +214,23 @@ test("agent events become small browser events", () => {
   assert.strictEqual(rc.toRemote({ type: "tool", name: "read_file", args: { path: "a.js" } }).detail, "a.js");
   assert.strictEqual(rc.toRemote({ type: "done" }), null);
 });
+
+test("/rc qr prints a scannable block for the link, without opening a session", async () => {
+  const lines = [];
+  const got = await rc.command("/rc qr", null, { cfg: {}, log: (s) => lines.push(s) });
+  assert.strictEqual(got, null, "no session was started");
+  const block = lines.find((l) => l.includes("█"));
+  assert.ok(block, "a QR block was printed");
+  for (const row of block.replace(/\x1b\[[0-9;]*m/g, "").split("\n")) assert.ok([...row].length <= 47, row);
+});
+
+test("qrBlock encodes exactly the /rc link", () => {
+  const qr = require("../lib/qr");
+  const link = rc.linkFor("https://arcflare.net", rc.getKey());
+  assert.match(link, /^https:\/\/arcflare\.net\/remote#k=afrc_/);
+  const plain = rc.qrBlock(link, { indent: "" }).replace(/\x1b\[[0-9;]*m/g, "");
+  const m = qr.encode(link);
+  // Same rendering either way the colour setting goes, so compare against it.
+  const expect = [qr.toTerminal(m, { color: false, invert: true }), qr.toTerminal(m, { color: true }).replace(/\x1b\[[0-9;]*m/g, "")];
+  assert.ok(expect.includes(plain));
+});

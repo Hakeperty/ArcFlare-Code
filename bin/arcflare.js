@@ -450,7 +450,8 @@ const HELP = `
   ${c.accent("arcflare harness update")} [id]  update Codex, OpenCode, Hermes, Claude Code (default: all)
   ${c.accent("arcflare report")}              send a bug, complaint or idea to arcflare.net
   ${c.accent("arcflare mcp logout")} <s|--all> delete stored sign-in tokens
-  ${c.accent("arcflare rc")}                  remote control: your key and relay (/rc in a session)
+  ${c.accent("arcflare rc")}                  remote control: QR code, key and relay (/rc in a session)
+  ${c.accent("arcflare rc qr")}               just the QR code, to scan with your phone
   ${c.accent("arcflare rc relay")} <url>      the site that relays sessions (default arcflare.net)
   ${c.accent("arcflare use")} <harness> [m]  configure + launch (--no-launch, --yolo, --ask)
   ${c.accent("arcflare serve")} [--port N]   start the server only
@@ -1315,13 +1316,22 @@ function rcCommand(cfg, argv) {
   }
   const relay = rc.relayUrl(cfg);
   const key = rc.getKey();
+  if (sub === "qr") {
+    console.log("\n" + rc.qrBlock(rc.linkFor(relay, key)));
+    console.log(`  ${c.dim("scan with your phone camera, then turn a session on with /rc")}\n`);
+    return;
+  }
   console.log(`\n  ${c.bold("Remote control")}\n`);
+  if (!argv.includes("--no-qr")) {
+    console.log(rc.qrBlock(rc.linkFor(relay, key)));
+    console.log(`  ${c.dim("scan with your phone camera — the page connects once a session is on with /rc")}\n`);
+  }
   console.log(`  ${c.dim("key")}    ${c.accent(key)}`);
   console.log(`  ${c.dim("relay")}  ${relay}`);
   console.log(`  ${c.dim("link")}   ${rc.linkFor(relay, key)}\n`);
   console.log(`  ${c.dim("Type")} /rc ${c.dim("inside")} arcflare agent ${c.dim("or")} arcflare run ${c.dim("to connect that session,")}`);
   console.log(`  ${c.dim("or start one connected:")} arcflare agent --rc\n`);
-  console.log(`  ${c.dim("arcflare rc relay <url> · arcflare rc rotate")}\n`);
+  console.log(`  ${c.dim("arcflare rc qr · arcflare rc relay <url> · arcflare rc rotate · --no-qr")}\n`);
 }
 
 async function main() {
