@@ -112,7 +112,10 @@ arcflare doctor
 | `arcflare shop [search]` | Browse the model hub: what fits your GPU, and download it (`--fits`, `--cat`, `--json`, `show <model>`) |
 | `arcflare uninstall` | Remove ArcFlare and its files; lists everything first (`--dry-run`, `--models`, `--keep-cli`) |
 | `arcflare rc` | Remote control: your key, your relay (`/rc` inside a session) |
-| `arcflare update` | Install the latest (`--check`, `--pack`, `--from <tgz\|dir>` offline) |
+| `arcflare update` | Show what's new and install it (`--check`, `--yes`, `--pack`, `--from <tgz\|dir>` offline) |
+| `arcflare harness update [id]` | Update Codex, OpenCode, Hermes and Claude Code with their own updaters (default: all installed) |
+| `arcflare report` | Send a bug, complaint or idea to [arcflare.net/report](https://arcflare.net/report) (`--title`, `--body`, `--kind`); `/report` in a session |
+| `arcflare mcp logout <server\|--all>` | Delete stored OAuth tokens for hosted MCP servers |
 | `arcflare doctor` | Check engine, GPU and harnesses |
 | `arcflare set-engine <path>` | Remember where `llama-server` lives |
 
@@ -810,8 +813,8 @@ machine.
 
 The key persists, so a paired phone reconnects to every later session.
 `arcflare rc rotate` cuts every device off. `arcflare rc relay <url>` points at
-your own deployment (default `http://localhost:3000`). The relay keeps state in
-memory, so it needs one long-lived Node process, not serverless functions.
+your own deployment (default `https://arcflare.net`). A self-hosted relay keeps
+state in memory under `next start`, or in Redis (Upstash / Vercel KV) on serverless.
 
 ## Updates
 
@@ -822,10 +825,18 @@ with a four-second timeout, and the next start prints one line:
   ↑ Update available: 1.1.0 → 1.2.0 · /update or arcflare update
 ```
 
-`/update` (in a session) or `arcflare update` installs it: `git pull --ff-only`
-for a clone, `npm install -g` for an npm install. A git clone also compares
-commits, so work pushed without a version bump still shows up, and a clone that
-is *ahead* of main is never told to update backwards.
+`arcflare update` shows what it is about to install and asks first. A clone
+fetches the official repository by URL (not whatever `origin` points at), lists
+the incoming commits and fast-forwards only; an npm install is pinned to the
+exact commit it found (`github:Hakeperty/ArcFlare-Code#<sha>`), never a moving
+branch. `--yes` skips the question. In a session, `/update` shows the commits
+and `/update --yes` installs them. The background check only ever *checks*.
+
+Updating from a fork is possible but never silent: `--source owner/repo` or
+`ARCFLARE_UPDATE_SOURCE`, and every update that uses it says so.
+
+A git clone also compares commits, so work pushed without a version bump still
+shows up, and a clone that is *ahead* of main is never told to update backwards.
 
 **Offline is a normal state.** The check fails silently and nothing waits on it.
 Because ArcFlare has no dependencies, one tarball is the whole program:
@@ -840,13 +851,24 @@ before installing, because `npm install -g <folder>` links rather than copies,
 and the link breaks when the stick comes out. `arcflare update --off` or
 `ARCFLARE_NO_UPDATE_CHECK=1` turns the checks off.
 
+## Security
+
+ArcFlare runs models that run commands on your machine, with your privileges.
+That is the point of it, and it is not a sandbox. [SECURITY.md](SECURITY.md)
+has the threat model: what is gated and how (tool approval, the MCP trust
+gate, pinned updates), what isn't, and how to report a vulnerability.
+
+Short version: approve tools yourself on code you don't trust, read a repo's
+`.mcp.json` before `arcflare mcp trust`, and use a container or VM when you
+want real isolation.
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-242 tests covering the places where being wrong is silent and expensive: the KV
+253 tests covering the places where being wrong is silent and expensive: the KV
 cache maths, model id parsing, and the harness config writers - including that
 they preserve unrelated settings, back files up, and refuse to overwrite a
 config they cannot parse. The machine server adds its own: the JSON-RPC
@@ -888,7 +910,15 @@ When it does need to write config, it backs the file up first
 ```bash
 arcflare use opencode qwen3.6-35b-a3b     # configure and launch
 arcflare use hermes                       # last model, or pick one
+arcflare harness update                   # update every installed harness
+arcflare harness update codex             # just one
+arcflare harness update --dry-run         # show what would run
 ```
+
+`harness update` uses each tool's own updater and prints the command before it
+runs: `npm install -g @openai/codex@latest` (or `brew upgrade` for a Homebrew
+install), `opencode upgrade` (or npm, into the folder it was installed in, so
+OpenCode bundled with Hermes is updated there), `hermes update`, `claude update`.
 
 ## Layout
 
@@ -906,6 +936,8 @@ lib/mcp/          the machine server: transport, processes, projects, probes,
 lib/gen/          3D generation: model registry, setup, the Python worker
 lib/rc.js         remote control: key, relay session, the two-source prompt
 lib/update.js     update checks and installs, online and offline
+lib/report.js     arcflare report: validate and send to arcflare.net
+lib/harness-update.js  arcflare harness update: plan and run each updater
 bin/arcflare-mcp.js  stdio entry point for the machine server
 ```
 

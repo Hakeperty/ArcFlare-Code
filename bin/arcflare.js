@@ -234,7 +234,8 @@ async function repl(port, modelId, opts = {}) {
         continue;
       }
       if (line === "/update" || line.startsWith("/update ")) { await slashUpdate(line); continue; }
-      if (line === "/help") { console.log(c.dim("  /rc remote control · /update · /bye")); continue; }
+      if (line === "/report" || line.startsWith("/report ")) { await slashReport(line); continue; }
+      if (line === "/help") { console.log(c.dim("  /rc remote control · /update · /report · /bye")); continue; }
     } else {
       console.log(`\n  ${c.accent("⇄")} ${c.dim("remote:")} ${line}`);
     }
@@ -445,9 +446,12 @@ const HELP = `
   ${c.accent("arcflare gen setup")} [model]   install a generator (--torch cuda|cpu, --texture)
   ${c.accent("arcflare shop")} [search]       browse the model hub: what fits, what to get
   ${c.accent("arcflare uninstall")}          wipe ArcFlare clean (--dry-run to look, --models too)
-  ${c.accent("arcflare update")}              install the latest (--check, --from <tgz|dir> offline, --pack)
+  ${c.accent("arcflare update")}              install the latest (--check, --yes, --from <tgz|dir> offline, --pack)
+  ${c.accent("arcflare harness update")} [id]  update Codex, OpenCode, Hermes, Claude Code (default: all)
+  ${c.accent("arcflare report")}              send a bug, complaint or idea to arcflare.net
+  ${c.accent("arcflare mcp logout")} <s|--all> delete stored sign-in tokens
   ${c.accent("arcflare rc")}                  remote control: your key and relay (/rc in a session)
-  ${c.accent("arcflare rc relay")} <url>      the site that relays sessions (default localhost:3000)
+  ${c.accent("arcflare rc relay")} <url>      the site that relays sessions (default arcflare.net)
   ${c.accent("arcflare use")} <harness> [m]  configure + launch (--no-launch, --yolo, --ask)
   ${c.accent("arcflare serve")} [--port N]   start the server only
   ${c.accent("arcflare ps")}                 server status and loaded models
@@ -557,7 +561,7 @@ async function installMcp(cfg, argv) {
  * says otherwise, and what gets recorded is the exact content approved — so the
  * question comes back if the repo changes it.
  */
-function mcpTrust(argv) {
+async function mcpTrust(argv) {
   const trust = require("../lib/agent/trust");
   const { loadMcpConfig } = require("../lib/agent/mcp");
   const action = argv[1];
@@ -586,13 +590,16 @@ function mcpTrust(argv) {
   // Print what is being approved. Approving a file you have not read is the
   // failure this whole mechanism exists to prevent, so the commands go on
   // screen rather than just the file name.
-  console.log(`\n  ${c.bold(loaded.file)} would start:\n`);
-  for (const [name, s] of Object.entries(loaded.servers)) {
-    const what = s.url ? s.url : [s.command, ...(s.args || [])].join(" ");
-    console.log(`  ${c.accent(name)}\n    ${c.dim(what)}`);
-    if (s.env && Object.keys(s.env).length) {
-      console.log(`    ${c.dim("env: " + Object.keys(s.env).join(", "))}`);
-    }
+  console.log(`\n  ${c.bold(loaded.file)} would allow:\n`);
+  for (const d of trust.describe(loaded.servers)) {
+    console.log(`  ${c.accent(d.name)} ${c.dim(`(${d.kind})`)}`);
+    // Secrets leaving the machine are the line to notice, so they are not dim.
+    for (const l of d.lines) console.log(`    ${/^(sends|hands it)/.test(l) ? c.accent(l) : c.dim(l)}`);
+  }
+  if (!argv.includes("--yes") && !argv.includes("-y")) {
+    if (!process.stdin.isTTY) die("not a terminal — rerun with --yes once you have read the above");
+    const a = await ui.ask("Trust this config? [y/N]", "n");
+    if (!/^y(es)?$/i.test(a)) return console.log(`  ${c.dim("not trusted — nothing will start")}`);
   }
   const rec = trust.trust(loaded.file, loaded.servers);
   console.log(`\n  ${c.green("✓")} trusted ${c.dim(rec.fingerprint)}`);
@@ -613,6 +620,19 @@ async function mcpAuth(argv) {
   const hosted = Object.entries(servers).filter(([, s]) => s && s.url);
 
   let name = argv[2];
+  // Logging out never needs the server to still be configured: a token for a
+  // server you removed is exactly the one you want gone.
+  if (argv[1] === "logout" && (name === "--all" || (name && !servers[name]))) {
+    if (name === "--all") {
+      const gone = oauth.forgetAll();
+      return console.log(gone.length
+        ? `  ${c.green("✓")} forgot ${gone.length} sign-in(s): ${gone.join(", ")}`
+        : `  ${c.dim("no stored sign-ins")}`);
+    }
+    return console.log(oauth.forget(name)
+      ? `  ${c.green("✓")} forgot the credentials for ${c.accent(name)}`
+      : `  ${c.dim(`nothing stored for ${name}`)}`);
+  }
   if (!name) {
     if (!hosted.length) die("no hosted MCP servers in your config (they need a url)");
     if (hosted.length === 1) name = hosted[0][0];
@@ -879,17 +899,9 @@ function updateBanner(cfg) {
   if (n) console.log(`  ${c.accent("↑")} ${n.text} ${c.dim("· /update or arcflare update")}\n`);
 }
 
-/** `/update` inside a session. Installs, then asks for a restart. */
+/** `/update` inside a session: shows what is new; `/update --yes` installs it. */
 async function slashUpdate(line) {
-  const upd = require("../lib/update");
-  const from = line.trim().split(/\s+/).slice(1).join(" ") || undefined;
-  const r = await upd.apply({ from });
-  if (!r.ok) {
-    console.log(`  ${c.red("✗")} ${r.message}`);
-    if (r.offlineHint) console.log(`  ${c.dim("offline? /update <folder-or-.tgz> installs from a copy — make one elsewhere with")} arcflare update --pack`);
-    return;
-  }
-  console.log(`  ${c.green("✓")} ${r.message} ${c.dim("· restart arcflare to use it — this session keeps running the old code")}`);
+  await require("../lib/update").slash(line, c);
 }
 
 async function updateCommand(cfg, argv) {
@@ -928,8 +940,22 @@ async function updateCommand(cfg, argv) {
   }
 
   const from = flag(argv, "--from");
+  const source = flag(argv, "--source");
+  const yes = argv.includes("--yes") || argv.includes("-y");
   console.log(`\n  ${c.bold("Updating ArcFlare")} ${c.dim(`${VERSION} · ${upd.installKind()} install`)}`);
-  const r = await upd.apply({ from });
+  const r = await upd.apply({
+    from, source, yes,
+    // Show exactly what is about to run with your privileges, then ask.
+    confirm: async (preview) => {
+      for (const l of upd.describePreview(preview)) console.log(l);
+      if (!process.stdin.isTTY) {
+        console.log(`  ${c.dim("not a terminal — rerun with --yes to install")}`);
+        return false;
+      }
+      return /^y(es)?$/i.test(await ui.ask("Install this update? [y/N]", "n"));
+    },
+  });
+  if (r.cancelled) return console.log(`  ${c.dim(r.message)}`);
   if (!r.ok) {
     console.log(`  ${c.red("✗")} ${r.message}`);
     if (r.offlineHint) {
@@ -941,6 +967,80 @@ async function updateCommand(cfg, argv) {
     return;
   }
   console.log(`  ${c.green("✓")} ${r.message}\n`);
+}
+
+// ----------------------------------------------------------------- report ----
+
+/**
+ * `arcflare report` — send a bug, complaint or idea to arcflare.net/report.
+ * Flags for scripts, prompts for people. Version and OS are filled in.
+ */
+async function reportCommand(argv) {
+  const rep = require("../lib/report");
+  const interactive = process.stdin.isTTY && !flag(argv, "--title");
+  let kind = flag(argv, "--kind");
+  let where = flag(argv, "--where");
+  let title = flag(argv, "--title");
+  let body = flag(argv, "--body");
+  const contact = flag(argv, "--contact");
+  if (interactive) {
+    console.log(`\n  ${c.bold("Report a problem")} ${c.dim("· goes to the public list at arcflare.net — no keys or personal details")}\n`);
+    kind = kind || await ui.select("What is it?", rep.KINDS.map((k) => ({ label: k, value: k })));
+    if (!kind) return;
+    where = where || await ui.select("Where?", rep.WHERES.map((w) => ({ label: w, value: w })));
+    if (!where) return;
+    title = title || await ui.ask("Title (one line)");
+    body = body || await ui.ask("What happened? (expected vs. actual, error text)");
+  }
+  const v = rep.validate({ kind, where, title, body, contact, version: VERSION });
+  if (v.error) die(`${v.error}${interactive ? "" : " — usage: arcflare report --title \"…\" --body \"…\" [--kind bug] [--where cli]"}`);
+  const spin = ui.spinner("sending");
+  const r = await rep.send(v.payload);
+  if (r.ok) return spin.stop(`${c.green("✓")} sent — thank you`);
+  spin.stop(`${c.red("✗")} couldn't send (${r.error})`);
+  console.log(`  ${c.dim("open an issue instead:")} ${r.fallback}`);
+  process.exitCode = 1;
+}
+
+/** `/report <what happened>` in a session: one line, sent as a CLI bug. */
+async function slashReport(line) {
+  const rep = require("../lib/report");
+  const text = line.replace(/^\/report\s*/, "").trim();
+  if (!text) return console.log(`  ${c.dim("usage: /report <what went wrong>  · or run")} arcflare report ${c.dim("for the full form")}`);
+  const title = (text.split(/(?<=[.!?])\s/)[0] || text).slice(0, 120);
+  const v = rep.validate({ kind: "bug", where: "cli", title, body: text, version: VERSION });
+  if (v.error) return console.log(`  ${c.red("✗")} ${v.error}`);
+  const r = await rep.send(v.payload);
+  console.log(r.ok ? `  ${c.green("✓")} report sent — thank you` : `  ${c.red("✗")} couldn't send (${r.error}) · ${r.fallback}`);
+}
+
+// ---------------------------------------------------------------- harness ----
+
+/** `arcflare harness update <id|all>` — update the coding agents themselves. */
+async function harnessCommand(argv) {
+  const hu = require("../lib/harness-update");
+  if (argv[1] !== "update") {
+    console.log(`  ${c.dim("usage:")} arcflare harness update <${hu.targets().map((t) => t.id).join("|")}|all> [--dry-run]`);
+    return;
+  }
+  const dry = argv.includes("--dry-run") || argv.includes("-n");
+  const want = argv.slice(2).find((a) => !a.startsWith("-")) || "all";
+  const rows = hu.targets().filter((t) => want === "all" || t.id === want);
+  if (!rows.length) die(`unknown harness "${want}"`);
+  let failed = 0;
+  for (const t of rows) {
+    const p = hu.plan(t.id, t.bin);
+    if (p.skip) {
+      if (want !== "all" || p.skip !== "not installed") console.log(`  ${c.dim("·")} ${t.label} ${c.dim(`— ${p.skip}`)}`);
+      continue;
+    }
+    console.log(`\n  ${c.bold(t.label)} ${c.dim("→")} ${c.accent(p.show)}`);
+    if (dry) continue;
+    const r = await hu.runPlan(p);
+    if (r.code === 0) console.log(`  ${c.green("✓")} ${t.label} updated`);
+    else { failed++; console.log(`  ${c.red("✗")} ${t.label} ${c.dim(r.error || `exit ${r.code}`)}`); }
+  }
+  if (failed) process.exitCode = 1;
 }
 
 // -------------------------------------------------------------- uninstall ----
@@ -1622,6 +1722,12 @@ async function main() {
     case "rc":
     case "remote":
       return rcCommand(cfg, argv);
+    case "report":
+    case "bug":
+      return reportCommand(argv);
+    case "harness":
+    case "harnesses":
+      return harnessCommand(argv);
 
     case "logs": {
       const i = argv.indexOf("-n");
