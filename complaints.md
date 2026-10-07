@@ -45,8 +45,40 @@ Relevant code:
 
 If a config is malicious or trusted by mistake, it may leak environment secrets to external services.
 
+### 5. The updater can fetch and install code from GitHub automatically
+The project has a built-in updater that checks GitHub for the latest package version and then performs a `git pull` or `npm install -g github:...` workflow.
+
+Relevant code:
+- `lib/update.js`
+- `check()`
+- `apply()`
+- `refreshInBackground()`
+
+This is a remote code execution path that trusts a remote repository and executes install commands without a proper verification or sandbox model. If the upstream repo is compromised, or if a malicious actor can influence the update source, the local machine may run attacker-controlled code.
+
+### 6. The machine server is intentionally privileged
+The `arcflare mcp` server exposes tool access to desktop actions, file access, and likely system integration.
+
+Relevant code:
+- `bin/arcflare-mcp.js`
+- `lib/mcp/tools.js`
+
+This is a powerful local automation surface and should be treated like a privileged execution interface. It is not a general-purpose safe runtime.
+
+### 7. OAuth tokens are stored locally for remote MCP services
+Hosted MCP servers can authenticate with OAuth, and the tokens are stored in a local JSON file.
+
+Relevant code:
+- `lib/agent/oauth.js`
+- `saveStore()`
+- `login()`
+- `refresh()`
+
+The code tries to set file permissions (`0o600`), which is helpful, but these tokens are still long-lived local credentials. If the machine is compromised, the whole OAuth identity for external services can be replayed.
+
 ## Risk Level
 Medium to High for untrusted repos or untrusted MCP configs.
+High for any environment where automatic updates, OAuth tokens, and remote MCP servers are all enabled.
 Low to Medium when used with trusted repos and a human approving each risky action.
 
 ## Conclusion
