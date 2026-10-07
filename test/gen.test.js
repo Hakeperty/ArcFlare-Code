@@ -1,0 +1,104 @@
+// Tests for 3D generation. No GPU and no PyTorch here: the worker is replaced
+// by a script that speaks the same line protocol, which is the part ArcFlare
+// owns. What is checked is what would otherwise fail ten minutes into a run —
+// a request the chosen model cannot serve, a failure reported as success, a
+// traceback swallowed into "exit code 1".
+
+const test = require("node:test");
+const assert = require("node:assert");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+process.env.ARCFLARE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "af-gen-"));
+const gen = require("../lib/gen");
+const { createServer } = require("../lib/mcp/tools");
+
+function fakeWorker(body) {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "af-genw-")), "worker.js");
+  fs.writeFileSync(f, `const spec = JSON.parse(require("fs").readFileSync(process.argv[2], "utf8"));
+const emit = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
+${body}`);
+  return f;
+}
+
+test("model ids resolve loosely, and unknown ones do not resolve at all", () => {
+  assert.strictEqual(gen.byId().id, gen.DEFAULT_MODEL);
+  assert.strictEqual(gen.byId("Hunyuan3D-2mini").id, "hunyuan3d-2mini");
+  assert.strictEqual(gen.byId("hunyuan3d_2.1").id, "hunyuan3d-2.1");
+  assert.strictEqual(gen.byId("hunyuan3d21").id, "hunyuan3d-2.1");
+  assert.strictEqual(gen.byId("TripoSR").id, "triposr");
+  assert.strictEqual(gen.byId("stable-diffusion"), null);
+});
+
+test("every model names a code repo, weights and an honest VRAM figure", () => {
+  for (const m of gen.MODELS) {
+    assert.match(m.repo.url, /^https:\/\/github\.com\//, m.id);
+    assert.match(m.hf, /^[\w-]+\/[\w.-]+$/, m.id);
+    assert.ok(m.vram > 0 && (!m.texture || m.textureVram > m.vram), `${m.id}: texturing costs more than shape`);
+    if (m.family.startsWith("hunyuan")) assert.ok(m.subfolder, `${m.id} needs its subfolder`);
+  }
+});
+
+test("a mesh made from an image lands next to it", () => {
+  const out = gen.defaultOut(gen.byId("triposr"), { image: "/x/photos/chair.png", cwd: "/work" });
+  assert.strictEqual(out, path.join("/work", "chair-triposr.glb"));
+  const fromText = gen.defaultOut(gen.byId("hunyuan3d-2"), { prompt: "A Red Chair!" });
+  assert.match(path.basename(fromText), /^a-red-chair-hunyuan3d-2-\w+\.glb$/);
+});
+
+test("requests a model cannot serve are refused before anything starts", async () => {
+  const img = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "af-img-")), "a.png");
+  fs.writeFileSync(img, "png");
+  await assert.rejects(gen.generate({}, { model: "triposr", prompt: "a chair" }), /image-only/);
+  await assert.rejects(gen.generate({}, { model: "hunyuan3d-2.1", image: img, texture: true }), /cannot texture/);
+  await assert.rejects(gen.generate({}, { model: "hunyuan3d-2mini" }), /give an image/);
+  await assert.rejects(gen.generate({}, { model: "hunyuan3d-2mini", image: "/no/such.png" }), /no such image/);
+  await assert.rejects(gen.generate({}, { model: "nope", image: img }), /unknown model/);
+});
+
+test("the worker protocol: stages stream in, and done is the result", async () => {
+  const worker = fakeWorker(`
+emit({ event: "stage", stage: "load-model" });
+console.error("some library noise");
+emit({ event: "stage", stage: "shape" });
+emit({ event: "done", file: spec.out, faces: 1234 });`);
+  const seen = [];
+  const r = await gen.runWorker(process.execPath, { out: "x.glb" }, { worker, onEvent: (e) => seen.push(e.stage || e.event) });
+  assert.deepStrictEqual(seen, ["load-model", "shape", "done"]);
+  assert.strictEqual(r.faces, 1234);
+});
+
+test("a worker error keeps its own message and the traceback tail", async () => {
+  const worker = fakeWorker(`
+console.error("Traceback (most recent call last):");
+console.error("torch.OutOfMemoryError: HIP out of memory");
+emit({ event: "error", message: "OutOfMemoryError: HIP out of memory" });
+process.exit(1);`);
+  await assert.rejects(gen.runWorker(process.execPath, {}, { worker }), (e) => {
+    assert.match(e.message, /out of memory/);
+    assert.match(e.stderr, /Traceback/);
+    return true;
+  });
+});
+
+test("a worker that exits without reporting is a failure, whatever its exit code", async () => {
+  const worker = fakeWorker(`emit({ event: "stage", stage: "shape" }); process.exit(0);`);
+  await assert.rejects(gen.runWorker(process.execPath, {}, { worker }), /reported nothing/);
+});
+
+test("a cancelled worker is stopped and says so", async () => {
+  const worker = fakeWorker(`setTimeout(() => emit({ event: "done", file: "late" }), 10000);`);
+  const ac = new AbortController();
+  const p = gen.runWorker(process.execPath, {}, { worker, signal: ac.signal });
+  setTimeout(() => ac.abort(), 100);
+  await assert.rejects(p, /cancelled/);
+});
+
+test("the machine server offers generation as three tools", () => {
+  const names = createServer({}).list().map((t) => t.name);
+  for (const n of ["generate_models", "generate_3d", "generate_job"]) assert.ok(names.includes(n), n);
+  const g3d = createServer({}).list().find((t) => t.name === "generate_3d");
+  assert.deepStrictEqual(g3d.inputSchema.properties.model.enum, gen.MODELS.map((m) => m.id),
+    "the model enum is what the validator holds callers to");
+});

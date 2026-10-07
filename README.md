@@ -105,6 +105,11 @@ arcflare doctor
 | `arcflare memory [profile]` | `lean` \| `balanced` \| `max` |
 | `arcflare batch [size]` | Physical batch: prefill speed against VRAM |
 | `arcflare fit [model]` | What fits, and with `--run` what actually runs best |
+| `arcflare gen` | 3D generation models (Hunyuan3D, TripoSR) and whether they are ready |
+| `arcflare gen setup <model>` | Install a generator (`--torch cuda\|cpu\|rocm`, `--torch-from <python>`, `--texture`) |
+| `arcflare gen 3d <image>` | Image → `.glb` mesh; `--prompt "…"` for text → mesh |
+| `arcflare rc` | Remote control: your key, your relay (`/rc` inside a session) |
+| `arcflare update` | Install the latest (`--check`, `--pack`, `--from <tgz\|dir>` offline) |
 | `arcflare doctor` | Check engine, GPU and harnesses |
 | `arcflare set-engine <path>` | Remember where `llama-server` lives |
 
@@ -634,13 +639,132 @@ to a directory, `--no-open` removes the tools that open, launch or touch the
 desktop, output is capped per process, and nothing the server started outlives
 the client that connected to it.
 
+## 3D generation
+
+`arcflare gen` turns an image into a mesh on your own GPU:
+
+```
+> arcflare gen 3d chair.png
+  ✓ C:\work\chair-hunyuan3d-2mini.glb
+  38,912 faces · 1.9 MB · 21.4s total · 14.2s shape · cuda
+```
+
+| Model | Size | VRAM | |
+| --- | --- | --- | --- |
+| `hunyuan3d-2mini` | 0.6B | ~5 GB | the default |
+| `hunyuan3d-2mini-turbo` | 0.6B | ~5 GB | 5 steps with FlashVDM |
+| `hunyuan3d-2` | 1.1B | ~6 GB, 16 textured | `--texture` paints it too |
+| `hunyuan3d-2.1` | 3.3B | ~10 GB | most detailed shapes; texturing not wired up |
+| `triposr` | 0.4B | ~6 GB | one forward pass, rough, instant |
+
+These are PyTorch pipelines, not GGUFs, so there is no llama.cpp for them.
+ArcFlare does the same job it does for llama-server: finds the pieces, checks
+them, and supervises a worker (`lib/gen/worker.py`) that speaks one JSON object
+per line. Everything a pipeline prints goes to stderr and only its tail is kept,
+because the useful part of a failed diffusion run is the last traceback.
+
+**Setup** creates `~/.arcflare/gen/venv`, clones the model's code and installs
+its requirements, with torch filtered out. A requirements file that pins torch
+would replace a working GPU build with whatever PyPI resolves to.
+
+```bash
+arcflare gen setup hunyuan3d-2mini --torch cuda     # NVIDIA
+arcflare gen setup hunyuan3d-2mini --torch-from C:\path\to\python.exe
+```
+
+Torch is only installed when you name the build, because the wrong guess is a
+multi-GB download that then runs on the CPU. On Windows with an AMD card there is
+no official wheel at all, so `--torch-from` **borrows** GPU torch from an
+environment that already has it. A `.pth` file makes the donor's packages
+importable after ArcFlare's own, and pip never writes into the donor. The venv is
+built from the donor's own base interpreter, because a 3.13 venv cannot load a
+3.12 torch. torchvision has to come from the same place as torch: the PyPI
+wheel next to a ROCm build fails at import with `operator torchvision::nms does
+not exist`, so setup names it as missing rather than installing the wrong one.
+
+Setup ends by importing the model's package on your actual device and listing
+what is missing. `arcflare gen check <model>` reruns that check.
+
+**Flags.** `-m` model · `--prompt` text → image → mesh (HunyuanDiT, hunyuan3d-2
+family) · `-o` output · `--steps` · `--octree` (256 default, 380 finer) ·
+`--faces` (simplify, default 40000) · `--seed` · `--texture` · `--keep-background` ·
+`--device`. Backgrounds are removed automatically unless the image already has
+transparency.
+
+**From the agent.** The machine server adds `generate_models`, `generate_3d` and
+`generate_job`. A first run downloads weights and a CPU run takes minutes, while
+an MCP call has a ceiling, so `generate_3d` waits a bounded time and otherwise
+returns a job id while the work keeps going. Jobs die with the server, because a
+GPU job that outlives its client holds VRAM nobody can see.
+
+## Remote control
+
+Type `/rc` in `arcflare agent` or `arcflare run`:
+
+```
+  Remote control on · relay connected
+  key   afrc_…
+  open  https://your-site/remote#k=afrc_…
+```
+
+Open the link on any device, or paste the key into `/remote` on the site. You
+see the session as it happens, and what you type goes to the model on your
+machine.
+
+- **Outbound only.** The session long-polls the relay (the website's
+  `/api/rc/*` routes). Nothing listens on a port, so NAT and firewalls don't
+  matter.
+- **The key is the credential.** It is 24 random bytes, kept in
+  `~/.arcflare/rc.json` with owner-only permissions. It travels in an
+  `Authorization` header, never a URL. The relay files sessions under its
+  SHA-256, and the link carries it in the fragment, which browsers do not send.
+- **Approval follows whoever asked.** A turn typed in the browser asks the
+  browser before running a tool, and no answer within five minutes is a no.
+  Auto mode is auto mode everywhere.
+- **Nothing is lost between two inputs.** The prompt reads from the terminal and
+  the browser at once, and both sides hold their line until it is consumed:
+  `Promise.race` does not cancel the loser, so a line typed during a remote turn
+  would otherwise answer a promise nobody is waiting on any more.
+
+The key persists, so a paired phone reconnects to every later session.
+`arcflare rc rotate` cuts every device off. `arcflare rc relay <url>` points at
+your own deployment (default `http://localhost:3000`). The relay keeps state in
+memory, so it needs one long-lived Node process, not serverless functions.
+
+## Updates
+
+ArcFlare checks for a new version at most every twelve hours, in a detached child
+with a four-second timeout, and the next start prints one line:
+
+```
+  ↑ Update available: 1.1.0 → 1.2.0 · /update or arcflare update
+```
+
+`/update` (in a session) or `arcflare update` installs it: `git pull --ff-only`
+for a clone, `npm install -g` for an npm install. A git clone also compares
+commits, so work pushed without a version bump still shows up, and a clone that
+is *ahead* of main is never told to update backwards.
+
+**Offline is a normal state.** The check fails silently and nothing waits on it.
+Because ArcFlare has no dependencies, one tarball is the whole program:
+
+```bash
+arcflare update --pack                       # on a connected machine
+arcflare update --from arcflare-1.1.0.tgz    # on the offline one
+```
+
+`--from` also takes a folder, such as a clone on a USB stick. A folder is packed
+before installing, because `npm install -g <folder>` links rather than copies,
+and the link breaks when the stick comes out. `arcflare update --off` or
+`ARCFLARE_NO_UPDATE_CHECK=1` turns the checks off.
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-189 tests covering the places where being wrong is silent and expensive: the KV
+225 tests covering the places where being wrong is silent and expensive: the KV
 cache maths, model id parsing, and the harness config writers - including that
 they preserve unrelated settings, back files up, and refuse to overwrite a
 config they cannot parse. The machine server adds its own: the JSON-RPC
@@ -697,6 +821,9 @@ lib/harness.js    harness detection, config wiring, launch
 lib/agent/        the agent: loop, tools, MCP client, skills, context
 lib/mcp/          the machine server: transport, processes, projects, probes,
                   desktop control, Blender
+lib/gen/          3D generation: model registry, setup, the Python worker
+lib/rc.js         remote control: key, relay session, the two-source prompt
+lib/update.js     update checks and installs, online and offline
 bin/arcflare-mcp.js  stdio entry point for the machine server
 ```
 

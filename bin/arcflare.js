@@ -60,6 +60,52 @@ function die(msg, code = 1) {
   process.exit(code);
 }
 
+// ------------------------------------------------------- the machine server --
+//
+// Everything else ArcFlare installs is a model and a server on loopback. The
+// machine server is a different kind of thing: it runs commands, opens
+// applications, reads the clipboard and photographs the screen. That is the
+// point of it, and it is also a fair amount to hand to a model that fits in
+// 8 GB — so it is a component you choose, asked once and remembered.
+//
+// Undecided is not the same as off. Someone who has never seen the question
+// keeps what they had, and a pipe cannot answer one, so the default only
+// applies where nobody could have been asked.
+
+const MACHINE_NOTE = "runs commands · opens apps · reads the clipboard · sees the screen";
+
+/** The stored answer, or null if it has never been asked. */
+function machineSetting(cfg) {
+  return typeof cfg.machine === "boolean" ? cfg.machine : null;
+}
+
+/**
+ * Whether to wire the machine server up, asking once if it has never come up.
+ * `assume` answers for a caller that already knows (a flag on the command line).
+ */
+async function wantMachine(cfg, { assume } = {}) {
+  if (typeof assume === "boolean") {
+    saveConfig({ ...loadConfig(), machine: assume });
+    return assume;
+  }
+  const stored = machineSetting(cfg);
+  if (stored !== null) return stored;
+  if (!process.stdin.isTTY) return true;
+
+  const pick = await ui.select("Machine control", [
+    { label: "Yes, install it", hint: "screenshots, apps, builds and tests", value: "yes",
+      note: MACHINE_NOTE },
+    { label: "No, models only", hint: "the agent keeps files, search and the shell", value: "no" },
+  ], {
+    subtitle: "ArcFlare's machine server lets a model drive this computer",
+    selected: "yes",
+  });
+  if (!pick) return machineSetting(cfg) ?? true;   // esc: decide nothing
+  const on = pick === "yes";
+  saveConfig({ ...loadConfig(), machine: on });
+  return on;
+}
+
 // ------------------------------------------------------------------ vram ----
 
 /**
@@ -294,46 +340,59 @@ function chatOnce(port, model, messages, onDelta) {
   });
 }
 
-async function repl(port, modelId) {
+async function repl(port, modelId, opts = {}) {
   const readline = require("readline");
+  const rc = require("../lib/rc");
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const history = [];
-  console.log(`  ${c.dim("chatting with")} ${c.accent(modelId)} ${c.dim("— /bye to exit")}\n`);
+  console.log(`  ${c.dim("chatting with")} ${c.accent(modelId)} ${c.dim("— /rc remote control · /bye to exit")}\n`);
+  updateBanner(loadConfig());
   // stdin can end under us — piped input running out, or Ctrl-D. readline
   // then never answers the question, and asking again throws
-  // ERR_USE_AFTER_CLOSE. Treat a close as an answer of null and leave quietly.
-  let closed = false;
-  let pending = null;
-  rl.on("close", () => {
-    closed = true;
-    if (pending) { const resolve = pending; pending = null; resolve(null); }
-  });
-  const askOne = () =>
-    new Promise((resolve) => {
-      if (closed) return resolve(null);
-      pending = resolve;
-      rl.question(`${c.accent("❯")} `, (answer) => { pending = null; resolve(answer); });
-    });
+  // ERR_USE_AFTER_CLOSE. InputMux treats a close as an answer of null, and
+  // also lets a browser connected with /rc type into the same conversation.
+  const input = new rc.InputMux(rl, `${c.accent("❯")} `);
+  const info = () => ({ kind: "chat", model: modelId, host: os.hostname(), cwd: process.cwd(), version: VERSION });
+  let remote = opts.rc ? await rc.command("/rc", null, { cfg: loadConfig(), info: info() }) : null;
   for (;;) {
-    const answer = await askOne();
-    if (answer === null) break;
-    const line = answer.trim();
+    const got = await input.next(remote);
+    if (got.text === null) break;
+    const line = got.text.trim();
     if (!line) continue;
-    if (line === "/bye" || line === "/exit" || line === "/quit") break;
+    if (got.from === "terminal") {
+      if (line === "/bye" || line === "/exit" || line === "/quit") break;
+      if (line === "/rc" || line.startsWith("/rc ")) {
+        remote = await rc.command(line, remote, { cfg: loadConfig(), info: info() });
+        continue;
+      }
+      if (line === "/update" || line.startsWith("/update ")) { await slashUpdate(line); continue; }
+      if (line === "/help") { console.log(c.dim("  /rc remote control · /update · /bye")); continue; }
+    } else {
+      console.log(`\n  ${c.accent("⇄")} ${c.dim("remote:")} ${line}`);
+    }
+    const live = remote && remote.active ? remote : null;
+    if (live) live.emit({ type: "user", text: line, from: got.from });
     history.push({ role: "user", content: line });
     process.stdout.write("\n");
     let out = "";
     try {
-      out = await chatOnce(port, modelId, history, (p) => process.stdout.write(p));
+      out = await chatOnce(port, modelId, history, (p) => {
+        process.stdout.write(p);
+        if (live) live.emit({ type: "delta", kind: "content", text: p });
+      });
     } catch (e) {
       console.log(c.red("  request failed: " + e.message));
+      if (live) live.emit({ type: "error", text: "request failed: " + e.message });
+      if (live) live.emit({ type: "turn_end" });
       history.pop();
       continue;
     }
     history.push({ role: "assistant", content: out });
+    if (live) live.emit({ type: "turn_end" });
     process.stdout.write("\n\n");
   }
   rl.close();
+  if (remote) await remote.close();
 }
 
 // ------------------------------------------------------------------ flow -----
@@ -341,6 +400,7 @@ async function repl(port, modelId) {
 async function interactive(argv) {
   const cfg = loadConfig();
   console.log(ui.banner());
+  updateBanner(cfg);
 
   const all = models.discover({ meta: true });
   if (!all.length) {
@@ -410,6 +470,12 @@ async function interactive(argv) {
     approve = pick;
   }
 
+  // 4b. the machine server, for the harness that would actually get one. Asked
+  // after approval on purpose: the two answers are read together, and "run
+  // tools without asking" means something different once one of the tools is
+  // a camera pointed at the screen.
+  const machine = chosen.id === "agent" ? await wantMachine(cfg) : machineSetting(cfg) !== false;
+
   // Persist the choice as a router preset so the setting survives a reload.
   const label = displayName(model);
   saveConfig({
@@ -439,6 +505,7 @@ async function interactive(argv) {
       sampling: (models.loadMeta(model) || {}).sampling || null,
       cwd: process.cwd(),
       approve,
+      machine,
     });
     return;
   }
@@ -592,7 +659,15 @@ const HELP = `
   ${c.accent("arcflare run")} <model>        start the server and chat
   ${c.accent("arcflare agent")} [model]       coding agent: tools, MCP, skills
   ${c.accent("arcflare mcp")} [--install]     machine server: run, open, build, test
+  ${c.accent("arcflare mcp enable|disable")}  install the machine server, or leave it out
+  ${c.accent("arcflare mcp trust")}           allow this directory's .mcp.json to start servers
   ${c.accent("arcflare mcp login")} [server]  sign in to a hosted MCP server
+  ${c.accent("arcflare gen")}                 3D generation models: Hunyuan3D, TripoSR
+  ${c.accent("arcflare gen 3d")} <image>      image → mesh (.glb) — ${c.accent("--prompt")} "…" for text → mesh
+  ${c.accent("arcflare gen setup")} [model]   install a generator (--torch cuda|cpu, --texture)
+  ${c.accent("arcflare update")}              install the latest (--check, --from <tgz|dir> offline, --pack)
+  ${c.accent("arcflare rc")}                  remote control: your key and relay (/rc in a session)
+  ${c.accent("arcflare rc relay")} <url>      the site that relays sessions (default localhost:3000)
   ${c.accent("arcflare use")} <harness> [m]  configure + launch (--no-launch, --yolo, --ask)
   ${c.accent("arcflare serve")} [--port N]   start the server only
   ${c.accent("arcflare ps")}                 server status and loaded models
@@ -641,7 +716,16 @@ function mcpSpawnSpec() {
 }
 
 /** Register the machine server so harnesses pick it up without hand-editing JSON. */
-function installMcp(cfg, argv) {
+async function installMcp(cfg, argv) {
+  // Registering it *is* installing it, so this is the other place the question
+  // belongs. `--yes` and `--no` answer it without a menu, for a script.
+  const assume = argv.includes("--yes") ? true : argv.includes("--no") ? false : undefined;
+  if (!(await wantMachine(cfg, { assume }))) {
+    console.log(`  ${c.dim("machine server declined — nothing registered")}`);
+    console.log(`  ${c.dim("change your mind with:")} arcflare mcp enable`);
+    return;
+  }
+
   const spec = mcpSpawnSpec();
   const file = argv.includes("--project")
     ? path.join(process.cwd(), ".arcflare", "mcp.json")
@@ -654,8 +738,16 @@ function installMcp(cfg, argv) {
     // Creating this file makes it the one the agent reads, and the search stops
     // at the first file that has servers — so a new file holding only ourselves
     // would silently hide every server the user already had. Carry them over.
+    //
+    // Only from another file of your own, though. A config found in the working
+    // directory belongs to whatever repo is checked out there, and copying it
+    // here would move it from `workspace` origin to `home` origin — past the
+    // trust gate, permanently, for every directory you ever run in. It cannot
+    // be hidden by this write in any case: the search reaches the working
+    // directory first, so a repo's servers still win wherever they apply.
     const existing = require("../lib/agent/run").loadMcpConfig(process.cwd());
-    if (existing.file && existing.file !== file && Object.keys(existing.servers).length) {
+    const inherit = existing.origin === "home" && file === path.join(HOME, "mcp.json");
+    if (inherit && existing.file !== file && Object.keys(existing.servers).length) {
       json = { mcpServers: { ...existing.servers } };
       seeded = existing.file;
     }
@@ -674,6 +766,57 @@ function installMcp(cfg, argv) {
   console.log(`  ${c.dim("for Claude Code:")} claude mcp add arcflare -- ${spec.command} ${spec.args.join(" ")}`);
   console.log(`  ${c.dim("for anything else, in mcp.json:")}`);
   console.log(c.dim(`    { "mcpServers": { "arcflare": ${JSON.stringify(spec)} } }`));
+}
+
+/**
+ * `arcflare mcp trust | untrust | trusted` — decide whether this directory's
+ * MCP config is allowed to start processes.
+ *
+ * Connecting to a stdio server means spawning it, so a `.mcp.json` in a repo is
+ * a list of commands that will run on this machine. It stays inert until this
+ * says otherwise, and what gets recorded is the exact content approved — so the
+ * question comes back if the repo changes it.
+ */
+function mcpTrust(argv) {
+  const trust = require("../lib/agent/trust");
+  const { loadMcpConfig } = require("../lib/agent/mcp");
+  const action = argv[1];
+
+  if (action === "trusted") {
+    const rows = trust.list();
+    if (!rows.length) return console.log(`  ${c.dim("no directory MCP config has been trusted")}`);
+    for (const r of rows) {
+      console.log(`  ${c.accent(r.file)}\n    ${c.dim(`${r.servers.join(", ")} · trusted ${r.at.slice(0, 10)}`)}`);
+    }
+    return;
+  }
+
+  const loaded = loadMcpConfig(process.cwd());
+  if (!loaded.file) die("no MCP config found here");
+  if (loaded.origin !== "workspace") {
+    return console.log(`  ${c.dim(`${loaded.file} is your own config — it is not gated, nothing to ${action}`)}`);
+  }
+
+  if (action === "untrust") {
+    return console.log(trust.revoke(loaded.file)
+      ? `  ${c.green("✓")} ${loaded.file} is no longer trusted`
+      : `  ${c.dim(`${loaded.file} was not trusted`)}`);
+  }
+
+  // Print what is being approved. Approving a file you have not read is the
+  // failure this whole mechanism exists to prevent, so the commands go on
+  // screen rather than just the file name.
+  console.log(`\n  ${c.bold(loaded.file)} would start:\n`);
+  for (const [name, s] of Object.entries(loaded.servers)) {
+    const what = s.url ? s.url : [s.command, ...(s.args || [])].join(" ");
+    console.log(`  ${c.accent(name)}\n    ${c.dim(what)}`);
+    if (s.env && Object.keys(s.env).length) {
+      console.log(`    ${c.dim("env: " + Object.keys(s.env).join(", "))}`);
+    }
+  }
+  const rec = trust.trust(loaded.file, loaded.servers);
+  console.log(`\n  ${c.green("✓")} trusted ${c.dim(rec.fingerprint)}`);
+  console.log(`  ${c.dim("if the file changes, it will need trusting again")}`);
 }
 
 /**
@@ -741,10 +884,263 @@ async function mcpAuth(argv) {
   }
 }
 
+// --------------------------------------------------------------- generate ----
+
+/** `--name value` from argv, or undefined. */
+function flag(argv, name) {
+  const i = argv.indexOf(name);
+  return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
+}
+
+const GEN_FLAGS_WITH_VALUES = ["--model", "-m", "--out", "-o", "--steps", "--seed", "--octree",
+  "--faces", "--prompt", "-p", "--torch", "--torch-from", "--device"];
+
+/** Positional arguments, skipping every flag and the value it takes. */
+function positionals(argv) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (GEN_FLAGS_WITH_VALUES.includes(argv[i])) { i++; continue; }
+    if (argv[i].startsWith("-")) continue;
+    out.push(argv[i]);
+  }
+  return out;
+}
+
+async function genCommand(cfg, argv) {
+  const gen = require("../lib/gen");
+  const sub = argv[1];
+
+  // `arcflare gen python <path>` — use an environment that already works.
+  if (sub === "python") {
+    const p = argv[2];
+    if (!p) {
+      const py = gen.findPython(cfg);
+      console.log(py ? `  ${py.path} ${c.dim("(" + py.source + ")")}` : `  ${c.dim("none — arcflare gen setup creates one")}`);
+      return;
+    }
+    if (!fs.existsSync(p)) die(`no such file: ${p}`);
+    saveConfig({ ...cfg, genPython: path.resolve(p) });
+    console.log(`  ${c.green("✓")} generators will run with ${c.dim(path.resolve(p))}`);
+    return;
+  }
+
+  if (sub === "setup" || sub === "install") {
+    const m = gen.byId(positionals(argv.slice(2))[0]);
+    if (!m) die(`unknown model. Known: ${gen.MODELS.map((x) => x.id).join(", ")}`);
+    console.log(`\n  ${c.bold("Setting up")} ${c.accent(m.label)}\n`);
+    let r;
+    try {
+      r = await gen.setup(cfg, m, {
+        torch: flag(argv, "--torch"),
+        torchFrom: flag(argv, "--torch-from"),
+        texture: argv.includes("--texture"),
+      });
+    } catch (e) {
+      die(e.message);
+    }
+    const ch = r.check;
+    console.log("");
+    console.log(`  ${c.green("✓")} python  ${c.dim(r.python.path)}`);
+    if (ch.torch) {
+      console.log(`  ${ch.device === "cpu" ? c.dim("·") : c.green("✓")} torch   ${c.dim(`${ch.torch} · ${ch.device}` +
+        (ch.device_name ? ` · ${ch.device_name}` : "") + (ch.vram_free_gb ? ` · ${ch.vram_free_gb} GB free` : ""))}`);
+    }
+    for (const p of ch.problems || []) console.log(`  ${c.red("!")} ${p}`);
+    if (!ch.torch) {
+      console.log(`\n  ${c.dim("torch is not installed. Pick the build for your GPU:")}`);
+      console.log(`    arcflare gen setup ${m.id} --torch cuda   ${c.dim("NVIDIA")}`);
+      console.log(`    arcflare gen setup ${m.id} --torch cpu    ${c.dim("no GPU (slow)")}`);
+      console.log(`    arcflare gen setup ${m.id} --torch-from <python>  ${c.dim("borrow GPU torch from another env (AMD on Windows)")}`);
+    }
+    if (ch.ok) console.log(`\n  ${c.green("✓")} ready — ${c.accent(`arcflare gen 3d photo.png -m ${m.id}`)}`);
+    return;
+  }
+
+  if (sub === "check" || sub === "doctor") {
+    const m = gen.byId(positionals(argv.slice(2))[0]);
+    if (!m) die("unknown model");
+    const ch = await gen.check(cfg, m);
+    console.log(JSON.stringify(ch, null, 2));
+    return;
+  }
+
+  if (sub === "3d" || sub === "mesh") {
+    const rest = argv.slice(2);
+    const image = positionals(rest)[0];
+    const prompt = flag(rest, "--prompt") || flag(rest, "-p");
+    const model = flag(rest, "--model") || flag(rest, "-m") || cfg.genModel || gen.DEFAULT_MODEL;
+    const m = gen.byId(model);
+    if (!m) die(`unknown model "${model}". Known: ${gen.MODELS.map((x) => x.id).join(", ")}`);
+    if (!gen.weightsPresent(m)) {
+      console.log(`  ${c.dim(`${m.label} weights are not downloaded yet — the first run fetches them from ${m.hf}`)}`);
+    }
+    const spin = ui.spinner(`${m.label} · starting`);
+    const t0 = Date.now();
+    let r;
+    try {
+      r = await gen.generate(cfg, {
+        model: m.id, image, prompt,
+        out: flag(rest, "--out") || flag(rest, "-o"),
+        steps: flag(rest, "--steps"), seed: flag(rest, "--seed"),
+        octree: flag(rest, "--octree"), faces: flag(rest, "--faces"),
+        device: flag(rest, "--device"),
+        texture: rest.includes("--texture"),
+        removeBackground: !rest.includes("--keep-background"),
+        onEvent: (ev) => {
+          if (ev.event === "stage") spin.update(`${m.label} · ${ev.stage} · ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+          if (ev.event === "info" && ev.device === "cpu") spin.update(`${m.label} · on the CPU — this will be slow`);
+        },
+      });
+    } catch (e) {
+      spin.stop(`${c.red("✗")} ${e.message}`);
+      if (e.stderr) console.log(c.dim(e.stderr.split("\n").slice(-12).map((l) => "    " + l).join("\n")));
+      process.exitCode = 1;
+      return;
+    }
+    spin.stop(`${c.green("✓")} ${r.file}`);
+    console.log(`  ${c.dim(`${r.faces != null ? r.faces.toLocaleString() + " faces · " : ""}` +
+      `${ui.fmtBytes(r.bytes)} · ${(r.ms / 1000).toFixed(1)}s total` +
+      (r.shape_seconds ? ` · ${r.shape_seconds}s shape` : "") + ` · ${r.device || ""}`)}`);
+    return;
+  }
+
+  if (sub === "default") {
+    const m = gen.byId(argv[2]);
+    if (!m) die("unknown model");
+    saveConfig({ ...cfg, genModel: m.id });
+    console.log(`  ${c.green("✓")} default generator ${c.accent(m.id)}`);
+    return;
+  }
+
+  // `arcflare gen` — the table.
+  const rows = gen.status(cfg);
+  const py = gen.findPython(cfg);
+  const def = cfg.genModel || gen.DEFAULT_MODEL;
+  console.log(`\n  ${c.bold("3D generation")} ${c.dim("image → mesh, on this machine")}\n`);
+  const w = Math.max(...rows.map((r) => r.id.length));
+  for (const r of rows) {
+    const ready = r.repoPresent && py;
+    const mark = ready ? (r.weights ? c.green("✓") : c.accent("·")) : c.dim("·");
+    const state = !ready ? "not installed" : r.weights ? "ready" : "installed · weights download on first run";
+    const id = r.id.padEnd(w);
+    const vram = `~${r.vram} GB` + (r.texture ? ` (${r.textureVram} textured)` : "");
+    console.log(`  ${mark} ${r.id === def ? c.accent(id) : id}  ` +
+      c.dim(`${r.params.padEnd(5)} ${vram.padEnd(20)} ${state}`));
+    console.log(`    ${c.dim(r.note)}`);
+  }
+  console.log(`\n  ${c.dim("python")} ${py ? c.dim(py.path) : c.dim("none yet")}`);
+  console.log(`  ${c.dim("setup:")} arcflare gen setup ${def}   ${c.dim("· run:")} arcflare gen 3d photo.png\n`);
+}
+
+// ----------------------------------------------------------------- update ----
+
+/** One line under a banner when there is something newer, like Claude Code does. */
+function updateBanner(cfg) {
+  const n = require("../lib/update").notice(cfg);
+  if (n) console.log(`  ${c.accent("↑")} ${n.text} ${c.dim("· /update or arcflare update")}\n`);
+}
+
+/** `/update` inside a session. Installs, then asks for a restart. */
+async function slashUpdate(line) {
+  const upd = require("../lib/update");
+  const from = line.trim().split(/\s+/).slice(1).join(" ") || undefined;
+  const r = await upd.apply({ from });
+  if (!r.ok) {
+    console.log(`  ${c.red("✗")} ${r.message}`);
+    if (r.offlineHint) console.log(`  ${c.dim("offline? /update <folder-or-.tgz> installs from a copy — make one elsewhere with")} arcflare update --pack`);
+    return;
+  }
+  console.log(`  ${c.green("✓")} ${r.message} ${c.dim("· restart arcflare to use it — this session keeps running the old code")}`);
+}
+
+async function updateCommand(cfg, argv) {
+  const upd = require("../lib/update");
+
+  // The detached background check: no output, ever — nobody is reading it.
+  if (argv.includes("--check-quiet")) {
+    const rec = await upd.check();
+    upd.writeCache(rec);
+    return;
+  }
+  if (argv.includes("--off") || argv.includes("--on")) {
+    const on = argv.includes("--on");
+    saveConfig({ ...cfg, updateCheck: on });
+    console.log(`  ${c.green("✓")} update checks ${on ? "on" : "off"}`);
+    return;
+  }
+  if (argv.includes("--pack")) {
+    const dir = flag(argv, "--pack") && !flag(argv, "--pack").startsWith("-") ? flag(argv, "--pack") : process.cwd();
+    try {
+      const file = await upd.pack(dir);
+      console.log(`  ${c.green("✓")} ${file}`);
+      console.log(`  ${c.dim("carry it to the offline machine and run:")} arcflare update --from "${path.basename(file)}"`);
+    } catch (e) { die(e.message); }
+    return;
+  }
+  if (argv.includes("--check")) {
+    const spin = ui.spinner("checking for updates");
+    const rec = await upd.check();
+    upd.writeCache(rec);
+    if (rec.offline) return spin.stop(`${c.dim("·")} offline (${rec.error}) — you have ${VERSION}`);
+    spin.stop(rec.available
+      ? `${c.accent("↑")} update available: ${upd.compareVersions(rec.latest, VERSION) > 0 ? `${VERSION} → ${rec.latest}` : "new commits on main"} · arcflare update`
+      : `${c.green("✓")} up to date (${VERSION})`);
+    return;
+  }
+
+  const from = flag(argv, "--from");
+  console.log(`\n  ${c.bold("Updating ArcFlare")} ${c.dim(`${VERSION} · ${upd.installKind()} install`)}`);
+  const r = await upd.apply({ from });
+  if (!r.ok) {
+    console.log(`  ${c.red("✗")} ${r.message}`);
+    if (r.offlineHint) {
+      console.log(`\n  ${c.dim("No network? Update from a copy instead:")}`);
+      console.log(`    ${c.dim("on a connected machine:")}  arcflare update --pack`);
+      console.log(`    ${c.dim("here:")}                    arcflare update --from <file.tgz | folder>`);
+    }
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`  ${c.green("✓")} ${r.message}\n`);
+}
+
+// ----------------------------------------------------------------- remote ----
+
+function rcCommand(cfg, argv) {
+  const rc = require("../lib/rc");
+  const sub = argv[1];
+  if (sub === "relay") {
+    if (!argv[2]) { console.log(`  ${rc.relayUrl(cfg)}`); return; }
+    try {
+      console.log(`  ${c.green("✓")} relay ${c.accent(rc.setRelay(argv[2]))}`);
+    } catch (e) { die(e.message); }
+    return;
+  }
+  if (sub === "rotate" || sub === "new") {
+    const key = rc.getKey({ rotate: true });
+    console.log(`  ${c.green("✓")} new key ${c.accent(key)}`);
+    console.log(`  ${c.dim("every device paired with the old key is cut off")}`);
+    return;
+  }
+  const relay = rc.relayUrl(cfg);
+  const key = rc.getKey();
+  console.log(`\n  ${c.bold("Remote control")}\n`);
+  console.log(`  ${c.dim("key")}    ${c.accent(key)}`);
+  console.log(`  ${c.dim("relay")}  ${relay}`);
+  console.log(`  ${c.dim("link")}   ${rc.linkFor(relay, key)}\n`);
+  console.log(`  ${c.dim("Type")} /rc ${c.dim("inside")} arcflare agent ${c.dim("or")} arcflare run ${c.dim("to connect that session,")}`);
+  console.log(`  ${c.dim("or start one connected:")} arcflare agent --rc\n`);
+  console.log(`  ${c.dim("arcflare rc relay <url> · arcflare rc rotate")}\n`);
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
   const cfg = loadConfig();
+
+  // Look for an update in the background — never for the MCP server, whose
+  // stdout is a protocol, and never from inside the check itself.
+  if (cmd !== "mcp" && cmd !== "update" && cmd !== "upgrade") require("../lib/update").refreshInBackground(cfg);
 
   if (!cmd) return interactive(argv);
 
@@ -781,13 +1177,14 @@ async function main() {
 
     case "run": {
       const all = models.discover({ meta: true });
-      const m = models.resolve(all, argv[1]);
-      if (!m) die(`no model matching "${argv[1] || ""}"`);
+      const want = argv.slice(1).find((x) => !x.startsWith("-"));
+      const m = models.resolve(all, want);
+      if (!m) die(`no model matching "${want || ""}"`);
       const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
       const { port, servedId: id } = await prepareModel(cfg, m, best.ctx, best.cacheType);
       console.log(`  ${c.green("✓")} ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
-      await repl(port, id);
+      await repl(port, id, { rc: argv.includes("--rc") });
       return;
     }
 
@@ -1085,7 +1482,13 @@ async function main() {
         cwd: process.cwd(),
         prompt,
         approve: auto ? "yolo" : "ask",
-        machine: !argv.includes("--no-machine"),
+        rc: argv.includes("--rc"),
+        cfg,
+        // --machine and --no-machine answer for this run and settle the
+        // question; otherwise the stored answer stands, and an unasked one is
+        // asked here rather than assumed.
+        machine: argv.includes("--no-machine") ? false
+          : await wantMachine(cfg, { assume: argv.includes("--machine") ? true : undefined }),
       });
       return;
     }
@@ -1095,9 +1498,30 @@ async function main() {
     case "mcp": {
       if (argv.includes("--install")) return installMcp(cfg, argv);
       if (argv[1] === "login" || argv[1] === "logout") return mcpAuth(argv);
+      if (["trust", "untrust", "trusted"].includes(argv[1])) return mcpTrust(argv);
+      if (argv[1] === "enable" || argv[1] === "disable") {
+        const on = argv[1] === "enable";
+        saveConfig({ ...cfg, machine: on });
+        console.log(on
+          ? `  ${c.green("✓")} machine server on ${c.dim(MACHINE_NOTE)}`
+          : `  ${c.green("✓")} machine server off ${c.dim("the agent keeps files, search and the shell")}`);
+        return;
+      }
       require("./arcflare-mcp.js").main(argv.slice(1));
       return;
     }
+
+    case "gen":
+    case "generate":
+      return genCommand(cfg, argv);
+
+    case "update":
+    case "upgrade":
+      return updateCommand(cfg, argv);
+
+    case "rc":
+    case "remote":
+      return rcCommand(cfg, argv);
 
     case "logs": {
       const i = argv.indexOf("-n");

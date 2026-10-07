@@ -1,6 +1,6 @@
 {
   "name": "arcflare",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Run local GGUF models and point any coding harness at them.",
   "bin": {
     "arcflare": "bin/arcflare.js"
