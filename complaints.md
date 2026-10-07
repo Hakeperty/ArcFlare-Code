@@ -76,6 +76,16 @@ Relevant code:
 
 The code tries to set file permissions (`0o600`), which is helpful, but these tokens are still long-lived local credentials. If the machine is compromised, the whole OAuth identity for external services can be replayed.
 
+### 8. The project is designed around a machine-control model, so the risk is operational rather than code-only
+This is not just a library; it is a local agent that can open apps, read the clipboard, and interact with the desktop environment. That makes it functionally akin to an automation agent with local privileges.
+
+Relevant code:
+- `bin/arcflare.js`
+- `MACHINE_NOTE`
+- machine server enablement in the CLI
+
+This means the “security issue” is not limited to command injection: the app is intentionally built around controlling the user’s machine.
+
 ## Risk Level
 Medium to High for untrusted repos or untrusted MCP configs.
 High for any environment where automatic updates, OAuth tokens, and remote MCP servers are all enabled.
