@@ -365,6 +365,35 @@ test("the desktop tools say what this platform supports", () => {
   assert.strictEqual(s.ok, process.platform === "win32");
 });
 
+// A caller's string becomes part of a PowerShell script, so the question is not
+// whether it is escaped but whether it is *parsed*. Base64 is the answer: there
+// is no character in it the parser reacts to.
+test("strings handed to PowerShell carry no syntax of their own", () => {
+  const nasty = `$(Get-Content C:/secret)"; whoami; #\`n'`;
+  const expr = desktop.psLiteral(nasty);
+  assert.match(expr, /^\[Text\.Encoding\]::UTF8\.GetString\(\[Convert\]::FromBase64String\('[A-Za-z0-9+/=]*'\)\)$/,
+    "nothing but base64 inside the quotes");
+  const b64 = /'([A-Za-z0-9+/=]*)'/.exec(expr)[1];
+  assert.strictEqual(Buffer.from(b64, "base64").toString("utf8"), nasty, "and it survives intact");
+});
+
+// The bug this replaced: the title was doubled-quote-escaped for the -like
+// pattern, then interpolated again into the thrown message — a double-quoted
+// string, where PowerShell evaluates $(...). A window title was a shell.
+test("a window title is never evaluated as PowerShell",
+  { skip: process.platform !== "win32" ? "windows only" : false }, async () => {
+    for (const fn of [
+      (t) => desktop.screenshot({ window: t }),
+      (t) => desktop.focusWindow(t),
+    ]) {
+      await assert.rejects(() => fn("$(7*6)-nosuchwindow"), (e) => {
+        assert.match(e.message, /\$\(7\*6\)-nosuchwindow/, "the title comes back as written");
+        assert.doesNotMatch(e.message, /42/, "not as the result of running it");
+        return true;
+      });
+    }
+  });
+
 // Capturing the screen is safe and fast; injecting input into whatever the user
 // has open is not, so only the read half runs here.
 test("screenshot captures the screen and reports how to convert its coordinates",
