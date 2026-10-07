@@ -666,6 +666,8 @@ const HELP = `
   ${c.accent("arcflare gen 3d")} <image>      image → mesh (.glb) — ${c.accent("--prompt")} "…" for text → mesh
   ${c.accent("arcflare gen tts")} "text"      text → speech (.wav): Qwen3-TTS, Kokoro, Chatterbox…
   ${c.accent("arcflare gen setup")} [model]   install a generator (--torch cuda|cpu, --texture)
+  ${c.accent("arcflare shop")} [search]       browse the model hub: what fits, what to get
+  ${c.accent("arcflare uninstall")}          wipe ArcFlare clean (--dry-run to look, --models too)
   ${c.accent("arcflare update")}              install the latest (--check, --from <tgz|dir> offline, --pack)
   ${c.accent("arcflare rc")}                  remote control: your key and relay (/rc in a session)
   ${c.accent("arcflare rc relay")} <url>      the site that relays sessions (default localhost:3000)
@@ -1164,6 +1166,258 @@ async function updateCommand(cfg, argv) {
   console.log(`  ${c.green("✓")} ${r.message}\n`);
 }
 
+// -------------------------------------------------------------- uninstall ----
+
+/**
+ * `arcflare uninstall` (or `delete`): wipe ArcFlare off this machine.
+ * Shows everything first; asks for the word "delete"; `--dry-run` only shows.
+ */
+async function uninstallCommand(cfg, argv) {
+  const un = require("../lib/uninstall");
+  const upd = require("../lib/update");
+  const dry = argv.includes("--dry-run") || argv.includes("-n");
+  const kind = upd.installKind();
+  const plan = un.survey({
+    withModels: argv.includes("--models"),
+    modelRoots: models.roots(),
+    harnesses: harness.list().map((h) => harness.byId(h.id)).filter(Boolean),
+    install: { kind, root: upd.ROOT },
+  });
+  const keepCli = argv.includes("--keep-cli");
+
+  console.log(`\n  ${c.bold(dry ? "Uninstall ArcFlare — dry run, nothing will change" : "Uninstall ArcFlare")}\n`);
+  if (!plan.homeOk && plan.remove.length) {
+    die(`${plan.home} does not look like an ArcFlare folder (ARCFLARE_HOME?) — refusing to touch it`);
+  }
+
+  const st = await engine.status(cfg.port || DEFAULT_PORT).catch(() => ({ running: false }));
+  console.log(`  ${c.red("delete")}`);
+  if (st.running) console.log(`    ${c.dim("stop")}  the running llama-server`);
+  for (const i of plan.remove) {
+    console.log(`    ${ui.fmtBytes(i.bytes).padStart(9)}  ${i.path} ${c.dim("· " + i.what)}`);
+  }
+  if (!keepCli) {
+    console.log(`    ${"".padStart(9)}  the arcflare command ${c.dim(kind === "git"
+      ? `(npm unlink; your clone at ${upd.ROOT} is left for you to delete)`
+      : "(npm rm -g arcflare)")}`);
+  }
+  console.log(`    ${c.bold(ui.fmtBytes(plan.totalBytes).padStart(9))}  total`);
+
+  if (plan.keep.length) {
+    console.log(`\n  ${c.green("keep")}`);
+    for (const k of plan.keep) console.log(`    ${ui.fmtBytes(k.bytes).padStart(9)}  ${k.path}\n               ${c.dim(k.why)}`);
+  }
+  if (plan.configs.length) {
+    console.log(`\n  ${c.accent("left as they are")} ${c.dim("— other programs' settings that mention ArcFlare")}`);
+    for (const h of plan.configs) {
+      console.log(`    ${h.label.padEnd(10)} ${h.file}` + (h.backup ? `\n               ${c.dim(`backup from before ArcFlare: ${h.backup}`)}` : ""));
+    }
+    console.log(`    ${c.dim("Hermes keeps its own settings: `hermes config` to change its model provider")}`);
+  }
+  console.log(`    ${c.dim("Claude Code: if you added the machine server, `claude mcp remove arcflare`")}`);
+
+  if (dry) { console.log(`\n  ${c.dim("dry run — run without --dry-run to delete")}\n`); return; }
+
+  if (!argv.includes("--yes")) {
+    if (!process.stdin.isTTY) die("not a terminal — pass --yes to confirm, or --dry-run to look");
+    console.log("");
+    const typed = await ui.ask(`Type ${c.red("delete")} to remove all of the above`);
+    if (typed !== "delete") { console.log(`  ${c.dim("nothing changed")}\n`); return; }
+  }
+
+  if (st.running) engine.stop();
+  const failed = un.execute(plan, {
+    removeCli: !keepCli,
+    npm: upd.npmCommand,
+    log: (p) => process.stdout.write(`  ${c.dim("removing")} ${p}\n`),
+  });
+  if (failed.length) {
+    console.log(`\n  ${c.red("✗")} ${failed.length} item(s) could not be removed:`);
+    for (const f of failed) console.log(`    ${f.path} ${c.dim(f.error)}`);
+    process.exitCode = 1;
+  }
+  console.log(`\n  ${c.green("✓")} ArcFlare is uninstalled` +
+    (plan.keep.length ? c.dim(" · your models were kept") : "") +
+    (!keepCli && process.platform === "win32" ? c.dim(" · the command disappears in a few seconds") : ""));
+  if (kind === "git" && !keepCli) console.log(`  ${c.dim(`delete the source folder too if you like: ${upd.ROOT}`)}`);
+  console.log("");
+}
+
+// ------------------------------------------------------------------- shop ----
+
+const FIT_MARK = {
+  fits: () => c.green("✓ fits"),
+  tight: () => c.accent("~ tight"),
+  no: () => c.dim("✗ too big"),
+  unknown: () => c.dim("·"),
+};
+
+/** Run another arcflare command in the foreground, as if typed. */
+function runSelf(args) {
+  const { spawnSync } = require("child_process");
+  const r = spawnSync(process.execPath, [__filename, ...args], { stdio: "inherit" });
+  return r.status === 0;
+}
+
+function shopLine(m, freeGb) {
+  const f = require("../lib/hub").fit(m, freeGb);
+  const nc = m.commercial === false ? c.red(" non-commercial") : "";
+  return `${c.accent(m.name.padEnd(24))} ${c.dim(m.category.padEnd(10))} ${c.dim(m.defaultSize.padEnd(10))} ` +
+    `${c.dim(m.vram.padEnd(9))} ${FIT_MARK[f]()}${nc}`;
+}
+
+function shopDetail(m, freeGb, url) {
+  const hub = require("../lib/hub");
+  const plan = hub.installPlan(m);
+  const f = hub.fit(m, freeGb);
+  console.log("");
+  console.log(`  ${c.bold(m.name)} ${c.dim(`· ${m.author} · ${m.category}`)}`);
+  console.log(`  ${m.description}`);
+  console.log("");
+  console.log(`  ${c.dim("size     ")} ${m.defaultSize}`);
+  console.log(`  ${c.dim("vram     ")} ${m.vram}  ${FIT_MARK[f]()}${freeGb ? c.dim(` (${freeGb.toFixed(1)} GB free here)`) : ""}`);
+  console.log(`  ${c.dim("licence  ")} ${m.license}${m.commercial === false ? c.red("  non-commercial") : m.commercial ? c.dim("  commercial use ok") : ""}`);
+  if (m.versions && m.versions.length > 1) {
+    console.log(`  ${c.dim("sizes    ")} ${m.versions.filter((v) => v.tag !== "latest").map((v) => `${v.tag} ${c.dim(v.size)}`).join(c.dim(" · "))}`);
+  }
+  console.log(`  ${c.dim("page     ")} ${m.url || `${url}/models/${m.slug}`}`);
+  console.log("");
+  if (plan.kind === "pull") console.log(`  ${c.dim("get it   ")} arcflare pull ${plan.ref}`);
+  else if (plan.kind === "gen") console.log(`  ${c.dim("get it   ")} arcflare gen setup ${plan.id}   ${c.dim("then")} ${plan.use}`);
+  else console.log(`  ${c.dim("get it   ")} ${c.dim("no install command in the hub yet — see the model page")}`);
+  console.log("");
+}
+
+/**
+ * `arcflare shop` — browse the model hub from the terminal.
+ *
+ *   arcflare shop                 the menu: category → model → install
+ *   arcflare shop <words>         search, printed as a list
+ *   arcflare shop show <model>    one model in full
+ *   --cat <category> --fits --json --refresh · arcflare shop hub <url>
+ */
+async function shopCommand(cfg, argv) {
+  const hub = require("../lib/hub");
+  const rest = argv.slice(1);
+
+  if (rest[0] === "hub") {
+    if (!rest[1]) { console.log(`  ${hub.hubUrl(cfg)}`); return; }
+    let u;
+    try { u = new URL(rest[1]); } catch { die(`not a URL: ${rest[1]}`); }
+    saveConfig({ ...cfg, hub: u.toString().replace(/\/+$/, "") });
+    console.log(`  ${c.green("✓")} hub ${c.accent(u.toString().replace(/\/+$/, ""))}`);
+    return;
+  }
+
+  const spin = process.stdout.isTTY && !rest.includes("--json") ? ui.spinner("loading the hub") : null;
+  let loaded;
+  try {
+    loaded = await hub.load({ cfg, refresh: rest.includes("--refresh") });
+  } catch (e) {
+    if (spin) spin.stop();
+    die(e.message);
+  }
+  if (spin) spin.stop();
+  const { data, source, url, age } = loaded;
+  const freeGb = (() => { try { return freeDeviceBytes(cfg) / 1e9; } catch { return 0; } })();
+
+  let list = data.models;
+  const cat = flag(rest, "--cat");
+  if (cat) list = list.filter((m) => m.category.toLowerCase() === cat.toLowerCase());
+  if (rest.includes("--fits")) list = list.filter((m) => hub.fit(m, freeGb) === "fits");
+  const words = rest.filter((a, i) => !a.startsWith("-") && rest[i - 1] !== "--cat" && a !== "show");
+
+  if (rest.includes("--json")) {
+    process.stdout.write(JSON.stringify(words.length ? hub.search(list, words.join(" ")) : list, null, 2) + "\n");
+    return;
+  }
+
+  const from = source === "live" ? c.dim(`live from ${url.replace(/^https?:\/\//, "")}`)
+    : source === "cache" ? c.accent(`offline · saved copy from ${hub.ageText(age)}`)
+      : c.accent("offline · the copy that shipped with this version");
+
+  if (rest[0] === "show") {
+    const m = hub.bySlug(data.models, rest[1]);
+    if (!m) die(`no model "${rest[1] || ""}" in the hub — try: arcflare shop ${rest[1] || ""}`);
+    shopDetail(m, freeGb, url);
+    return;
+  }
+
+  // Search, or a terminal that cannot show a menu: print the list.
+  if (words.length || !process.stdin.isTTY || !process.stdout.isTTY) {
+    const found = words.length ? hub.search(list, words.join(" ")) : list;
+    console.log(`\n  ${c.bold("ArcFlare hub")} ${c.dim(`· ${found.length} of ${data.models.length} ·`)} ${from}\n`);
+    for (const m of found) console.log(`  ${shopLine(m, freeGb)}`);
+    if (!found.length) console.log(`  ${c.dim("nothing matched — try fewer words, or arcflare shop with no arguments")}`);
+    console.log(`\n  ${c.dim("arcflare shop show <model> · --fits · --cat code · --refresh")}\n`);
+    return;
+  }
+
+  // The menu.
+  console.log(ui.banner());
+  console.log(`  ${c.bold("Model hub")} ${c.dim(`· ${data.models.length} models ·`)} ${from}` +
+    (freeGb ? c.dim(` · ${freeGb.toFixed(1)} GB free on this GPU`) : "") + "\n");
+  for (;;) {
+    const cats = [...new Set(list.map((m) => m.category))];
+    const fitting = list.filter((m) => hub.fit(m, freeGb) === "fits");
+    const view = await ui.select("Browse", [
+      { label: "Featured", hint: `${list.filter((m) => m.featured).length}`, value: "featured" },
+      ...(freeGb ? [{ label: "Fits my GPU", hint: `${fitting.length}`, value: "fits", note: `${freeGb.toFixed(0)} GB free` }] : []),
+      { label: "Everything", hint: `${list.length}`, value: "all" },
+      ...cats.map((cname) => ({ label: cname, hint: `${list.filter((m) => m.category === cname).length}`, value: `cat:${cname}` })),
+      { label: "Search…", value: "search" },
+    ], { subtitle: "pick a shelf" });
+    if (!view) return;
+
+    let shelf;
+    if (view === "search") {
+      const q = await ui.ask("search");
+      if (!q) continue;
+      shelf = hub.search(list, q);
+    } else if (view === "featured") shelf = list.filter((m) => m.featured);
+    else if (view === "fits") shelf = fitting;
+    else if (view === "all") shelf = list;
+    else shelf = list.filter((m) => m.category === view.slice(4));
+    if (!shelf.length) { console.log(`  ${c.dim("nothing here")}\n`); continue; }
+
+    // Smallest first: the shop's real question is "what can I run".
+    shelf = [...shelf].sort((a, b) => (hub.vramGb(a.vram) ?? 1e9) - (hub.vramGb(b.vram) ?? 1e9));
+    for (;;) {
+      const slug = await ui.select("Models", shelf.map((m) => {
+        const f = hub.fit(m, freeGb);
+        return {
+          label: m.name,
+          hint: `${m.defaultSize} · ${m.vram}`,
+          note: (f === "fits" ? "✓ fits" : f === "tight" ? "~ tight" : f === "no" ? "✗ too big" : "") +
+            (m.commercial === false ? " · non-commercial" : ""),
+          value: m.slug,
+        };
+      }), { subtitle: `${shelf.length} · smallest first · esc to go back` });
+      if (!slug) break;
+      const m = shelf.find((x) => x.slug === slug);
+      shopDetail(m, freeGb, url);
+      const plan = hub.installPlan(m);
+      const action = await ui.select(m.name, [
+        ...(plan.kind === "pull" ? [{ label: "Download it", hint: `arcflare pull ${plan.ref}`, value: "install" }] : []),
+        ...(plan.kind === "gen" ? [{ label: "Set it up", hint: `arcflare gen setup ${plan.id}`, value: "install" }] : []),
+        { label: "Open its page", hint: "in the browser", value: "open" },
+        { label: "Back", value: "back" },
+      ]);
+      if (action === "install") {
+        if (hub.fit(m, freeGb) === "no") {
+          console.log(`  ${c.accent("!")} ${m.vram} is more than the ${freeGb.toFixed(1)} GB free here — it may not load on this GPU`);
+        }
+        runSelf(plan.argv);
+        console.log("");
+      } else if (action === "open") {
+        const page = m.url || `${url}/models/${m.slug}`;
+        try { require("../lib/mcp/apps").openWith(page); console.log(`  ${c.dim("opened")} ${page}\n`); }
+        catch { console.log(`  ${page}\n`); }
+      }
+    }
+  }
+}
+
 // ----------------------------------------------------------------- remote ----
 
 function rcCommand(cfg, argv) {
@@ -1578,6 +1832,15 @@ async function main() {
     case "update":
     case "upgrade":
       return updateCommand(cfg, argv);
+
+    case "shop":
+    case "hub":
+      return shopCommand(cfg, argv);
+
+    case "uninstall":
+    case "delete":
+    case "remove":
+      return uninstallCommand(cfg, argv);
 
     case "rc":
     case "remote":

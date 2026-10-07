@@ -109,6 +109,8 @@ arcflare doctor
 | `arcflare gen setup <model>` | Install a generator (`--torch cuda\|cpu\|rocm`, `--torch-from <python>`, `--texture`) |
 | `arcflare gen 3d <image>` | Image → `.glb` mesh; `--prompt "…"` for text → mesh |
 | `arcflare gen tts "text"` | Text → `.wav` speech (Qwen3-TTS, Kokoro, Chatterbox, VoxCPM2, OuteTTS) |
+| `arcflare shop [search]` | Browse the model hub: what fits your GPU, and download it (`--fits`, `--cat`, `--json`, `show <model>`) |
+| `arcflare uninstall` | Remove ArcFlare and its files; lists everything first (`--dry-run`, `--models`, `--keep-cli`) |
 | `arcflare rc` | Remote control: your key, your relay (`/rc` inside a session) |
 | `arcflare update` | Install the latest (`--check`, `--pack`, `--from <tgz\|dir>` offline) |
 | `arcflare doctor` | Check engine, GPU and harnesses |
@@ -736,6 +738,37 @@ without the clip's transcript. The worker measures the file it wrote, and a
 
 The machine server exposes it as `generate_speech`.
 
+## The shop
+
+`arcflare shop` browses the model hub from the terminal. You pick a shelf
+(featured, "fits my GPU", or a category), then a model. It shows the model's
+size, VRAM and licence, with a **fits / tight / too big** mark against the
+memory actually free on your GPU. One keypress downloads it (`arcflare pull`)
+or sets it up (`arcflare gen setup`). Hub entries whose command is only a
+placeholder are shown as such and never run.
+
+The catalogue comes from arcflare.net/api/hub and is cached for six hours.
+Offline, the shop uses the last saved copy, or on a machine that has never been
+online, `lib/hub-snapshot.json`, which ships with the CLI. The header always
+says which one you are looking at. `node scripts/snapshot-hub.js` refreshes the
+snapshot before a release.
+
+## Uninstalling
+
+`arcflare uninstall` (or `delete`) lists every path it would remove, with its
+size, then asks you to type `delete`. `--dry-run` only lists.
+
+- It removes `~/.arcflare` (settings, keys, caches, the 3D and speech
+  environments) and the `arcflare` command, and stops the server.
+- It **keeps** downloaded models. `~/.arcflare/models` is kept unless you pass
+  `--models`, and shared caches like llama.cpp's are always kept. Both are
+  listed with their sizes, so you can delete them yourself if you want the space.
+- It **does not edit** other programs' config. OpenCode's and Codex's files are
+  listed with the `.arcflare-bak` backups made before ArcFlare first touched
+  them.
+- It refuses to delete an `ARCFLARE_HOME` that is your home folder, a drive
+  root, or a folder with nothing of ArcFlare's in it.
+
 ## Remote control
 
 Type `/rc` in `arcflare agent` or `arcflare run`:
@@ -803,7 +836,7 @@ and the link breaks when the stick comes out. `arcflare update --off` or
 npm test
 ```
 
-231 tests covering the places where being wrong is silent and expensive: the KV
+242 tests covering the places where being wrong is silent and expensive: the KV
 cache maths, model id parsing, and the harness config writers - including that
 they preserve unrelated settings, back files up, and refuse to overwrite a
 config they cannot parse. The machine server adds its own: the JSON-RPC
