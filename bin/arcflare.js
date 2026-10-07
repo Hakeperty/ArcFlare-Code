@@ -664,6 +664,7 @@ const HELP = `
   ${c.accent("arcflare mcp login")} [server]  sign in to a hosted MCP server
   ${c.accent("arcflare gen")}                 3D generation models: Hunyuan3D, TripoSR
   ${c.accent("arcflare gen 3d")} <image>      image → mesh (.glb) — ${c.accent("--prompt")} "…" for text → mesh
+  ${c.accent("arcflare gen tts")} "text"      text → speech (.wav): Qwen3-TTS, Kokoro, Chatterbox…
   ${c.accent("arcflare gen setup")} [model]   install a generator (--torch cuda|cpu, --texture)
   ${c.accent("arcflare update")}              install the latest (--check, --from <tgz|dir> offline, --pack)
   ${c.accent("arcflare rc")}                  remote control: your key and relay (/rc in a session)
@@ -893,7 +894,8 @@ function flag(argv, name) {
 }
 
 const GEN_FLAGS_WITH_VALUES = ["--model", "-m", "--out", "-o", "--steps", "--seed", "--octree",
-  "--faces", "--prompt", "-p", "--torch", "--torch-from", "--device"];
+  "--faces", "--prompt", "-p", "--torch", "--torch-from", "--device",
+  "--voice", "--ref", "--ref-text", "--lang", "--speed", "--instruct", "--file"];
 
 /** Positional arguments, skipping every flag and the value it takes. */
 function positionals(argv) {
@@ -952,7 +954,10 @@ async function genCommand(cfg, argv) {
       console.log(`    arcflare gen setup ${m.id} --torch cpu    ${c.dim("no GPU (slow)")}`);
       console.log(`    arcflare gen setup ${m.id} --torch-from <python>  ${c.dim("borrow GPU torch from another env (AMD on Windows)")}`);
     }
-    if (ch.ok) console.log(`\n  ${c.green("✓")} ready — ${c.accent(`arcflare gen 3d photo.png -m ${m.id}`)}`);
+    if (ch.ok) {
+      const example = gen.kindOf(m) === "tts" ? `arcflare gen tts "hello there" -m ${m.id}` : `arcflare gen 3d photo.png -m ${m.id}`;
+      console.log(`\n  ${c.green("✓")} ready — ${c.accent(example)}`);
+    }
     return;
   }
 
@@ -1004,32 +1009,87 @@ async function genCommand(cfg, argv) {
     return;
   }
 
-  if (sub === "default") {
-    const m = gen.byId(argv[2]);
-    if (!m) die("unknown model");
-    saveConfig({ ...cfg, genModel: m.id });
-    console.log(`  ${c.green("✓")} default generator ${c.accent(m.id)}`);
+  if (sub === "tts" || sub === "say" || sub === "speak") {
+    const rest = argv.slice(2);
+    const file = flag(rest, "--file");
+    let text = positionals(rest).join(" ");
+    if (file) {
+      if (!fs.existsSync(file)) die(`no such file: ${file}`);
+      text = fs.readFileSync(file, "utf8");
+    }
+    const model = flag(rest, "--model") || flag(rest, "-m") || cfg.ttsModel || gen.DEFAULT_TTS;
+    const m = gen.byId(model, "tts");
+    if (!m || gen.kindOf(m) !== "tts") {
+      die(`unknown speech model "${model}". Known: ${gen.MODELS.filter((x) => gen.kindOf(x) === "tts").map((x) => x.id).join(", ")}`);
+    }
+    if (!gen.weightsPresent(m)) {
+      console.log(`  ${c.dim(`${m.label} weights are not downloaded yet — the first run fetches them from ${m.hf}`)}`);
+    }
+    const spin = ui.spinner(`${m.label} · starting`);
+    const t0 = Date.now();
+    let r;
+    try {
+      r = await gen.speak(cfg, {
+        model: m.id, text,
+        out: flag(rest, "--out") || flag(rest, "-o"),
+        voice: flag(rest, "--voice"),
+        ref: flag(rest, "--ref"),
+        refText: flag(rest, "--ref-text"),
+        lang: flag(rest, "--lang"),
+        speed: flag(rest, "--speed"),
+        instruct: flag(rest, "--instruct"),
+        seed: flag(rest, "--seed"),
+        device: flag(rest, "--device"),
+        onEvent: (ev) => {
+          if (ev.event === "stage") spin.update(`${m.label} · ${ev.stage} · ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+          if (ev.event === "info" && ev.device === "cpu") spin.update(`${m.label} · on the CPU`);
+        },
+      });
+    } catch (e) {
+      spin.stop(`${c.red("✗")} ${e.message}`);
+      if (e.stderr) console.log(c.dim(e.stderr.split("\n").slice(-12).map((l) => "    " + l).join("\n")));
+      process.exitCode = 1;
+      return;
+    }
+    spin.stop(`${c.green("✓")} ${r.file}`);
+    console.log(`  ${c.dim(`${r.seconds}s of audio · ${(r.sample_rate / 1000).toFixed(1)} kHz · ` +
+      `${ui.fmtBytes(r.bytes)} · made in ${(r.ms / 1000).toFixed(1)}s · ${r.device || ""}`)}`);
     return;
   }
 
-  // `arcflare gen` — the table.
+  if (sub === "default") {
+    const m = gen.byId(argv[2]);
+    if (!m) die("unknown model");
+    const tts = gen.kindOf(m) === "tts";
+    saveConfig({ ...cfg, [tts ? "ttsModel" : "genModel"]: m.id });
+    console.log(`  ${c.green("✓")} default ${tts ? "speech model" : "generator"} ${c.accent(m.id)}`);
+    return;
+  }
+
+  // `arcflare gen` — the table, one section per kind.
   const rows = gen.status(cfg);
   const py = gen.findPython(cfg);
-  const def = cfg.genModel || gen.DEFAULT_MODEL;
-  console.log(`\n  ${c.bold("3D generation")} ${c.dim("image → mesh, on this machine")}\n`);
+  const defs = { "3d": cfg.genModel || gen.DEFAULT_MODEL, tts: cfg.ttsModel || gen.DEFAULT_TTS };
   const w = Math.max(...rows.map((r) => r.id.length));
-  for (const r of rows) {
-    const ready = r.repoPresent && py;
-    const mark = ready ? (r.weights ? c.green("✓") : c.accent("·")) : c.dim("·");
-    const state = !ready ? "not installed" : r.weights ? "ready" : "installed · weights download on first run";
-    const id = r.id.padEnd(w);
-    const vram = `~${r.vram} GB` + (r.texture ? ` (${r.textureVram} textured)` : "");
-    console.log(`  ${mark} ${r.id === def ? c.accent(id) : id}  ` +
-      c.dim(`${r.params.padEnd(5)} ${vram.padEnd(20)} ${state}`));
-    console.log(`    ${c.dim(r.note)}`);
+  const sections = [
+    ["3d", "3D generation", "image → mesh", "arcflare gen 3d photo.png"],
+    ["tts", "Speech", "text → .wav", 'arcflare gen tts "hello there"'],
+  ];
+  for (const [kind, title, what, example] of sections) {
+    console.log(`\n  ${c.bold(title)} ${c.dim(what + ", on this machine")}\n`);
+    for (const r of rows.filter((x) => x.kind === kind)) {
+      const ready = r.repoPresent && r.python;
+      const mark = ready ? (r.weights ? c.green("✓") : c.accent("·")) : c.dim("·");
+      const state = !ready ? "not installed" : r.weights ? "ready" : "installed · weights download on first run";
+      const id = r.id.padEnd(w);
+      const vram = `~${r.vram} GB` + (r.texture ? ` (${r.textureVram} textured)` : "") + (r.cloning ? " · clones" : "");
+      console.log(`  ${mark} ${r.id === defs[kind] ? c.accent(id) : id}  ` +
+        c.dim(`${r.params.padEnd(5)} ${vram.padEnd(20)} ${state}`));
+      console.log(`    ${c.dim(r.note)}`);
+    }
+    console.log(`\n  ${c.dim("setup:")} arcflare gen setup ${defs[kind]}   ${c.dim("· run:")} ${example}`);
   }
-  console.log(`\n  ${c.dim("python")} ${py ? c.dim(py.path) : c.dim("none yet")}`);
-  console.log(`  ${c.dim("setup:")} arcflare gen setup ${def}   ${c.dim("· run:")} arcflare gen 3d photo.png\n`);
+  console.log(`\n  ${c.dim("python")} ${py ? c.dim(py.path) : c.dim("none yet")} ${c.dim("· speech models keep their own envs in ~/.arcflare/gen/envs")}\n`);
 }
 
 // ----------------------------------------------------------------- update ----

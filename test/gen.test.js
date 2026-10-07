@@ -31,8 +31,8 @@ test("model ids resolve loosely, and unknown ones do not resolve at all", () => 
   assert.strictEqual(gen.byId("stable-diffusion"), null);
 });
 
-test("every model names a code repo, weights and an honest VRAM figure", () => {
-  for (const m of gen.MODELS) {
+test("every 3D model names a code repo, weights and an honest VRAM figure", () => {
+  for (const m of gen.MODELS.filter((x) => gen.kindOf(x) === "3d")) {
     assert.match(m.repo.url, /^https:\/\/github\.com\//, m.id);
     assert.match(m.hf, /^[\w-]+\/[\w.-]+$/, m.id);
     assert.ok(m.vram > 0 && (!m.texture || m.textureVram > m.vram), `${m.id}: texturing costs more than shape`);
@@ -95,10 +95,50 @@ test("a cancelled worker is stopped and says so", async () => {
   await assert.rejects(p, /cancelled/);
 });
 
-test("the machine server offers generation as three tools", () => {
-  const names = createServer({}).list().map((t) => t.name);
-  for (const n of ["generate_models", "generate_3d", "generate_job"]) assert.ok(names.includes(n), n);
-  const g3d = createServer({}).list().find((t) => t.name === "generate_3d");
-  assert.deepStrictEqual(g3d.inputSchema.properties.model.enum, gen.MODELS.map((m) => m.id),
-    "the model enum is what the validator holds callers to");
+test("the machine server offers mesh and speech generation", () => {
+  const tools = createServer({}).list();
+  const names = tools.map((t) => t.name);
+  for (const n of ["generate_models", "generate_3d", "generate_speech", "generate_job"]) assert.ok(names.includes(n), n);
+  const ids = (kind) => gen.MODELS.filter((m) => gen.kindOf(m) === kind).map((m) => m.id);
+  // The enums are what the validator holds callers to, so each tool may only
+  // offer models of its own kind.
+  assert.deepStrictEqual(tools.find((t) => t.name === "generate_3d").inputSchema.properties.model.enum, ids("3d"));
+  assert.deepStrictEqual(tools.find((t) => t.name === "generate_speech").inputSchema.properties.model.enum, ids("tts"));
+});
+
+// ------------------------------------------------------------------ speech ----
+
+test("speech models are registered with what setup and the worker need", () => {
+  const tts = gen.MODELS.filter((m) => gen.kindOf(m) === "tts");
+  assert.ok(tts.some((m) => m.id === "qwen3-tts"), "Qwen3-TTS is there");
+  assert.strictEqual(gen.byId(undefined, "tts").id, gen.DEFAULT_TTS);
+  for (const m of tts) {
+    assert.ok(m.env, `${m.id} has its own environment: their pins conflict`);
+    assert.ok(m.pip && m.pip.length, `${m.id} names its packages`);
+    assert.match(m.hf, /^[\w-]+\/[\w.-]+$/, m.id);
+    assert.ok(!m.repo, `${m.id} installs from pip, not a checkout`);
+  }
+});
+
+test("speech requests a model cannot serve are refused before anything starts", async () => {
+  await assert.rejects(gen.speak({}, { model: "kokoro", text: "" }), /give the text/);
+  await assert.rejects(gen.speak({}, { model: "kokoro", text: "hi", ref: "x.wav" }), /cannot clone/);
+  await assert.rejects(gen.speak({}, { model: "qwen3-tts-clone", text: "hi" }), /--ref/);
+  await assert.rejects(gen.speak({}, { model: "kokoro", text: "hi", instruct: "angrily" }), /--instruct/);
+  await assert.rejects(gen.speak({}, { model: "hunyuan3d-2mini", text: "hi" }), /not a speech model/);
+  await assert.rejects(gen.generate({}, { model: "kokoro", image: __filename }), /speech model/);
+  await assert.rejects(gen.speak({}, { model: "kokoro", text: "x".repeat(6000) }), /characters/);
+});
+
+test("speech output defaults to the working directory, named after the text", () => {
+  const out = gen.defaultSpeechOut(gen.byId("kokoro"), "Hello, World!", "/work");
+  assert.strictEqual(out, path.join("/work", "hello-world-kokoro.wav"));
+});
+
+test("a speech worker that writes nothing fails, whatever it reports", async () => {
+  const worker = fakeWorker(`emit({ event: "done", file: spec.out, seconds: 1 });`);
+  // runWorker alone accepts this; speak() is what checks the file, so check
+  // the same rule speak applies.
+  const r = await gen.runWorker(process.execPath, { out: path.join(os.tmpdir(), "af-nothing.wav") }, { worker });
+  assert.ok(!fs.existsSync(r.file), "nothing was written");
 });

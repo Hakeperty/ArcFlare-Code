@@ -108,6 +108,7 @@ arcflare doctor
 | `arcflare gen` | 3D generation models (Hunyuan3D, TripoSR) and whether they are ready |
 | `arcflare gen setup <model>` | Install a generator (`--torch cuda\|cpu\|rocm`, `--torch-from <python>`, `--texture`) |
 | `arcflare gen 3d <image>` | Image → `.glb` mesh; `--prompt "…"` for text → mesh |
+| `arcflare gen tts "text"` | Text → `.wav` speech (Qwen3-TTS, Kokoro, Chatterbox, VoxCPM2, OuteTTS) |
 | `arcflare rc` | Remote control: your key, your relay (`/rc` inside a session) |
 | `arcflare update` | Install the latest (`--check`, `--pack`, `--from <tgz\|dir>` offline) |
 | `arcflare doctor` | Check engine, GPU and harnesses |
@@ -697,6 +698,44 @@ an MCP call has a ceiling, so `generate_3d` waits a bounded time and otherwise
 returns a job id while the work keeps going. Jobs die with the server, because a
 GPU job that outlives its client holds VRAM nobody can see.
 
+## Speech
+
+`arcflare gen tts` turns text into a `.wav` with an open TTS model:
+
+```
+> arcflare gen tts "Hello from ArcFlare. This voice was generated on your own GPU." -m qwen3-tts-0.6b
+  ✓ hello-from-arcflare-this-voice-was-qwen3-tts-0.6b.wav
+  5.28s of audio · 24.0 kHz · 248 KB · made in 43.3s · cuda
+```
+
+That run is real, on a Radeon 8060S through ROCm, with torch borrowed by
+`--torch-from`. Most of the 43 seconds is loading the model; every command
+starts a fresh process.
+
+| Model | Size | Clones | |
+| --- | --- | --- | --- |
+| `qwen3-tts` | 1.7B | — | default; preset voices, 10 languages, `--instruct` for tone |
+| `qwen3-tts-0.6b` | 0.6B | — | the same voices, less memory |
+| `qwen3-tts-clone` | 1.7B | yes | `--ref clip.wav --ref-text "…"` |
+| `kokoro` | 82M | — | tiny; runs on the CPU too |
+| `chatterbox` | 0.5B | yes | 23 languages via `--lang`; MIT |
+| `voxcpm2` | 2B | — | 48 kHz, 30 languages; wants CUDA 12+ |
+| `outetts` | 0.6B | yes | 14 languages |
+
+**Each speech model gets its own environment** (`~/.arcflare/gen/envs/<name>`).
+`qwen-tts` pins an exact `transformers`; in one shared venv, installing it
+would downgrade the version Hunyuan3D runs on, and one model's setup would
+silently break another. Torch is chosen the same way as for 3D (`--torch`,
+`--torch-from`), and a model that names a preferred Python (Qwen3-TTS: 3.12)
+gets it when it is installed.
+
+Flags that cannot work are refused before anything loads: `--ref` on a model
+that cannot clone, `--instruct` on one that ignores it, `qwen3-tts-clone`
+without the clip's transcript. The worker measures the file it wrote, and a
+"success" that produced no audio is reported as the failure it is.
+
+The machine server exposes it as `generate_speech`.
+
 ## Remote control
 
 Type `/rc` in `arcflare agent` or `arcflare run`:
@@ -764,7 +803,7 @@ and the link breaks when the stick comes out. `arcflare update --off` or
 npm test
 ```
 
-225 tests covering the places where being wrong is silent and expensive: the KV
+231 tests covering the places where being wrong is silent and expensive: the KV
 cache maths, model id parsing, and the harness config writers - including that
 they preserve unrelated settings, back files up, and refuse to overwrite a
 config they cannot parse. The machine server adds its own: the JSON-RPC
