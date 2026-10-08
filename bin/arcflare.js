@@ -40,7 +40,7 @@ const {
 
 
 function die(msg, code = 1) {
-  process.stderr.write(`  ${c.red("✗")} ${msg}\n`);
+  process.stderr.write(`  ${c.red(ui.sym.fail)} ${msg}\n`);
   process.exit(code);
 }
 
@@ -121,18 +121,35 @@ function listModels(all) {
     console.log(`  ${c.dim("set ARCFLARE_MODELS or LLAMA_CACHE to point at your models")}`);
     return;
   }
-  const w = Math.max(...all.map((m) => m.id.length));
   // Anything `arcflare fit --run` has measured is worth more than anything the
   // header can tell you, so it goes on the same line rather than in its own
   // command someone has to know to run.
   const measured = fit.load().rows;
-  for (const m of all) {
+  const total = all.reduce((n, m) => n + (m.size || 0), 0);
+  console.log("");
+  console.log(ui.section("models", `${all.length} found ${ui.sym.dot} ${ui.fmtBytes(total)}`));
+  const head = ["model", "quant", "size", "context", "", "speed"].map((h) => c.dim(h));
+  const rows = all.map((m) => {
+    const meta = m.meta || {};
     const r = measured[m.id];
-    const rate = r && r.gen && typeof r.gen.tokPerSec === "number"
-      ? `  ${c.green(fit.fmtRate(r.gen.tokPerSec))}`
-      : "";
-    console.log(`  ${c.accent(m.id.padEnd(w))}  ${c.dim(modelLabel(m))}${rate}`);
-  }
+    const rate = r && r.gen && typeof r.gen.tokPerSec === "number" ? c.green(fit.fmtRate(r.gen.tokPerSec)) : c.dim("-");
+    return [
+      c.accent(m.id),
+      meta.quant || c.dim("?"),
+      ui.fmtBytes(m.size),
+      meta.trainCtx ? ui.fmtTokens(meta.trainCtx) : c.dim("?"),
+      meta.expertCount ? c.dim(`MoE ${meta.expertUsed}/${meta.expertCount}`) : "",
+      rate,
+    ];
+  });
+  // Narrower terminals lose the MoE column first, then get one entry per model.
+  const fits = (t) => t.split("\n").every((l) => ui.width(l) <= ui.cols());
+  const full = ui.table([head, ...rows]);
+  const slim = ui.table([head, ...rows].map((r) => r.filter((_, i) => i !== 4)));
+  if (fits(full)) console.log(full);
+  else if (fits(slim)) console.log(slim);
+  else for (const m of all) console.log(`  ${c.accent(m.id)}\n      ${c.dim(modelLabel(m))}`);
+  console.log("");
 }
 
 // --------------------------------------------------------------- context ----
@@ -154,7 +171,7 @@ async function ensureServer(cfg, opts = {}) {
         if (!spin) spin = ui.spinner(text); else spin.update(text);
       },
     });
-    if (spin) spin.stop(`${c.green("✓")} llama-server ready on ${c.accent("127.0.0.1:" + r.port)}`);
+    if (spin) spin.stop(`${c.green(ui.sym.ok)} llama-server ready on ${c.accent("127.0.0.1:" + r.port)}`);
     return r;
   } catch (e) {
     if (spin) spin.stop(c.red("✗ server did not come up"));
@@ -362,7 +379,7 @@ async function interactive(argv) {
   for (const n of res.notes || []) console.log(`  ${c.dim(n)}`);
   if (!res.ok) die("could not configure " + chosen.label);
 
-  console.log(`  ${c.green("✓")} ${chosen.label} → ${c.accent(servedId)} @ ${ui.fmtTokens(ctx)} ctx` +
+  console.log(`  ${c.green(ui.sym.ok)} ${chosen.label} → ${c.accent(servedId)} @ ${ui.fmtTokens(ctx)} ctx` +
     (chosen.auto ? c.dim(`  ${approve === "yolo" ? "auto mode" : "approval: ask"}`) : "") + "\n");
 
   // 7. go
@@ -404,14 +421,14 @@ async function prepareModel(cfg, model, ctx, cacheType) {
       if (p.stage === "loading") {
         spin = ui.spinner(`loading ${displayName(model)} @ ${ui.fmtTokens(p.ctx)} ctx…`);
       } else if (p.stage === "loaded" && spin) {
-        spin.stop(`${c.green("✓")} loaded at ${c.accent(ui.fmtTokens(p.ctx))} context` +
+        spin.stop(`${c.green(ui.sym.ok)} loaded at ${c.accent(ui.fmtTokens(p.ctx))} context` +
           (p.reducedFrom ? c.dim(`  (reduced from ${ui.fmtTokens(p.reducedFrom)} — device could not fit it)`) : ""));
       } else if (p.stage === "retry" && spin) {
         spin.stop(p.reason === "batch"
-          ? `${c.dim("·")} did not fit — retrying with a smaller batch, same context`
-          : `${c.dim("·")} did not fit — retrying at ${ui.fmtTokens(p.ctx)}`);
+          ? `${c.dim(ui.sym.dot)} did not fit — retrying with a smaller batch, same context`
+          : `${c.dim(ui.sym.dot)} did not fit — retrying at ${ui.fmtTokens(p.ctx)}`);
       } else if (p.stage === "failed" && spin) {
-        spin.stop(`${c.red("✗")} ${String(p.error).slice(0, 120)}`);
+        spin.stop(`${c.red(ui.sym.fail)} ${String(p.error).slice(0, 120)}`);
         if (p.log) console.log(c.dim(p.log));
       }
     },
@@ -428,49 +445,86 @@ async function prepareModel(cfg, model, ctx, cacheType) {
 
 // ------------------------------------------------------------------ cmds -----
 
-const HELP = `
-  ${c.bold("arcflare")} ${c.dim("— local models, any harness")}
+// The help screen, grouped the way people look for things. Each row is
+// [command, arguments, what it does]; columns are measured, so adding a
+// command never breaks the alignment, and a narrow terminal gets the
+// description on its own line instead of a wrapped mess.
+const HELP_GROUPS = [
+  ["get started", [
+    ["arcflare", "", "open the menu: harness, model, context"],
+    ["arcflare shop", "[search]", "browse the hub: what fits your GPU, what to get"],
+    ["arcflare pull", "<repo>[:Q]", "download a GGUF from Hugging Face"],
+    ["arcflare ls", "", "list the models on this machine"],
+    ["arcflare run", "<model>", "start the server and chat"],
+    ["arcflare fit", "[model]", "what fits; --run loads each one and times it"],
+  ]],
+  ["agent & harnesses", [
+    ["arcflare agent", "[model]", "coding agent: tools, MCP, skills"],
+    ["arcflare agent", "--resume", "pick up a saved session (--continue: the latest)"],
+    ["arcflare use", "<harness> [m]", "configure + launch (--no-launch, --yolo, --ask)"],
+    ["arcflare harness update", "[id]", "update Codex, OpenCode, Hermes, Claude Code"],
+  ]],
+  ["machine server (mcp)", [
+    ["arcflare mcp", "[--install]", "run, open, build and test on this computer"],
+    ["arcflare mcp", "enable|disable", "install the machine server, or leave it out"],
+    ["arcflare mcp trust", "", "allow this folder's .mcp.json to start servers"],
+    ["arcflare mcp login", "[server]", "sign in to a hosted MCP server"],
+    ["arcflare mcp logout", "<s|--all>", "delete stored sign-in tokens"],
+  ]],
+  ["generate", [
+    ["arcflare gen", "", "the 3D and speech models"],
+    ["arcflare gen 3d", "<image>", "image to mesh (.glb); --prompt \"...\" for text"],
+    ["arcflare gen tts", "\"text\"", "text to speech (.wav): Qwen3-TTS, Kokoro, ..."],
+    ["arcflare gen setup", "[model]", "install a generator (--torch cuda|cpu)"],
+  ]],
+  ["remote control", [
+    ["arcflare rc", "", "QR code, key and relay (/rc inside a session)"],
+    ["arcflare rc qr", "", "just the QR code, to scan with your phone"],
+    ["arcflare rc relay", "<url>", "the site that relays sessions"],
+  ]],
+  ["server", [
+    ["arcflare serve", "[--port N]", "start the server only"],
+    ["arcflare ps", "", "server status and loaded models"],
+    ["arcflare stop", "", "stop the server"],
+    ["arcflare logs", "[-n N]", "tail the server log"],
+    ["arcflare backend", "[kind]", "list or pick a llama.cpp backend"],
+    ["arcflare memory", "[profile]", "lean | balanced | max"],
+    ["arcflare batch", "[size]", "physical batch (prefill speed vs VRAM)"],
+    ["arcflare set-engine", "<path>", "remember where llama-server lives"],
+  ]],
+  ["maintain", [
+    ["arcflare doctor", "", "check engine, GPU and harnesses"],
+    ["arcflare update", "", "install the latest (--check, --yes, --from, --pack)"],
+    ["arcflare report", "", "send a bug, complaint or idea"],
+    ["arcflare uninstall", "", "wipe ArcFlare (--dry-run to look, --models too)"],
+    ["arcflare path", "", "print the ArcFlare home directory"],
+    ["arcflare version", "", ""],
+  ]],
+];
 
-  ${c.accent("arcflare")}                    open the menu (harness → model → context)
-  ${c.accent("arcflare ls")}                 list discovered GGUF models
-  ${c.accent("arcflare pull")} <repo>[:Q]     download a GGUF from Hugging Face
-  ${c.accent("arcflare run")} <model>        start the server and chat
-  ${c.accent("arcflare agent")} [model]       coding agent: tools, MCP, skills
-  ${c.accent("arcflare agent --resume")}      pick up a saved session (--continue: the latest)
-  ${c.accent("arcflare mcp")} [--install]     machine server: run, open, build, test
-  ${c.accent("arcflare mcp enable|disable")}  install the machine server, or leave it out
-  ${c.accent("arcflare mcp trust")}           allow this directory's .mcp.json to start servers
-  ${c.accent("arcflare mcp login")} [server]  sign in to a hosted MCP server
-  ${c.accent("arcflare gen")}                 3D generation models: Hunyuan3D, TripoSR
-  ${c.accent("arcflare gen 3d")} <image>      image → mesh (.glb) — ${c.accent("--prompt")} "…" for text → mesh
-  ${c.accent("arcflare gen tts")} "text"      text → speech (.wav): Qwen3-TTS, Kokoro, Chatterbox…
-  ${c.accent("arcflare gen setup")} [model]   install a generator (--torch cuda|cpu, --texture)
-  ${c.accent("arcflare shop")} [search]       browse the model hub: what fits, what to get
-  ${c.accent("arcflare uninstall")}          wipe ArcFlare clean (--dry-run to look, --models too)
-  ${c.accent("arcflare update")}              install the latest (--check, --yes, --from <tgz|dir> offline, --pack)
-  ${c.accent("arcflare harness update")} [id]  update Codex, OpenCode, Hermes, Claude Code (default: all)
-  ${c.accent("arcflare report")}              send a bug, complaint or idea to arcflare.net
-  ${c.accent("arcflare mcp logout")} <s|--all> delete stored sign-in tokens
-  ${c.accent("arcflare rc")}                  remote control: QR code, key and relay (/rc in a session)
-  ${c.accent("arcflare rc qr")}               just the QR code, to scan with your phone
-  ${c.accent("arcflare rc relay")} <url>      the site that relays sessions (default arcflare.net)
-  ${c.accent("arcflare use")} <harness> [m]  configure + launch (--no-launch, --yolo, --ask)
-  ${c.accent("arcflare serve")} [--port N]   start the server only
-  ${c.accent("arcflare ps")}                 server status and loaded models
-  ${c.accent("arcflare stop")}               stop the server
-  ${c.accent("arcflare logs")} [-n N]        tail the server log
-  ${c.accent("arcflare backend")} [kind]     list or select a llama.cpp backend
-  ${c.accent("arcflare memory")} [profile]    lean | balanced | max
-  ${c.accent("arcflare batch")} [size]       physical batch (prefill speed vs VRAM)
-  ${c.accent("arcflare fit")} [model]        what fits — ${c.accent("--run")} to load each and time it
-  ${c.accent("arcflare doctor")}             check engine, GPU and harnesses
-  ${c.accent("arcflare set-engine")} <path>  remember where llama-server lives
-  ${c.accent("arcflare path")}               print the ArcFlare home directory
-  ${c.accent("arcflare version")}
-
-  ${c.dim("Models are found in $ARCFLARE_MODELS, $LLAMA_CACHE, ~/.arcflare/models")}
-  ${c.dim("and ~/llamacpp/models. The server speaks the OpenAI API on :11434.")}
-`;
+function helpText() {
+  const rows = HELP_GROUPS.flatMap(([, r]) => r);
+  const cmdW = Math.max(...rows.map(([cmd, args]) => (cmd + (args ? " " + args : "")).length)) + 2;
+  const narrow = ui.cols() - 4 < cmdW + 30;
+  const out = [ui.banner()];
+  for (const [title, list] of HELP_GROUPS) {
+    out.push(ui.section(title));
+    for (const [cmd, args, what] of list) {
+      const left = `${c.accent(cmd)}${args ? " " + c.grey(args) : ""}`;
+      if (narrow) {
+        out.push(`  ${left}`);
+        if (what) out.push(`      ${c.dim(what)}`);
+      } else {
+        out.push(`  ${ui.pad(left, cmdW)}${what}`);
+      }
+    }
+    out.push("");
+  }
+  out.push(`  ${c.dim("Models are found in $ARCFLARE_MODELS, $LLAMA_CACHE, ~/.arcflare/models")}`);
+  out.push(`  ${c.dim("and ~/llamacpp/models. The server speaks the OpenAI API on :11434.")}`);
+  out.push("");
+  return out.join("\n");
+}
 
 /**
  * Which model a command line asked for.
@@ -543,7 +597,7 @@ async function installMcp(cfg, argv) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
 
-  console.log(`  ${c.green("✓")} registered in ${c.dim(file)}`);
+  console.log(`  ${c.green(ui.sym.ok)} registered in ${c.dim(file)}`);
   if (seeded) {
     console.log(`  ${c.dim(`carried over ${Object.keys(json.mcpServers).length - 1} server(s) from ${seeded}`)}`);
   }
@@ -585,7 +639,7 @@ async function mcpTrust(argv) {
 
   if (action === "untrust") {
     return console.log(trust.revoke(loaded.file)
-      ? `  ${c.green("✓")} ${loaded.file} is no longer trusted`
+      ? `  ${c.green(ui.sym.ok)} ${loaded.file} is no longer trusted`
       : `  ${c.dim(`${loaded.file} was not trusted`)}`);
   }
 
@@ -604,7 +658,7 @@ async function mcpTrust(argv) {
     if (!/^y(es)?$/i.test(a)) return console.log(`  ${c.dim("not trusted — nothing will start")}`);
   }
   const rec = trust.trust(loaded.file, loaded.servers);
-  console.log(`\n  ${c.green("✓")} trusted ${c.dim(rec.fingerprint)}`);
+  console.log(`\n  ${c.green(ui.sym.ok)} trusted ${c.dim(rec.fingerprint)}`);
   console.log(`  ${c.dim("if the file changes, it will need trusting again")}`);
 }
 
@@ -628,11 +682,11 @@ async function mcpAuth(argv) {
     if (name === "--all") {
       const gone = oauth.forgetAll();
       return console.log(gone.length
-        ? `  ${c.green("✓")} forgot ${gone.length} sign-in(s): ${gone.join(", ")}`
+        ? `  ${c.green(ui.sym.ok)} forgot ${gone.length} sign-in(s): ${gone.join(", ")}`
         : `  ${c.dim("no stored sign-ins")}`);
     }
     return console.log(oauth.forget(name)
-      ? `  ${c.green("✓")} forgot the credentials for ${c.accent(name)}`
+      ? `  ${c.green(ui.sym.ok)} forgot the credentials for ${c.accent(name)}`
       : `  ${c.dim(`nothing stored for ${name}`)}`);
   }
   if (!name) {
@@ -651,7 +705,7 @@ async function mcpAuth(argv) {
 
   if (argv[1] === "logout") {
     console.log(oauth.forget(name)
-      ? `  ${c.green("✓")} forgot the credentials for ${c.accent(name)}`
+      ? `  ${c.green(ui.sym.ok)} forgot the credentials for ${c.accent(name)}`
       : `  ${c.dim(`nothing stored for ${name}`)}`);
     return;
   }
@@ -669,14 +723,14 @@ async function mcpAuth(argv) {
     },
   }).catch((e) => die(e.message));
 
-  console.log(`  ${c.green("✓")} signed in ${c.dim(`scope: ${rec.scope}`)}` +
+  console.log(`  ${c.green(ui.sym.ok)} signed in ${c.dim(`scope: ${rec.scope}`)}` +
     (rec.refreshToken ? c.dim("  (refresh token stored)") : ""));
 
   // A token that cannot list tools is not a working connection, so prove it.
   const probe = new McpServer(name, cfg);
   try {
     await probe.start(30000);
-    console.log(`  ${c.green("✓")} ${probe.tools.length} tools from ` +
+    console.log(`  ${c.green(ui.sym.ok)} ${probe.tools.length} tools from ` +
       `${c.accent((probe.serverInfo && probe.serverInfo.name) || name)}`);
     console.log(`  ${c.dim(probe.tools.slice(0, 8).map((t) => t.name).join(", "))}`);
   } catch (e) {
@@ -723,7 +777,7 @@ async function genCommand(cfg, argv) {
     }
     if (!fs.existsSync(p)) die(`no such file: ${p}`);
     saveConfig({ ...cfg, genPython: path.resolve(p) });
-    console.log(`  ${c.green("✓")} generators will run with ${c.dim(path.resolve(p))}`);
+    console.log(`  ${c.green(ui.sym.ok)} generators will run with ${c.dim(path.resolve(p))}`);
     return;
   }
 
@@ -743,9 +797,9 @@ async function genCommand(cfg, argv) {
     }
     const ch = r.check;
     console.log("");
-    console.log(`  ${c.green("✓")} python  ${c.dim(r.python.path)}`);
+    console.log(`  ${c.green(ui.sym.ok)} python  ${c.dim(r.python.path)}`);
     if (ch.torch) {
-      console.log(`  ${ch.device === "cpu" ? c.dim("·") : c.green("✓")} torch   ${c.dim(`${ch.torch} · ${ch.device}` +
+      console.log(`  ${ch.device === "cpu" ? c.dim(ui.sym.dot) : c.green(ui.sym.ok)} torch   ${c.dim(`${ch.torch} · ${ch.device}` +
         (ch.device_name ? ` · ${ch.device_name}` : "") + (ch.vram_free_gb ? ` · ${ch.vram_free_gb} GB free` : ""))}`);
     }
     for (const p of ch.problems || []) console.log(`  ${c.red("!")} ${p}`);
@@ -757,7 +811,7 @@ async function genCommand(cfg, argv) {
     }
     if (ch.ok) {
       const example = gen.kindOf(m) === "tts" ? `arcflare gen tts "hello there" -m ${m.id}` : `arcflare gen 3d photo.png -m ${m.id}`;
-      console.log(`\n  ${c.green("✓")} ready — ${c.accent(example)}`);
+      console.log(`\n  ${c.green(ui.sym.ok)} ready — ${c.accent(example)}`);
     }
     return;
   }
@@ -798,12 +852,12 @@ async function genCommand(cfg, argv) {
         },
       });
     } catch (e) {
-      spin.stop(`${c.red("✗")} ${e.message}`);
+      spin.stop(`${c.red(ui.sym.fail)} ${e.message}`);
       if (e.stderr) console.log(c.dim(e.stderr.split("\n").slice(-12).map((l) => "    " + l).join("\n")));
       process.exitCode = 1;
       return;
     }
-    spin.stop(`${c.green("✓")} ${r.file}`);
+    spin.stop(`${c.green(ui.sym.ok)} ${r.file}`);
     console.log(`  ${c.dim(`${r.faces != null ? r.faces.toLocaleString() + " faces · " : ""}` +
       `${ui.fmtBytes(r.bytes)} · ${(r.ms / 1000).toFixed(1)}s total` +
       (r.shape_seconds ? ` · ${r.shape_seconds}s shape` : "") + ` · ${r.device || ""}`)}`);
@@ -847,12 +901,12 @@ async function genCommand(cfg, argv) {
         },
       });
     } catch (e) {
-      spin.stop(`${c.red("✗")} ${e.message}`);
+      spin.stop(`${c.red(ui.sym.fail)} ${e.message}`);
       if (e.stderr) console.log(c.dim(e.stderr.split("\n").slice(-12).map((l) => "    " + l).join("\n")));
       process.exitCode = 1;
       return;
     }
-    spin.stop(`${c.green("✓")} ${r.file}`);
+    spin.stop(`${c.green(ui.sym.ok)} ${r.file}`);
     console.log(`  ${c.dim(`${r.seconds}s of audio · ${(r.sample_rate / 1000).toFixed(1)} kHz · ` +
       `${ui.fmtBytes(r.bytes)} · made in ${(r.ms / 1000).toFixed(1)}s · ${r.device || ""}`)}`);
     return;
@@ -863,7 +917,7 @@ async function genCommand(cfg, argv) {
     if (!m) die("unknown model");
     const tts = gen.kindOf(m) === "tts";
     saveConfig({ ...cfg, [tts ? "ttsModel" : "genModel"]: m.id });
-    console.log(`  ${c.green("✓")} default ${tts ? "speech model" : "generator"} ${c.accent(m.id)}`);
+    console.log(`  ${c.green(ui.sym.ok)} default ${tts ? "speech model" : "generator"} ${c.accent(m.id)}`);
     return;
   }
 
@@ -880,7 +934,7 @@ async function genCommand(cfg, argv) {
     console.log(`\n  ${c.bold(title)} ${c.dim(what + ", on this machine")}\n`);
     for (const r of rows.filter((x) => x.kind === kind)) {
       const ready = r.repoPresent && r.python;
-      const mark = ready ? (r.weights ? c.green("✓") : c.accent("·")) : c.dim("·");
+      const mark = ready ? (r.weights ? c.green(ui.sym.ok) : c.accent("·")) : c.dim(ui.sym.dot);
       const state = !ready ? "not installed" : r.weights ? "ready" : "installed · weights download on first run";
       const id = r.id.padEnd(w);
       const vram = `~${r.vram} GB` + (r.texture ? ` (${r.textureVram} textured)` : "") + (r.cloning ? " · clones" : "");
@@ -918,14 +972,14 @@ async function updateCommand(cfg, argv) {
   if (argv.includes("--off") || argv.includes("--on")) {
     const on = argv.includes("--on");
     saveConfig({ ...cfg, updateCheck: on });
-    console.log(`  ${c.green("✓")} update checks ${on ? "on" : "off"}`);
+    console.log(`  ${c.green(ui.sym.ok)} update checks ${on ? "on" : "off"}`);
     return;
   }
   if (argv.includes("--pack")) {
     const dir = flag(argv, "--pack") && !flag(argv, "--pack").startsWith("-") ? flag(argv, "--pack") : process.cwd();
     try {
       const file = await upd.pack(dir);
-      console.log(`  ${c.green("✓")} ${file}`);
+      console.log(`  ${c.green(ui.sym.ok)} ${file}`);
       console.log(`  ${c.dim("carry it to the offline machine and run:")} arcflare update --from "${path.basename(file)}"`);
     } catch (e) { die(e.message); }
     return;
@@ -934,10 +988,10 @@ async function updateCommand(cfg, argv) {
     const spin = ui.spinner("checking for updates");
     const rec = await upd.check();
     upd.writeCache(rec);
-    if (rec.offline) return spin.stop(`${c.dim("·")} offline (${rec.error}) — you have ${VERSION}`);
+    if (rec.offline) return spin.stop(`${c.dim(ui.sym.dot)} offline (${rec.error}) — you have ${VERSION}`);
     spin.stop(rec.available
       ? `${c.accent("↑")} update available: ${upd.compareVersions(rec.latest, VERSION) > 0 ? `${VERSION} → ${rec.latest}` : "new commits on main"} · arcflare update`
-      : `${c.green("✓")} up to date (${VERSION})`);
+      : `${c.green(ui.sym.ok)} up to date (${VERSION})`);
     return;
   }
 
@@ -959,7 +1013,7 @@ async function updateCommand(cfg, argv) {
   });
   if (r.cancelled) return console.log(`  ${c.dim(r.message)}`);
   if (!r.ok) {
-    console.log(`  ${c.red("✗")} ${r.message}`);
+    console.log(`  ${c.red(ui.sym.fail)} ${r.message}`);
     if (r.offlineHint) {
       console.log(`\n  ${c.dim("No network? Update from a copy instead:")}`);
       console.log(`    ${c.dim("on a connected machine:")}  arcflare update --pack`);
@@ -968,7 +1022,7 @@ async function updateCommand(cfg, argv) {
     process.exitCode = 1;
     return;
   }
-  console.log(`  ${c.green("✓")} ${r.message}\n`);
+  console.log(`  ${c.green(ui.sym.ok)} ${r.message}\n`);
 }
 
 // ----------------------------------------------------------------- report ----
@@ -1009,7 +1063,7 @@ async function slashReport(line) {
   if (!text) return console.log(`  ${c.dim("usage: /report <what went wrong>  · or run")} arcflare report ${c.dim("for the full form")}`);
   const title = (text.split(/(?<=[.!?])\s/)[0] || text).slice(0, 120);
   const v = rep.validate({ kind: "bug", where: "cli", title, body: text, version: VERSION });
-  if (v.error) return console.log(`  ${c.red("✗")} ${v.error}`);
+  if (v.error) return console.log(`  ${c.red(ui.sym.fail)} ${v.error}`);
   const r = await rep.send(v.payload);
   console.log(`  ${rep.outcome(r, c)}`);
 }
@@ -1031,14 +1085,14 @@ async function harnessCommand(argv) {
   for (const t of rows) {
     const p = hu.plan(t.id, t.bin);
     if (p.skip) {
-      if (want !== "all" || p.skip !== "not installed") console.log(`  ${c.dim("·")} ${t.label} ${c.dim(`— ${p.skip}`)}`);
+      if (want !== "all" || p.skip !== "not installed") console.log(`  ${c.dim(ui.sym.dot)} ${t.label} ${c.dim(`— ${p.skip}`)}`);
       continue;
     }
     console.log(`\n  ${c.bold(t.label)} ${c.dim("→")} ${c.accent(p.show)}`);
     if (dry) continue;
     const r = await hu.runPlan(p);
-    if (r.code === 0) console.log(`  ${c.green("✓")} ${t.label} updated`);
-    else { failed++; console.log(`  ${c.red("✗")} ${t.label} ${c.dim(r.error || `exit ${r.code}`)}`); }
+    if (r.code === 0) console.log(`  ${c.green(ui.sym.ok)} ${t.label} updated`);
+    else { failed++; console.log(`  ${c.red(ui.sym.fail)} ${t.label} ${c.dim(r.error || `exit ${r.code}`)}`); }
   }
   if (failed) process.exitCode = 1;
 }
@@ -1109,11 +1163,11 @@ async function uninstallCommand(cfg, argv) {
     log: (p) => process.stdout.write(`  ${c.dim("removing")} ${p}\n`),
   });
   if (failed.length) {
-    console.log(`\n  ${c.red("✗")} ${failed.length} item(s) could not be removed:`);
+    console.log(`\n  ${c.red(ui.sym.fail)} ${failed.length} item(s) could not be removed:`);
     for (const f of failed) console.log(`    ${f.path} ${c.dim(f.error)}`);
     process.exitCode = 1;
   }
-  console.log(`\n  ${c.green("✓")} ArcFlare is uninstalled` +
+  console.log(`\n  ${c.green(ui.sym.ok)} ArcFlare is uninstalled` +
     (plan.keep.length ? c.dim(" · your models were kept") : "") +
     (!keepCli && process.platform === "win32" ? c.dim(" · the command disappears in a few seconds") : ""));
   if (kind === "git" && !keepCli) console.log(`  ${c.dim(`delete the source folder too if you like: ${upd.ROOT}`)}`);
@@ -1126,7 +1180,7 @@ const FIT_MARK = {
   fits: () => c.green("✓ fits"),
   tight: () => c.accent("~ tight"),
   no: () => c.dim("✗ too big"),
-  unknown: () => c.dim("·"),
+  unknown: () => c.dim(ui.sym.dot),
 };
 
 /** Run another arcflare command in the foreground, as if typed. */
@@ -1182,7 +1236,7 @@ async function shopCommand(cfg, argv) {
     let u;
     try { u = new URL(rest[1]); } catch { die(`not a URL: ${rest[1]}`); }
     saveConfig({ ...cfg, hub: u.toString().replace(/\/+$/, "") });
-    console.log(`  ${c.green("✓")} hub ${c.accent(u.toString().replace(/\/+$/, ""))}`);
+    console.log(`  ${c.green(ui.sym.ok)} hub ${c.accent(u.toString().replace(/\/+$/, ""))}`);
     return;
   }
 
@@ -1223,7 +1277,12 @@ async function shopCommand(cfg, argv) {
   // Search, or a terminal that cannot show a menu: print the list.
   if (words.length || !process.stdin.isTTY || !process.stdout.isTTY) {
     const found = words.length ? hub.search(list, words.join(" ")) : list;
-    console.log(`\n  ${c.bold("ArcFlare hub")} ${c.dim(`· ${found.length} of ${data.models.length} ·`)} ${from}\n`);
+    console.log("");
+    console.log(ui.section("hub", `${found.length} of ${data.models.length}`));
+    console.log(`  ${c.dim(from)}\n`);
+    if (found.length) {
+      console.log(`  ${c.dim(`${"model".padEnd(24)} ${"category".padEnd(10)} ${"size".padEnd(10)} ${"vram".padEnd(9)} here`)}`);
+    }
     for (const m of found) console.log(`  ${shopLine(m, freeGb)}`);
     if (!found.length) console.log(`  ${c.dim("nothing matched — try fewer words, or arcflare shop with no arguments")}`);
     console.log(`\n  ${c.dim("arcflare shop show <model> · --fits · --cat code · --refresh")}\n`);
@@ -1303,13 +1362,13 @@ function rcCommand(cfg, argv) {
   if (sub === "relay") {
     if (!argv[2]) { console.log(`  ${rc.relayUrl(cfg)}`); return; }
     try {
-      console.log(`  ${c.green("✓")} relay ${c.accent(rc.setRelay(argv[2]))}`);
+      console.log(`  ${c.green(ui.sym.ok)} relay ${c.accent(rc.setRelay(argv[2]))}`);
     } catch (e) { die(e.message); }
     return;
   }
   if (sub === "rotate" || sub === "new") {
     const key = rc.getKey({ rotate: true });
-    console.log(`  ${c.green("✓")} new key ${c.accent(key)}`);
+    console.log(`  ${c.green(ui.sym.ok)} new key ${c.accent(key)}`);
     console.log(`  ${c.dim("every device paired with the old key is cut off")}`);
     return;
   }
@@ -1359,12 +1418,12 @@ async function main() {
       console.log(`  ${c.green("●")} llama-server on ${c.accent("127.0.0.1:" + port)}` +
         (st.pid ? c.dim(`  pid ${st.pid}`) : ""));
       const served = await engine.listServed(port);
-      for (const s of served) console.log(`    ${c.dim("·")} ${s}`);
+      for (const s of served) console.log(`    ${c.dim(ui.sym.dot)} ${s}`);
       return;
     }
 
     case "stop":
-      console.log(engine.stop() ? `  ${c.green("✓")} stopped` : `  ${c.dim("nothing to stop")}`);
+      console.log(engine.stop() ? `  ${c.green(ui.sym.ok)} stopped` : `  ${c.dim("nothing to stop")}`);
       return;
 
     case "serve": {
@@ -1383,7 +1442,7 @@ async function main() {
       const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
       const { port, servedId: id } = await prepareModel(cfg, m, best.ctx, best.cacheType);
-      console.log(`  ${c.green("✓")} ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
+      console.log(`  ${c.green(ui.sym.ok)} ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
       await repl(port, id, { rc: argv.includes("--rc") });
       return;
     }
@@ -1420,7 +1479,7 @@ async function main() {
         apiKey: "arcflare", bin: det.bin });
       for (const n of r.notes || []) console.log(`  ${c.dim(n)}`);
       const approve = h.auto && wantAuto ? "yolo" : "ask";
-      console.log(`  ${c.green("✓")} ${h.label} → ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx` +
+      console.log(`  ${c.green(ui.sym.ok)} ${h.label} → ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx` +
         (h.auto ? c.dim(`  ${approve === "yolo" ? "auto mode" : "approval: ask"}`) : ""));
       saveConfig({ ...cfg, lastHarness: h.id, lastModel: m.id });
       if (noLaunch) return;
@@ -1459,7 +1518,7 @@ async function main() {
         env: { ...process.env, LLAMA_CACHE: cacheRoot },
       });
       child.on("exit", (code) => {
-        if (code === 0) console.log(`  ${c.green("✓")} pulled — run ${c.accent("arcflare ls")}`);
+        if (code === 0) console.log(`  ${c.green(ui.sym.ok)} pulled — run ${c.accent("arcflare ls")}`);
         process.exit(code || 0);
       });
       await new Promise(() => {});
@@ -1481,13 +1540,13 @@ async function main() {
           console.log(`  ${c.red("!")} ${pick.id} sees no usable device — selecting it anyway`);
         }
         saveConfig({ ...cfg, backend: pick.id, llamaServer: undefined });
-        console.log(`  ${c.green("✓")} backend set to ${c.accent(pick.id)} ${c.dim(pick.server)}`);
+        console.log(`  ${c.green(ui.sym.ok)} backend set to ${c.accent(pick.id)} ${c.dim(pick.server)}`);
         return;
       }
 
       const active = backend.choose(surveyed, cfg.backend);
       for (const b of surveyed) {
-        const mark = b.ok ? c.green("✓") : c.red("✗");
+        const mark = b.ok ? c.green(ui.sym.ok) : c.red(ui.sym.fail);
         const here = active && b.id === active.id ? c.accent(" ← active") : "";
         console.log(`  ${mark} ${b.id.padEnd(20)} ${c.dim(b.dir)}${here}`);
         if (b.ok) {
@@ -1521,7 +1580,7 @@ async function main() {
           die(`batch size must be between 64 and 16384 (got "${want}")`);
         }
         saveConfig({ ...cfg, ubatch: Math.floor(n) });
-        console.log(`  ${c.green("✓")} physical batch set to ${c.accent(String(Math.floor(n)))} ` +
+        console.log(`  ${c.green(ui.sym.ok)} physical batch set to ${c.accent(String(Math.floor(n)))} ` +
           c.dim("(restart the server to apply)"));
         return;
       }
@@ -1546,7 +1605,7 @@ async function main() {
     case "bench": {
       if (argv.includes("--clear")) {
         console.log(fit.clear()
-          ? `  ${c.green("✓")} forgot every measurement`
+          ? `  ${c.green(ui.sym.ok)} forgot every measurement`
           : `  ${c.dim("nothing measured yet")}`);
         return;
       }
@@ -1612,13 +1671,13 @@ async function main() {
               port: prep.port, id: prep.servedId, quick, probes,
               onStep: (s) => spin.update(`${displayName(m)} — ${s}`),
             });
-            spin.stop(`  ${c.green("✓")} ${c.accent(m.id)} ${c.dim(
+            spin.stop(`  ${c.green(ui.sym.ok)} ${c.accent(m.id)} ${c.dim(
               `${fit.fmtRate(row.gen && row.gen.tokPerSec)} generate · ` +
               `${fit.fmtRate(row.prefill && row.prefill.tokPerSec)} prefill` +
               (row.probes ? ` · ${row.probes.passed}/${row.probes.total} probes` : ""))}`);
           } catch (e) {
             row = { id: m.id, error: e.message };
-            spin.stop(`  ${c.red("✗")} ${m.id} ${c.dim(e.message.slice(0, 80))}`);
+            spin.stop(`  ${c.red(ui.sym.fail)} ${m.id} ${c.dim(e.message.slice(0, 80))}`);
           }
         }
         Object.assign(row, {
@@ -1644,7 +1703,7 @@ async function main() {
           die(`unknown profile "${want}". Try: ${Object.keys(MEMORY_PROFILES).join(", ")}`);
         }
         saveConfig({ ...cfg, memoryProfile: want });
-        console.log(`  ${c.green("✓")} memory profile set to ${c.accent(want)} ` +
+        console.log(`  ${c.green(ui.sym.ok)} memory profile set to ${c.accent(want)} ` +
           c.dim("(restart the server to apply)"));
         return;
       }
@@ -1711,8 +1770,8 @@ async function main() {
         const on = argv[1] === "enable";
         saveConfig({ ...cfg, machine: on });
         console.log(on
-          ? `  ${c.green("✓")} machine server on ${c.dim(MACHINE_NOTE)}`
-          : `  ${c.green("✓")} machine server off ${c.dim("the agent keeps files, search and the shell")}`);
+          ? `  ${c.green(ui.sym.ok)} machine server on ${c.dim(MACHINE_NOTE)}`
+          : `  ${c.green(ui.sym.ok)} machine server off ${c.dim("the agent keeps files, search and the shell")}`);
         return;
       }
       require("./arcflare-mcp.js").main(argv.slice(1));
@@ -1753,47 +1812,69 @@ async function main() {
     }
 
     case "doctor": {
+      // One table per area, a status mark on every row, and a closing tally,
+      // so the one red line stands out instead of hiding in a list.
+      const ok = (yes) => (yes ? c.green(ui.sym.ok) : c.red(ui.sym.fail));
+      const idle = c.dim(ui.sym.dot);
+      let problems = 0;
+      const mark = (state) => { if (state === false) problems++; return state === null ? idle : ok(state); };
+      const block = (title, rows) => {
+        console.log(ui.section(title));
+        console.log(ui.table(rows.map(([state, label, value]) => [mark(state), label, value])));
+        console.log("");
+      };
+
       const backend = require("../lib/backend");
       const surveyed = backend.survey(path.join(HOME, "backends.json"));
       const active = backend.choose(surveyed, cfg.backend);
       const exe = engine.findServer(cfg.llamaServer, cfg.backend);
-      console.log(`  ${exe ? c.green("✓") : c.red("✗")} llama-server  ${c.dim(exe || "not found")}`);
-      for (const b of surveyed) {
-        const mark = b.ok ? c.green("✓") : c.dim("·");
-        const tag = active && b.id === active.id ? c.accent(" (active)") : "";
-        console.log(`  ${mark} backend       ${c.dim(b.kind.padEnd(8))}` +
-          `${b.ok ? c.dim(b.devices.map((d) => d.name).join(", ")) : c.dim(b.note || "no devices")}${tag}`);
-      }
-      console.log(`  ${c.green("✓")} memory        ${c.dim((cfg.memoryProfile || DEFAULT_PROFILE) + " profile")}`);
       const budget = freeDeviceBytes(cfg);
-      console.log(`  ${c.green("✓")} device memory ${c.dim(ui.fmtBytes(budget) + " free")}`);
       const all = models.discover({ meta: true });
-      console.log(`  ${all.length ? c.green("✓") : c.red("✗")} models        ${c.dim(all.length + " found")}`);
-      for (const h of harness.list()) {
-        console.log(`  ${h.installed ? c.green("✓") : c.dim("·")} ${h.label.padEnd(14)} ` +
-          `${c.dim(h.builtin ? "built in" : h.bin || "not installed")}`);
-      }
-      const mcpTools = require("../lib/mcp/tools").createServer({}).list().length;
-      console.log(`  ${c.green("✓")} mcp server    ${c.dim(`${mcpTools} tools · arcflare mcp`)}`);
+      console.log(ui.banner(c.dim("doctor")));
 
+      block("engine", [
+        [!!exe, "llama-server", c.dim(exe || "not found: arcflare set-engine <path>")],
+        ...surveyed.map((b) => [
+          b.ok ? true : null,
+          `backend ${b.kind}`,
+          (b.ok ? c.dim(b.devices.map((d) => d.name).join(", ")) : c.dim(b.note || "no devices")) +
+            (active && b.id === active.id ? ` ${c.accent("active")}` : ""),
+        ]),
+        [true, "memory", c.dim(`${cfg.memoryProfile || DEFAULT_PROFILE} profile`)],
+        [true, "device memory", `${ui.fmtBytes(budget)} ${c.dim("free")}`],
+        [all.length > 0, "models", all.length ? `${all.length} ${c.dim("found")}` : c.dim("none: arcflare shop")],
+      ]);
+
+      block("harnesses", harness.list().map((h) => [
+        h.installed ? true : null,
+        h.label,
+        c.dim(h.builtin ? "built in" : h.bin || "not installed"),
+      ]));
+
+      const mcpTools = require("../lib/mcp/tools").createServer({}).list().length;
       // Blender is the one application ArcFlare knows about by name, because
       // the Blender MCP tools are unusable until a live one answers and the
       // failure otherwise reads as a broken server.
       const bl = require("../lib/mcp/blender");
       const install = bl.find();
+      const toolRows = [[true, "mcp server", `${mcpTools} ${c.dim("tools · arcflare mcp")}`]];
       if (install) {
         const live = await bl.bridgeStatus({ timeoutMs: 1500 });
-        console.log(`  ${c.green("✓")} blender       ${c.dim(install.path)}`);
-        console.log(`  ${live.reachable ? c.green("✓") : c.dim("·")} blender bridge ` +
-          c.dim(live.reachable
-            ? `answering on port ${live.port}`
-            : `port ${live.port} — not running (headless still works)`));
+        toolRows.push([true, "blender", c.dim(install.path)]);
+        toolRows.push([live.reachable ? true : null, "blender bridge", c.dim(live.reachable
+          ? `answering on port ${live.port}`
+          : `port ${live.port}: not running (headless still works)`)]);
       } else {
-        console.log(`  ${c.dim("·")} blender       ${c.dim("not found")}`);
+        toolRows.push([null, "blender", c.dim("not found")]);
       }
+      block("tools", toolRows);
+
       const st = await engine.status(cfg.port || DEFAULT_PORT);
-      console.log(`  ${st.running ? c.green("✓") : c.dim("·")} server        ` +
-        c.dim(st.running ? "running" : "stopped"));
+      block("server", [[st.running ? true : null, `port ${cfg.port || DEFAULT_PORT}`, st.running ? c.green("running") : c.dim("stopped")]]);
+
+      console.log(problems
+        ? `  ${c.red(ui.sym.fail)} ${problems} ${problems === 1 ? "problem" : "problems"} ${c.dim("above")}\n`
+        : `  ${c.green(ui.sym.ok)} ${c.dim("all good")}\n`);
       return;
     }
 
@@ -1803,7 +1884,7 @@ async function main() {
       const found = engine.findServer(p);
       if (!found) die(`no llama-server at ${p}`);
       saveConfig({ ...cfg, llamaServer: found });
-      console.log(`  ${c.green("✓")} engine set to ${c.dim(found)}`);
+      console.log(`  ${c.green(ui.sym.ok)} engine set to ${c.dim(found)}`);
       return;
     }
 
@@ -1820,7 +1901,7 @@ async function main() {
     case "help":
     case "--help":
     case "-h":
-      console.log(HELP);
+      console.log(helpText());
       return;
 
     default:
@@ -1829,7 +1910,7 @@ async function main() {
         process.argv.splice(2, 0, "run");
         return main();
       }
-      console.log(HELP);
+      console.log(helpText());
       process.exitCode = 1;
   }
 }
