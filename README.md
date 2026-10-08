@@ -92,6 +92,7 @@ arcflare doctor
 | `arcflare pull <repo>[:Q]` | Download a GGUF from Hugging Face |
 | `arcflare run <model>` | Start the server and chat |
 | `arcflare agent [model]` | Coding agent: tools, MCP, skills |
+| `arcflare agent --continue` / `--resume [id]` | Pick up the latest saved session, or choose one |
 | `arcflare mcp` | Run the machine server on stdio (for any MCP client) |
 | `arcflare mcp --install` | Register it in `~/.arcflare/mcp.json` |
 | `arcflare use <harness> [model]` | Configure and launch a harness |
@@ -474,6 +475,46 @@ language at launch, never by writing an approval setting into its config file:
 An approval argument you type yourself wins: `arcflare use codex --yolo -s
 read-only` passes your sandbox choice through and adds nothing of its own. The
 plain chat is never asked - it has no tools to approve.
+
+**Project notes.** `AGENTS.md` and `ARCFLARE.md` — from the working directory
+and from the git root above it — go into the system prompt once, at the start
+of the session, so they sit in the cached prefix instead of being re-sent every
+turn. A folder with neither has its `CLAUDE.md` read instead. Each file is
+capped at 8 KB and all of them at 16 KB, cut on a line boundary. `/init` asks
+the model to explore the repository and write a starter `AGENTS.md` (build and
+test commands, layout, conventions), and asks before replacing one.
+
+**Stopping a turn.** Ctrl+C stops the turn in progress — the generation, and
+any shell command it started, with its whole process tree. What the model had
+said so far stays in the conversation, marked as interrupted, so the next
+message makes sense. At the prompt, Ctrl+C twice leaves.
+
+**Undo.** Before `write_file` or `edit_file` changes a file, its previous
+content (or the fact that it didn't exist) is kept, once per file per turn.
+`/undo` shows the files the last turn changed and, once you confirm, puts them
+back; `/undo 3` undoes the last three turns. The model is told with your next
+message, so it reads the files again instead of trusting its memory. Changes
+made by shell commands aren't tracked, and `/undo` says so.
+
+**Sessions.** Every turn is saved to `~/.arcflare/sessions/`. Leaving prints
+the command to come back; `arcflare agent --continue` resumes the latest session
+in this folder, `--resume` lets you pick one (or takes an id), and a resumed
+session comes back on the model it used unless you name another. Inside,
+`/resume` switches, `/sessions` lists, and `/clear` starts a fresh conversation
+(the last one stays saved). A resumed session gets today's system prompt with
+the saved conversation after it, so edited project notes apply. Undo history is
+saved with the session. The newest 200 sessions are kept.
+
+| In a session | Does |
+| --- | --- |
+| `/clear` | New conversation; re-reads the project notes |
+| `/resume [id]` | Switch to a saved session |
+| `/sessions` | Saved sessions for this folder |
+| `/undo [n]` | Revert the file edits of the last turn (or last n) |
+| `/context` | What the prompt costs, by part, against the window |
+| `/init` | Write a starter `AGENTS.md` |
+| `/rc` · `/update` · `/report` | Remote control, updates, bug reports |
+| `/stats` · `/tools` · `/skills` · `/bye` | |
 
 **The machine server.** [`arcflare mcp`](#the-machine-server) is connected
 automatically, so the agent can open applications, supervise background
@@ -882,7 +923,7 @@ want real isolation.
 npm test
 ```
 
-264 tests covering the places where being wrong is silent and expensive: the KV
+278 tests covering the places where being wrong is silent and expensive: the KV
 cache maths, model id parsing, and the harness config writers - including that
 they preserve unrelated settings, back files up, and refuse to overwrite a
 config they cannot parse. The machine server adds its own: the JSON-RPC
@@ -890,7 +931,10 @@ handshake, process supervision, project detection, the test-output parsers, and
 one end-to-end test that spawns the real server over stdio with ArcFlare's own
 MCP client and has it build, test and smoke-test a throwaway project. The QR
 encoder is checked against the spec's worked examples and read back by an
-independent decoder for every version and mask it produces.
+independent decoder for every version and mask it produces. The agent's
+session features are tested on temporary folders: project notes and their caps,
+undo across turns (including files a turn created), saved sessions and
+`--resume`, and a turn interrupted mid-stream against a fake llama-server.
 
 `arcflare fit` is tested without a GPU, by injecting the chat call: what gets
 asked, in what order, with what token budget, and how the answers are judged.
@@ -946,7 +990,8 @@ lib/fit.js        what fits, and what measurably runs best
 lib/models.js     model discovery
 lib/engine.js     llama-server supervision
 lib/harness.js    harness detection, config wiring, launch
-lib/agent/        the agent: loop, tools, MCP client, skills, context
+lib/agent/        the agent: loop, tools, MCP client, skills, context,
+                  project notes, undo checkpoints, saved sessions
 lib/mcp/          the machine server: transport, processes, projects, probes,
                   desktop control, Blender
 lib/gen/          3D generation: model registry, setup, the Python worker

@@ -436,6 +436,7 @@ const HELP = `
   ${c.accent("arcflare pull")} <repo>[:Q]     download a GGUF from Hugging Face
   ${c.accent("arcflare run")} <model>        start the server and chat
   ${c.accent("arcflare agent")} [model]       coding agent: tools, MCP, skills
+  ${c.accent("arcflare agent --resume")}      pick up a saved session (--continue: the latest)
   ${c.accent("arcflare mcp")} [--install]     machine server: run, open, build, test
   ${c.accent("arcflare mcp enable|disable")}  install the machine server, or leave it out
   ${c.accent("arcflare mcp trust")}           allow this directory's .mcp.json to start servers
@@ -1658,8 +1659,14 @@ async function main() {
     }
 
     case "agent": {
+      // --resume [id] / --continue: settled before the model, so a resumed
+      // session comes back on the model it used unless one is named.
+      const resumed = await require("../lib/agent/run").resolveResume(argv, process.cwd());
+      if (resumed.cancelled) return;
+      if (resumed.none) console.log(`  ${c.dim("no saved sessions for this folder · starting a new one")}`);
+      argv.splice(0, argv.length, ...resumed.argv);
       const all = models.discover({ meta: true });
-      const sel = pickModel(all, argv, cfg.lastModel);
+      const sel = pickModel(all, argv, (resumed.session && resumed.session.modelRef) || cfg.lastModel);
       if (sel.error) die(sel.error);
       const m = sel.model;
       if (!m) die("no models found");
@@ -1683,6 +1690,8 @@ async function main() {
         approve: auto ? "yolo" : "ask",
         rc: argv.includes("--rc"),
         cfg,
+        session: resumed.session,
+        modelRef: m.id,
         // --machine and --no-machine answer for this run and settle the
         // question; otherwise the stored answer stands, and an unasked one is
         // asked here rather than assumed.
