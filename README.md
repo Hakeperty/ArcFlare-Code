@@ -111,6 +111,7 @@ arcflare doctor
 | `arcflare gen tts "text"` | Text → `.wav` speech (Qwen3-TTS, Kokoro, Chatterbox, VoxCPM2, OuteTTS) |
 | `arcflare shop [search]` | Browse the model hub: what fits your GPU, and download it (`--fits`, `--cat`, `--json`, `show <model>`) |
 | `arcflare uninstall` | Remove ArcFlare and its files; lists everything first (`--dry-run`, `--models`, `--keep-cli`) |
+| `arcflare cluster` | One model across several computers: `join --allow <ip>` on a worker, `add <ip>` on the main (see [Cluster](#cluster)) |
 | `arcflare rc` | Remote control: QR code, key and relay (`/rc` inside a session; `arcflare rc qr` for just the code) |
 | `arcflare update` | Show what's new and install it (`--check`, `--yes`, `--pack`, `--from <tgz\|dir>` offline) |
 | `arcflare harness update [id]` | Update Codex, OpenCode, Hermes and Claude Code with their own updaters (default: all installed) |
@@ -209,6 +210,63 @@ Probing runs with the working directory set to each build's own folder. On
 Windows the DLL search path includes the current directory, so probing a ROCm
 build from inside a Vulkan build's folder silently loads the Vulkan backend and
 reports a device the ROCm build cannot use.
+
+## Cluster
+
+A model that doesn't fit on one computer can run across several. Each extra
+computer (a *worker*) lends its GPU to the computer you run models from (the
+*main*), using llama.cpp's RPC backend:
+
+```
+worker ❯ arcflare cluster join --allow 192.168.1.10
+  ✓ lending this GPU on 192.168.1.11:50052
+  only 192.168.1.10 may connect. On that computer run:
+    arcflare cluster add 192.168.1.11
+
+main   ❯ arcflare cluster add 192.168.1.11
+  ✓ added 192.168.1.11
+  ● cluster       on
+  ✓ 192.168.1.11:50052     RPC0  45.4 GB free of 47.8 GB · 1 ms
+  ✓ total         90.8 GB free (45.4 GB here + 45.4 GB on workers)
+```
+
+From then on every model the main loads (`run`, `agent`, `use`, the menu,
+the desktop app) is spread over the main and its workers. llama.cpp places
+layers in proportion to each device's free memory, and context sizing counts
+the workers' memory too. `arcflare cluster` shows where things stand,
+`cluster scan` finds workers on the local network, `cluster off` sets them
+aside without forgetting them, and `cluster leave` on a worker stops it.
+
+What to expect:
+
+- **Memory adds up, speed does not.** Each token passes through every
+  computer in turn, so two boxes run a model about as fast as one box with
+  twice the memory would, a little slower for the network hops. Models that
+  read few weights per token (MoE, like Qwen3.6-35B-A3B or gpt-oss-120b) are
+  the ones that stay quick.
+- **The first load sends the weights over the network**: a 60 GB model takes
+  about 8 minutes on gigabit Ethernet and under a minute on 10 GbE. Workers
+  keep a copy (in llama.cpp's cache, `~/.cache/llama.cpp/rpc` unless
+  `$LLAMA_CACHE` is set), so later loads are fast. `join --no-cache` turns
+  that off.
+- **Every computer needs the same llama.cpp version, built with
+  `-DGGML_RPC=ON`** (that build includes `ggml-rpc-server`). A mismatched
+  worker shows up in `arcflare cluster` as one llama.cpp can't use.
+- **A worker serves one main at a time.** While a model is loaded on it,
+  `arcflare cluster` reports it as in use rather than asking it.
+- A worker that is off or unreachable is left out and the model loads without
+  it, rather than failing.
+
+**Security.** `ggml-rpc-server` has no authentication, and llama.cpp says never
+to expose it. ArcFlare never does: it listens on localhost only, and a small
+gate in front of it (`lib/cluster-worker.js`) accepts connections only from
+the addresses given to `--allow` and drops everything else before a byte
+reaches it. A worker refuses to listen on a public address. An IP address can
+be spoofed by someone already on your network, so on a network you don't
+control, run the cluster over a VPN such as WireGuard and use the VPN
+addresses.
+
+Training across computers lives in the separate ArcFlare-Train repository.
 
 ## Memory
 
@@ -951,6 +1009,8 @@ lib/mcp/          the machine server: transport, processes, projects, probes,
                   desktop control, Blender
 lib/gen/          3D generation: model registry, setup, the Python worker
 lib/rc.js         remote control: key, relay session, the two-source prompt
+lib/cluster.js    arcflare cluster: workers, probing, the worker process
+lib/cluster-worker.js  the gate in front of ggml-rpc-server on a worker
 lib/update.js     update checks and installs, online and offline
 lib/report.js     arcflare report: validate and send to arcflare.net
 lib/harness-update.js  arcflare harness update: plan and run each updater

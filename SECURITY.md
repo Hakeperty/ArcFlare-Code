@@ -15,6 +15,7 @@ run it.
 | A repository you cloned | A `.mcp.json` that starts a process or sends your env vars somewhere | The trust gate (below). Nothing in a repo's MCP config runs until you approve its exact content |
 | A model, or a prompt injection it read | Run a destructive or exfiltrating command | Tool approval (below), plus a refusal list for obviously destructive commands. The refusal list is a seatbelt, not a boundary |
 | The update channel | Ship you code | Updates come only from the official repository, show what they install and ask first; npm installs are pinned to an exact commit |
+| Another computer on your network | Use a cluster worker's GPU (`ggml-rpc-server` runs what it is sent, unauthenticated) | The worker listens on localhost only; a gate accepts connections only from `--allow` addresses and refuses to bind a public address. Addresses can be spoofed on a shared LAN: use a VPN there |
 | Someone with your remote-control link | Type into your session | The key is 192 random bits, carried in the URL fragment (never sent to the server); the relay stores only its SHA-256. `/rc off` ends it, `arcflare rc new` replaces the key |
 | Malware already on your machine | Read `~/.arcflare` | Out of scope. OAuth tokens there are files: `0600` on macOS/Linux, ACL'd to your user on Windows |
 
@@ -75,6 +76,8 @@ them. They are refreshable credentials. Treat that file like an SSH key.
 - Leave the machine server off unless a harness needs it, and prefer
   `--no-open` when it doesn't need the desktop.
 - `arcflare rc new` if your remote-control link was ever shared by mistake.
+- Run cluster workers (`arcflare cluster join`) only on networks you control,
+  or over a VPN, and `--allow` only the main computer's address.
 
 ## Reporting a vulnerability
 

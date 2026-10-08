@@ -401,7 +401,11 @@ async function prepareModel(cfg, model, ctx, cacheType) {
   let spin = null;
   const r = await serve.prepareModel(cfg, model, ctx, cacheType, {
     onProgress: (p) => {
-      if (p.stage === "loading") {
+      if (p.stage === "cluster") {
+        if (p.nodes.length) console.log(`  ${c.green("✓")} cluster       ${c.dim(p.nodes.join(", "))}`);
+        for (const d of p.down) console.log(`  ${c.accent("!")} cluster       ${c.dim(d + " not answering - loading without it")}`);
+        if (p.error && !p.nodes.length) console.log(`  ${c.accent("!")} cluster       ${c.dim(p.error)}`);
+      } else if (p.stage === "loading") {
         spin = ui.spinner(`loading ${displayName(model)} @ ${ui.fmtTokens(p.ctx)} ctx…`);
       } else if (p.stage === "loaded" && spin) {
         spin.stop(`${c.green("✓")} loaded at ${c.accent(ui.fmtTokens(p.ctx))} context` +
@@ -453,6 +457,7 @@ const HELP = `
   ${c.accent("arcflare rc")}                  remote control: QR code, key and relay (/rc in a session)
   ${c.accent("arcflare rc qr")}               just the QR code, to scan with your phone
   ${c.accent("arcflare rc relay")} <url>      the site that relays sessions (default arcflare.net)
+  ${c.accent("arcflare cluster")}             one model across several computers (cluster help)
   ${c.accent("arcflare use")} <harness> [m]  configure + launch (--no-launch, --yolo, --ask)
   ${c.accent("arcflare serve")} [--port N]   start the server only
   ${c.accent("arcflare ps")}                 server status and loaded models
@@ -1296,6 +1301,184 @@ async function shopCommand(cfg, argv) {
 
 // ----------------------------------------------------------------- remote ----
 
+// --------------------------------------------------------------- cluster ----
+
+const CLUSTER_HELP = `
+  ${c.bold("arcflare cluster")} ${c.dim("— one model across several computers")}
+
+  ${c.dim("On each extra computer (a worker):")}
+  ${c.accent("arcflare cluster join")} --allow <main's IP>   lend this GPU to the main computer
+  ${c.accent("arcflare cluster leave")}                      stop lending it
+
+  ${c.dim("On the computer you run models from (the main):")}
+  ${c.accent("arcflare cluster add")} <host[:port]>          use a worker (default port 50052)
+  ${c.accent("arcflare cluster remove")} <host[:port]|all>   stop using one
+  ${c.accent("arcflare cluster scan")} [--add]                find workers on this network
+  ${c.accent("arcflare cluster on|off")}                     use the workers, or set them aside
+  ${c.accent("arcflare cluster")}                            status: workers, devices, memory
+
+  ${c.dim("join options: --bind <ip> (default: this machine's LAN address), --port N,")}
+  ${c.dim("--no-cache (don't keep a copy of the weights on this disk)")}
+  ${c.dim("Every computer needs the same llama.cpp version, built with -DGGML_RPC=ON.")}
+`;
+
+async function clusterCommand(cfg, argv) {
+  const cluster = require("../lib/cluster");
+  const sub = argv[1] || "status";
+  const flag = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
+  const exe = engine.findServer(cfg.llamaServer, cfg.backend);
+  const later = () => console.log(`  ${c.dim("takes effect the next time a model loads")}`);
+
+  if (sub === "help" || sub === "--help" || sub === "-h") { console.log(CLUSTER_HELP); return; }
+
+  if (sub === "join") {
+    const rpcServer = cluster.findRpcServer(cfg, exe);
+    if (!rpcServer) {
+      die("no ggml-rpc-server found next to llama-server. Build llama.cpp with -DGGML_RPC=ON, " +
+        "or set ARCFLARE_RPC_SERVER to its path");
+    }
+    const allowArg = flag("--allow");
+    if (!allowArg) {
+      die("say which computer may use this one: arcflare cluster join --allow <main's IP>\n" +
+        "  (on the main computer, `arcflare cluster` prints its address)");
+    }
+    const allow = allowArg.split(",").map((s) => s.trim()).filter(Boolean);
+    for (const a of allow) {
+      if (!require("net").isIP(a)) die(`--allow takes IP addresses: "${a}" is not one`);
+    }
+    const addrs = cluster.localAddresses();
+    const bind = flag("--bind") || (addrs[0] && addrs[0].address);
+    if (!bind) die("this machine has no private network address to listen on; pass --bind <ip>");
+    if (!cluster.isPrivate(bind)) {
+      die(`${bind} is a public address. A worker only listens on a private network or VPN, ` +
+        "because anything that can connect to it can run code on its GPU");
+    }
+    const port = Number(flag("--port") || cluster.DEFAULT_PORT);
+    const spin = ui.spinner(`starting worker on ${bind}:${port}…`);
+    try {
+      await cluster.startWorker({ rpcServer, bind, port, allow, cache: !argv.includes("--no-cache") });
+    } catch (e) {
+      spin.stop(`${c.red("✗")} ${e.message}`);
+      if (e.log) console.log(c.dim(e.log));
+      process.exit(1);
+    }
+    spin.stop(`${c.green("✓")} lending this GPU on ${c.accent(`${bind}:${port}`)}`);
+    console.log(`  ${c.dim("only")} ${allow.join(", ")} ${c.dim("may connect. On that computer run:")}`);
+    console.log(`    arcflare cluster add ${bind}${port === cluster.DEFAULT_PORT ? "" : ":" + port}`);
+    if (addrs.length > 1 && !flag("--bind")) {
+      console.log(`  ${c.dim("other addresses here: " + addrs.slice(1).map((a) => a.address).join(", ") + " (--bind to pick one)")}`);
+    }
+    console.log(`  ${c.dim("arcflare cluster leave stops it · log: " + cluster.WORKER_LOG)}`);
+    return;
+  }
+
+  if (sub === "leave") {
+    console.log(cluster.stopWorker() ? `  ${c.green("✓")} stopped lending this GPU` : `  ${c.dim("no worker running here")}`);
+    return;
+  }
+
+  if (sub === "add") {
+    const specs = argv.slice(2).filter((a) => !a.startsWith("-"));
+    if (!specs.length) die("usage: arcflare cluster add <host[:port]> ...");
+    let next = cfg;
+    for (const s of specs) {
+      try { next = cluster.addNode(next, s); } catch (e) { die(e.message); }
+    }
+    saveConfig(next);
+    console.log(`  ${c.green("✓")} added ${specs.join(", ")}`);
+    await clusterStatus(next, exe);
+    later();
+    return;
+  }
+
+  if (sub === "remove" || sub === "rm") {
+    const spec = argv[2];
+    if (!spec) die("usage: arcflare cluster remove <host[:port]|all>");
+    let next;
+    try { next = cluster.removeNode(cfg, spec); } catch (e) { die(e.message); }
+    saveConfig(next);
+    console.log(`  ${c.green("✓")} removed ${spec}`);
+    later();
+    return;
+  }
+
+  if (sub === "on" || sub === "off") {
+    saveConfig(cluster.setEnabled(cfg, sub === "on"));
+    console.log(`  ${c.green("✓")} cluster ${sub}`);
+    later();
+    return;
+  }
+
+  if (sub === "scan") {
+    const port = Number(flag("--port") || cluster.DEFAULT_PORT);
+    const spin = ui.spinner(`looking for workers on port ${port}…`);
+    const found = await cluster.scan({ port });
+    spin.stop(found.length
+      ? `${c.green("✓")} ${found.length} answering: ${found.map(cluster.endpoint).join(", ")}`
+      : `${c.dim("·")} nothing answering on port ${port} on this network`);
+    if (found.length && argv.includes("--add")) {
+      let next = cfg;
+      for (const n of found) next = cluster.addNode(next, cluster.endpoint(n));
+      saveConfig(next);
+      await clusterStatus(next, exe);
+      later();
+    } else if (found.length) {
+      console.log(`  ${c.dim("arcflare cluster scan --add uses them all, or add one by one")}`);
+    }
+    return;
+  }
+
+  if (sub === "status") {
+    await clusterStatus(cfg, exe);
+    return;
+  }
+  console.log(CLUSTER_HELP);
+}
+
+async function clusterStatus(cfg, exe) {
+  const cluster = require("../lib/cluster");
+  const w = cluster.workerStatus();
+  if (w.running) {
+    console.log(`  ${c.green("●")} worker        ${c.dim(`lending this GPU on ${w.bind}:${w.port} to ${w.allow.join(", ")}`)}`);
+  }
+  const list = cluster.nodes(cfg);
+  const here = cluster.localAddresses().map((a) => a.address);
+  if (!list.length) {
+    if (!w.running) {
+      console.log(`  ${c.dim("·")} no workers. On another computer: ${c.accent(`arcflare cluster join --allow ${here[0] || "<this IP>"}`)}`);
+      console.log(`    ${c.dim("then here:")} ${c.accent("arcflare cluster add <its IP>")}   ${c.dim("(arcflare cluster help)")}`);
+    }
+    return;
+  }
+  const spin = ui.spinner("asking the workers…");
+  const r = await cluster.check(cfg, exe, { inUse: await serve.clusterInUse(cfg) });
+  spin.stop(`${cluster.enabled(cfg) ? c.green("●") : c.dim("○")} cluster       ` +
+    c.dim(cluster.enabled(cfg) ? "on" : "off - models load on this computer only (arcflare cluster on)"));
+  for (const n of r.nodes) {
+    if (!n.reachable) {
+      console.log(`  ${c.red("✗")} ${n.endpoint.padEnd(22)} ${c.dim("not answering (" + (n.reachError || "?") + ") - is `arcflare cluster join` running there?")}`);
+    } else if (n.inUse && !n.devices.length) {
+      console.log(`  ${c.green("●")} ${n.endpoint.padEnd(22)} ${c.dim("in use by the loaded model")}`);
+    } else if (!n.devices.length) {
+      console.log(`  ${c.red("✗")} ${n.endpoint.padEnd(22)} ${c.dim(n.error || "answers, but llama.cpp can't use it")}`);
+      if (here.length) console.log(`    ${c.dim("this computer is " + here.join(", ") + " - that address must be in the worker's --allow")}`);
+    } else {
+      for (const d of n.devices) {
+        const label = d.name === n.endpoint ? d.handle : d.name;
+        console.log(`  ${n.inUse ? c.green("●") : c.green("✓")} ${n.endpoint.padEnd(22)} ${label}  ` +
+          c.dim(n.inUse
+            ? `in use by the loaded model · ${ui.fmtBytes(d.totalMiB * 1048576)}`
+            : `${ui.fmtBytes(d.freeMiB * 1048576)} free of ${ui.fmtBytes(d.totalMiB * 1048576)} · ${n.ms} ms`));
+      }
+    }
+  }
+  if (r.error && !r.freeBytes) console.log(`  ${c.dim("· " + r.error)}`);
+  const local = deviceMemory(cfg).freeBytes || 0;
+  console.log(`  ${c.green("✓")} total         ${c.accent(ui.fmtBytes(local + r.freeBytes))} ` +
+    c.dim(`free (${ui.fmtBytes(local)} here + ${ui.fmtBytes(r.freeBytes)} on workers)`));
+  if (here.length) console.log(`  ${c.dim("·")} this computer ${c.dim(here.join(", "))}`);
+}
+
 function rcCommand(cfg, argv) {
   const rc = require("../lib/rc");
   const sub = argv[1];
@@ -1727,6 +1910,8 @@ async function main() {
     case "remove":
       return uninstallCommand(cfg, argv);
 
+    case "cluster":
+      return clusterCommand(cfg, argv);
     case "rc":
     case "remote":
       return rcCommand(cfg, argv);
@@ -1781,6 +1966,20 @@ async function main() {
             : `port ${live.port} — not running (headless still works)`));
       } else {
         console.log(`  ${c.dim("·")} blender       ${c.dim("not found")}`);
+      }
+      const cl = require("../lib/cluster");
+      const worker = cl.workerStatus();
+      if (worker.running) {
+        console.log(`  ${c.green("✓")} cluster       ${c.dim(`worker on ${worker.bind}:${worker.port}`)}`);
+      }
+      if (cl.nodes(cfg).length) {
+        const r = await cl.check(cfg, exe, { inUse: await serve.clusterInUse(cfg) });
+        const ok = r.nodes.filter((n) => n.devices.length).length;
+        console.log(`  ${ok === r.nodes.length ? c.green("✓") : c.accent("!")} cluster       ` +
+          c.dim(`${ok}/${r.nodes.length} workers usable, ${ui.fmtBytes(r.freeBytes)} free` +
+            (cl.enabled(cfg) ? "" : " (off)")));
+      } else if (!worker.running) {
+        console.log(`  ${c.dim("·")} cluster       ${c.dim("no workers (arcflare cluster help)")}`);
       }
       const st = await engine.status(cfg.port || DEFAULT_PORT);
       console.log(`  ${st.running ? c.green("✓") : c.dim("·")} server        ` +
