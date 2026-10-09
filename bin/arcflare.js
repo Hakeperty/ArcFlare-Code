@@ -176,9 +176,10 @@ async function ensureServer(cfg, opts = {}) {
   } catch (e) {
     if (spin) spin.stop(c.red("✗ server did not come up"));
     if (e.code === "NO_ENGINE") {
-      die("llama-server not found.\n" +
-        `      Install llama.cpp, then either put it on PATH or run:\n` +
-        `      ${c.accent("arcflare set-engine <path-to-llama-server>")}`);
+      if (await offerEngineInstall()) return ensureServer(loadConfig(), opts);
+      die("llama.cpp isn't installed.\n" +
+        `      ${c.accent("arcflare engine install")}   download it for this machine\n` +
+        `      ${c.accent("arcflare set-engine <path>")}  if you already have llama-server`);
     }
     if (e.log) console.log(c.dim(e.log));
     process.exit(1);
@@ -186,6 +187,51 @@ async function ensureServer(cfg, opts = {}) {
 }
 
 
+
+// ---------------------------------------------------------------- engine ----
+
+/** `arcflare engine install [--vulkan|--cuda|--cpu|--rocm]`: get llama.cpp. Returns the server path. */
+async function engineInstall(argv = []) {
+  const ei = require("../lib/engine-install");
+  const dl = require("../lib/download");
+  const want = ["vulkan", "cuda", "cpu", "rocm", "metal"].find((v) => argv.includes(`--${v}`));
+  const spin = ui.spinner("finding the latest llama.cpp build");
+  let step = "";
+  try {
+    const r = await ei.install({
+      home: HOME,
+      want,
+      onStep: (t) => { step = t; spin.update(t); },
+      onProgress: (p) => spin.update(`${step}  ${dl.progressText(p, ui.fmtBytes)}`),
+    });
+    saveConfig({ ...loadConfig(), llamaServer: r.server, backend: undefined });
+    spin.stop(`${c.green(ui.sym.ok)} llama.cpp ${c.accent(r.tag)} ${c.dim(`(${r.variant})`)} installed`);
+    console.log(`  ${c.dim("engine")}  ${r.server}`);
+    if (r.variant.includes("cpu") && !want) {
+      console.log(`  ${c.dim("No GPU build matched this machine, so this is the CPU build. If you have a GPU, try")} ` +
+        `${c.accent("arcflare engine install --vulkan")}`);
+    }
+    return r.server;
+  } catch (e) {
+    spin.stop(`${c.red(ui.sym.fail)} ${e.message}`);
+    console.log(`  ${c.dim("You can also install llama.cpp yourself (https://github.com/ggml-org/llama.cpp/releases) and run")} ` +
+      `${c.accent("arcflare set-engine <path>")}`);
+    process.exitCode = 1;
+    return null;
+  }
+}
+
+/** When llama-server is missing: offer to install it (interactive terminals only). */
+async function offerEngineInstall() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
+  console.log(`\n  ${c.accent("!")} llama.cpp isn't installed yet; ArcFlare needs it to run models.`);
+  const yes = await ui.select("Download it for this machine now?", [
+    { label: "Yes, install llama.cpp", value: true },
+    { label: "No", value: false },
+  ]);
+  if (!yes) return false;
+  return Boolean(await engineInstall());
+}
 
 // ------------------------------------------------------------------ chat ----
 
@@ -490,6 +536,7 @@ const HELP_GROUPS = [
     ["arcflare backend", "[kind]", "list or pick a llama.cpp backend"],
     ["arcflare memory", "[profile]", "lean | balanced | max"],
     ["arcflare batch", "[size]", "physical batch (prefill speed vs VRAM)"],
+    ["arcflare engine install", "", "download llama.cpp for this machine"],
     ["arcflare set-engine", "<path>", "remember where llama-server lives"],
   ]],
   ["maintain", [
@@ -1502,26 +1549,39 @@ async function main() {
     case "pull": {
       const ref = argv[1];
       if (!ref) die('usage: arcflare pull <user>/<repo>[:QUANT]   e.g. unsloth/Qwen3.6-35B-A3B-GGUF:Q5_K_XL');
-      const exe = engine.findServer(cfg.llamaServer);
-      if (!exe) die("llama-server not found — run `arcflare set-engine <path>` first");
-      // The unified `llama` binary ships next to llama-server and owns downloads.
-      const dl = path.join(path.dirname(exe), "llama" + (process.platform === "win32" ? ".exe" : ""));
-      const cacheRoot = process.env.LLAMA_CACHE || cfg.modelsRoot || models.roots()[0] ||
-        path.join(HOME, "models");
-      const { spawn } = require("child_process");
-      const useUnified = fs.existsSync(dl);
-      const bin = useUnified ? dl : exe;
-      const args = useUnified ? ["download", "-hf", ref] : ["-hf", ref, "--no-warmup"];
-      console.log(`  ${c.dim("downloading")} ${c.accent(ref)} ${c.dim("→ " + cacheRoot)}`);
-      const child = spawn(bin, args, {
-        stdio: "inherit",
-        env: { ...process.env, LLAMA_CACHE: cacheRoot },
+      // Native download (lib/hf.js): no llama.cpp needed, resumable, checksummed,
+      // written in the same cache layout llama.cpp's -hf uses. Models go where
+      // existing ones already are, else llama.cpp's default cache folder.
+      const hf = require("../lib/hf");
+      const dlmod = require("../lib/download");
+      const hfRoot = models.roots().find((r) => {
+        try { return fs.readdirSync(r).some((n) => n.startsWith("models--")); } catch { return false; }
       });
-      child.on("exit", (code) => {
-        if (code === 0) console.log(`  ${c.green(ui.sym.ok)} pulled — run ${c.accent("arcflare ls")}`);
-        process.exit(code || 0);
-      });
-      await new Promise(() => {});
+      const cacheRoot = process.env.LLAMA_CACHE || cfg.modelsRoot || hfRoot || hf.defaultCache();
+      console.log(`  ${c.dim("pulling")} ${c.accent(ref)} ${c.dim("→ " + cacheRoot)}`);
+      const spin = ui.spinner("looking up the repo on Hugging Face");
+      let label = "";
+      try {
+        const r = await hf.pull(ref, {
+          cache: cacheRoot,
+          onFile: (f) => {
+            label = `${path.basename(f.name)}${f.count > 1 ? c.dim(` (${f.index + 1}/${f.count})`) : ""}`;
+            spin.update(label);
+          },
+          onProgress: (p) => spin.update(`${label}  ${dlmod.progressText(p, ui.fmtBytes)}`),
+        });
+        const note = r.skipped === r.files.length ? " (already here)" : "";
+        spin.stop(`${c.green(ui.sym.ok)} pulled ${c.accent(r.repo)}${r.quant ? c.dim(":" + r.quant) : ""}${c.dim(note)}`);
+        for (const f of r.files) console.log(`    ${c.dim(f)}`);
+        if (!engine.findServer(cfg.llamaServer, cfg.backend)) {
+          console.log(`  ${c.dim("next:")} ${c.accent("arcflare engine install")} ${c.dim("(llama.cpp isn't installed yet), then")} ${c.accent("arcflare ls")}`);
+        } else {
+          console.log(`  ${c.dim("next:")} ${c.accent("arcflare ls")}`);
+        }
+      } catch (e) {
+        spin.stop(`${c.red(ui.sym.fail)} ${e.message}`);
+        process.exitCode = 1;
+      }
       return;
     }
 
@@ -1833,7 +1893,7 @@ async function main() {
       console.log(ui.banner(c.dim("doctor")));
 
       block("engine", [
-        [!!exe, "llama-server", c.dim(exe || "not found: arcflare set-engine <path>")],
+        [!!exe, "llama-server", c.dim(exe || "not installed: arcflare engine install")],
         ...surveyed.map((b) => [
           b.ok ? true : null,
           `backend ${b.kind}`,
@@ -1875,6 +1935,15 @@ async function main() {
       console.log(problems
         ? `  ${c.red(ui.sym.fail)} ${problems} ${problems === 1 ? "problem" : "problems"} ${c.dim("above")}\n`
         : `  ${c.green(ui.sym.ok)} ${c.dim("all good")}\n`);
+      return;
+    }
+
+    case "engine": {
+      if (argv[1] === "install") { await engineInstall(argv.slice(2)); return; }
+      const exe = engine.findServer(cfg.llamaServer, cfg.backend);
+      if (exe) console.log(`  ${c.green(ui.sym.ok)} llama-server ${c.dim(exe)}`);
+      else console.log(`  ${c.red(ui.sym.fail)} llama.cpp isn't installed: ${c.accent("arcflare engine install")}`);
+      console.log(c.dim("  arcflare engine install [--vulkan|--cuda|--cpu|--rocm]   download llama.cpp for this machine"));
       return;
     }
 
