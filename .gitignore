@@ -22,3 +22,5 @@ backends.json
 server.log
 update.json
 hub.json
+
+scripts/sandbox/results/
