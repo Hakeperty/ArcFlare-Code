@@ -1,8 +1,8 @@
 {
  "schema": 1,
  "site": "https://arcflare.net",
- "count": 56,
- "updated": "2026-04-01",
+ "count": 58,
+ "updated": "2026-10-07",
  "models": [
   {
    "slug": "qwen3-tts",
@@ -208,6 +208,98 @@
      "size": "—",
      "context": "—",
      "updated": "2025-05-01"
+    }
+   ]
+  },
+  {
+   "slug": "kitten-tts",
+   "name": "kitten-tts",
+   "author": "KittenML",
+   "description": "Kitten TTS 0.8: tiny text-to-speech in three sizes (15M, 40M and 80M parameters, 25-80 MB). Runs on any CPU with no GPU and no PyTorch, in 8 voices.",
+   "category": "Audio",
+   "tags": [
+    "tts",
+    "speech",
+    "small",
+    "cpu",
+    "onnx"
+   ],
+   "updated": "2026-02-19",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "80M",
+   "vram": "0 GB (CPU only)",
+   "run": "arcflare gen tts \"Hello from ArcFlare\" -m kitten-tts-mini",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/KittenML/kitten-tts-mini-0.8",
+   "url": "https://arcflare.net/models/kitten-tts",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "79MB",
+     "context": "—",
+     "updated": "2026-02-19"
+    },
+    {
+     "tag": "mini",
+     "size": "79MB",
+     "context": "—",
+     "updated": "2026-02-19"
+    },
+    {
+     "tag": "micro",
+     "size": "41MB",
+     "context": "—",
+     "updated": "2026-02-19"
+    },
+    {
+     "tag": "nano",
+     "size": "25MB",
+     "context": "—",
+     "updated": "2026-02-19"
+    }
+   ]
+  },
+  {
+   "slug": "kitten-tts-2",
+   "name": "kitten-tts-2",
+   "author": "KittenML",
+   "description": "Kitten TTS 2: a 1.7B speech model that clones a voice from 5-30 seconds of audio, with 47 built-in voices, emotion tags and a 0.95 GB ternary download that runs on the CPU too.",
+   "category": "Audio",
+   "tags": [
+    "tts",
+    "speech",
+    "voice-cloning",
+    "multilingual",
+    "cpu"
+   ],
+   "updated": "2026-10-07",
+   "license": "Stellon Labs Community",
+   "commercial": true,
+   "licenseNote": "Free for research, non-commercial and limited commercial use. The commercial grant ends above USD 1M in annual revenue or total funding; past that, a separate licence from Stellon Labs is needed. Distributing the weights or a product built on them requires attribution.",
+   "licenseUrl": "https://huggingface.co/KittenML/kitten-tts-2/blob/main/LICENSE.md",
+   "defaultSize": "1.7B",
+   "vram": "~4 GB",
+   "run": "arcflare gen tts \"Hello from ArcFlare\" -m kitten-tts-2",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/KittenML/kitten-tts-2",
+   "url": "https://arcflare.net/models/kitten-tts-2",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.95GB",
+     "context": "—",
+     "updated": "2026-10-07"
+    },
+    {
+     "tag": "1.7b",
+     "size": "0.95GB",
+     "context": "—",
+     "updated": "2026-10-07"
     }
    ]
   },

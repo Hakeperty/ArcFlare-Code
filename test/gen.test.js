@@ -194,3 +194,19 @@ test("--clone stands in for --ref and --ref-text", async () => {
   await assert.rejects(gen.speak({}, { model: "qwen3-tts-clone", text: "hi", clone: "narrator" }), /setup|not installed/);
   gen.voices.remove("narrator");
 });
+
+test("Kitten TTS 0.8 is CPU-only, needs no torch, and has a closed voice list", async () => {
+  for (const id of ["kitten-tts-mini", "kitten-tts-micro", "kitten-tts-nano"]) {
+    const m = gen.byId(id);
+    assert.strictEqual(m.kind, "tts", id);
+    assert.ok(m.noTorch && m.cpu && m.vram === 0, `${id} runs on onnxruntime`);
+    assert.ok(!m.cloning, `${id} has fixed voices`);
+    assert.match(m.pip[0], /^https:\/\/github\.com\/KittenML\/KittenTTS\/releases\/download\//);
+    assert.ok(m.voices.includes(m.defaultVoice));
+  }
+  assert.strictEqual(gen.byId("kitten-tts-nano").hf, "KittenML/kitten-tts-nano-0.8-int8");
+  await assert.rejects(gen.speak({}, { model: "kitten-tts-nano", text: "hi", voice: "Garfield" }), /no voice "Garfield"/);
+  await assert.rejects(gen.speak({}, { model: "kitten-tts-mini", text: "hi", ref: __filename }), /cannot clone/);
+  // Past validation it fails only for want of an install.
+  await assert.rejects(gen.speak({}, { model: "kitten-tts-mini", text: "hi", voice: "Luna" }), /setup|not installed/);
+});

@@ -110,7 +110,7 @@ arcflare doctor
 | `arcflare gen setup <model>` | Install a generator (`--torch cuda\|cpu\|rocm`, `--torch-from <python>`, `--texture`) |
 | `arcflare gen 3d <image>` | Image → `.glb` mesh; `--prompt "…"` for text → mesh |
 | `arcflare get-engine` | Download llama.cpp (`llama-server`) for this machine and use it; `arcflare pull` does this for you when it is missing |
-| `arcflare gen tts "text"` | Text → `.wav` speech (Qwen3-TTS, Kitten TTS 2, Kokoro, Chatterbox, VoxCPM2, OuteTTS) |
+| `arcflare gen tts "text"` | Text → `.wav` speech (Qwen3-TTS, Kitten TTS, Kokoro, Chatterbox, VoxCPM2, OuteTTS) |
 | `arcflare gen voices` | Saved voices to clone: `add <name> <clip> --text "…"`, `rm <name>` |
 | `arcflare shop [search]` | Browse the model hub: what fits your GPU, and download it (`--fits`, `--cat`, `--json`, `show <model>`) |
 | `arcflare uninstall` | Remove ArcFlare and its files; lists everything first (`--dry-run`, `--models`, `--keep-cli`) |
@@ -771,6 +771,9 @@ A CUDA card should be much faster; this is an integrated AMD GPU.
 | `chatterbox` | 0.5B | yes | 23 languages via `--lang`; MIT |
 | `voxcpm2` | 2B | — | 48 kHz, 30 languages; wants CUDA 12+ |
 | `outetts` | 0.6B | yes | 14 languages |
+| `kitten-tts-mini` | 80M | — | Kitten TTS 0.8: 8 voices, CPU only, no torch; Apache-2.0 |
+| `kitten-tts-micro` | 40M | — | the same voices, smaller |
+| `kitten-tts-nano` | 15M | — | the smallest: a 25 MB download |
 | `kitten-tts-2` | 1.7B | yes | 47 voices, emotion tags, CPU-friendly; [Stellon Labs Community License](https://huggingface.co/KittenML/kitten-tts-2/blob/main/LICENSE.md) |
 
 **Kitten TTS 2** clones from 5-30 seconds of one speaker and needs no
@@ -781,6 +784,17 @@ the other tags on its model card work inline in the text. `--lang de` (or `fr`,
 `es`, `it`, `pt`, `ru`, `zh`, `hi`, `ar`) picks the voice for that language.
 Its licence is free for research and for commercial use under USD 1M in
 revenue or funding, with attribution.
+
+**Kitten TTS 0.8** (`kitten-tts-mini`, `-micro`, `-nano`) is a different
+thing: StyleTTS 2 models of 15-80M parameters exported to ONNX. They run on
+the CPU through onnxruntime, so setup installs no torch at all, and speak in
+eight voices (`Bella`, `Jasper`, `Luna`, `Bruno`, `Rosie`, `Hugo`, `Kiki`,
+`Leo`). English only, no cloning; Apache-2.0.
+
+```
+> arcflare gen setup kitten-tts-nano
+> arcflare gen tts "Small enough for a Raspberry Pi." -m kitten-tts-nano --voice Luna
+```
 
 **Saved voices.** A clip you clone from often can be kept under a name:
 

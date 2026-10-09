@@ -474,7 +474,7 @@ const HELP_GROUPS = [
   ["generate", [
     ["arcflare gen", "", "the 3D and speech models"],
     ["arcflare gen 3d", "<image>", "image to mesh (.glb); --prompt \"...\" for text"],
-    ["arcflare gen tts", "\"text\"", "text to speech (.wav): Qwen3-TTS, Kitten TTS 2, Kokoro, ..."],
+    ["arcflare gen tts", "\"text\"", "text to speech (.wav): Qwen3-TTS, Kitten TTS, Kokoro, ..."],
     ["arcflare gen voices", "", "saved voices to clone: add <name> <clip> --text \"...\" · rm"],
     ["arcflare gen setup", "[model]", "install a generator (--torch cuda|cpu)"],
   ]],
@@ -996,7 +996,7 @@ async function genCommand(cfg, argv) {
       const mark = ready ? (r.weights ? c.green(ui.sym.ok) : c.accent("·")) : c.dim(ui.sym.dot);
       const state = !ready ? "not installed" : r.weights ? "ready" : "installed · weights download on first run";
       const id = r.id.padEnd(w);
-      const vram = `~${r.vram} GB` + (r.texture ? ` (${r.textureVram} textured)` : "") + (r.cloning ? " · clones" : "");
+      const vram = (r.vram ? `~${r.vram} GB` : "CPU only") + (r.texture ? ` (${r.textureVram} textured)` : "") + (r.cloning ? " · clones" : "");
       console.log(`  ${mark} ${r.id === defs[kind] ? c.accent(id) : id}  ` +
         c.dim(`${r.params.padEnd(5)} ${vram.padEnd(20)} ${state}`));
       console.log(`    ${c.dim(r.note)}`);

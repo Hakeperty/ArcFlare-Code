@@ -109,17 +109,24 @@ FAMILY_IMPORTS = {
     "voxcpm": ["voxcpm", "soundfile"],
     "outetts": ["outetts"],
     "kittentts": ["kittenml", "soundfile"],
+    "kittentts-08": ["kittentts", "soundfile"],
 }
+
+# Families that run on onnxruntime: no torch, no GPU, nothing to warn about.
+NO_TORCH = {"kittentts-08"}
 
 
 def do_check(spec):
-    info = torch_info()
-    problems = []
-    if not info.get("torch"):
-        problems.append("torch is not installed: " + info.get("error", ""))
-    elif info.get("device") == "cpu":
-        problems.append("torch sees no GPU -- generation will run on the CPU and take many minutes")
     family = spec.get("family")
+    problems = []
+    if spec.get("noTorch") or family in NO_TORCH:
+        info = {"torch": None, "device": "cpu"}
+    else:
+        info = torch_info()
+        if not info.get("torch"):
+            problems.append("torch is not installed: " + info.get("error", ""))
+        elif info.get("device") == "cpu":
+            problems.append("torch sees no GPU -- generation will run on the CPU and take many minutes")
     imports = {}
     for mod in FAMILY_IMPORTS.get(family, []):
         try:
@@ -485,6 +492,23 @@ def tts_kitten(spec, device):
     finish_audio(spec["out"], device=device, voice=kw.get("voice") or "cloned", cloned=bool(spec.get("ref")))
 
 
+def tts_kitten08(spec, device):
+    import soundfile as sf
+    from kittentts import KittenTTS
+
+    stage("load-model", repo=spec["hf"])
+    model = cached(("kittentts-08", spec["hf"]), lambda: KittenTTS(spec["hf"]))
+    voice = spec.get("voice") or "Jasper"
+    stage("synthesize", voice=voice)
+    speed = float(spec.get("speed") or 1)
+    try:
+        audio = model.generate(spec["text"], voice=voice, speed=speed)
+    except TypeError:  # builds without a speed argument
+        audio = model.generate(spec["text"], voice=voice)
+    sf.write(spec["out"], to_numpy(audio), 24000)
+    finish_audio(spec["out"], device="cpu", voice=voice)
+
+
 TTS = {
     "qwen3-tts": tts_qwen3,
     "kokoro": tts_kokoro,
@@ -492,6 +516,7 @@ TTS = {
     "voxcpm": tts_voxcpm,
     "outetts": tts_outetts,
     "kittentts": tts_kitten,
+    "kittentts-08": tts_kitten08,
 }
 
 
@@ -500,7 +525,8 @@ TTS = {
 def run(spec):
     if spec.get("action") == "check":
         return do_check(spec)
-    device = pick_device(spec.get("device"))
+    # onnxruntime models import no torch, so don't ask torch for a device.
+    device = "cpu" if spec.get("noTorch") or spec.get("family") in NO_TORCH else pick_device(spec.get("device"))
     emit("info", device=device, python=sys.executable)
     family = spec["family"]
     if spec.get("action") == "tts":
