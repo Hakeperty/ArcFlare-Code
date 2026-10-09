@@ -109,6 +109,7 @@ arcflare doctor
 | `arcflare gen` | 3D generation models (Hunyuan3D, TripoSR) and whether they are ready |
 | `arcflare gen setup <model>` | Install a generator (`--torch cuda\|cpu\|rocm`, `--torch-from <python>`, `--texture`) |
 | `arcflare gen 3d <image>` | Image → `.glb` mesh; `--prompt "…"` for text → mesh |
+| `arcflare get-engine` | Download llama.cpp (`llama-server`) for this machine and use it; `arcflare pull` does this for you when it is missing |
 | `arcflare gen tts "text"` | Text → `.wav` speech (Qwen3-TTS, Kitten TTS 2, Kokoro, Chatterbox, VoxCPM2, OuteTTS) |
 | `arcflare gen voices` | Saved voices to clone: `add <name> <clip> --text "…"`, `rm <name>` |
 | `arcflare shop [search]` | Browse the model hub: what fits your GPU, and download it (`--fits`, `--cat`, `--json`, `show <model>`) |

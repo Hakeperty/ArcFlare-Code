@@ -492,6 +492,7 @@ const HELP_GROUPS = [
     ["arcflare memory", "[profile]", "lean | balanced | max"],
     ["arcflare batch", "[size]", "physical batch (prefill speed vs VRAM)"],
     ["arcflare set-engine", "<path>", "remember where llama-server lives"],
+    ["arcflare get-engine", "", "download llama.cpp (llama-server) for this machine"],
   ]],
   ["maintain", [
     ["arcflare doctor", "", "check engine, GPU and harnesses"],
@@ -742,6 +743,27 @@ async function mcpAuth(argv) {
 }
 
 // --------------------------------------------------------------- generate ----
+
+/**
+ * Download llama.cpp, remember it as the engine and return the llama-server
+ * path. Exits with a readable message when that isn't possible.
+ */
+async function getEngine(cfg) {
+  const getllama = require("../lib/getllama");
+  let r;
+  try {
+    r = await getllama.install({
+      log: (line) => console.log(`  ${c.dim(line)}`),
+      // Whole percentages on their own lines: the desktop app reads them as progress.
+      onProgress: (pct) => { if (pct % 10 === 0) console.log(`  ${c.dim(`${pct}%`)}`); },
+    });
+  } catch (e) {
+    die(`couldn't get llama.cpp: ${e.message}`);
+  }
+  saveConfig({ ...loadConfig(), llamaServer: r.server });
+  console.log(`  ${c.green(ui.sym.ok)} engine ${c.accent("llama.cpp " + r.tag)} ${c.dim(r.server)}`);
+  return r.server;
+}
 
 /** `--name value` from argv, or undefined. */
 function flag(argv, name) {
@@ -1539,8 +1561,13 @@ async function main() {
     case "pull": {
       const ref = argv[1];
       if (!ref) die('usage: arcflare pull <user>/<repo>[:QUANT]   e.g. unsloth/Qwen3.6-35B-A3B-GGUF:Q5_K_XL');
-      const exe = engine.findServer(cfg.llamaServer);
-      if (!exe) die("llama-server not found — run `arcflare set-engine <path>` first");
+      let exe = engine.findServer(cfg.llamaServer);
+      // Downloads go through llama.cpp, so a machine without it gets it first
+      // rather than a dead end (a fresh Mac, most of all).
+      if (!exe) {
+        console.log(`  ${c.dim("llama.cpp isn't installed yet — getting it first (arcflare get-engine)")}`);
+        exe = await getEngine(cfg);
+      }
       // The unified `llama` binary ships next to llama-server and owns downloads.
       const dl = path.join(path.dirname(exe), "llama" + (process.platform === "win32" ? ".exe" : ""));
       const cacheRoot = process.env.LLAMA_CACHE || cfg.modelsRoot || models.roots()[0] ||
@@ -1870,7 +1897,7 @@ async function main() {
       console.log(ui.banner(c.dim("doctor")));
 
       block("engine", [
-        [!!exe, "llama-server", c.dim(exe || "not found: arcflare set-engine <path>")],
+        [!!exe, "llama-server", c.dim(exe || "not found: arcflare get-engine downloads it, or arcflare set-engine <path>")],
         ...surveyed.map((b) => [
           b.ok ? true : null,
           `backend ${b.kind}`,
@@ -1912,6 +1939,12 @@ async function main() {
       console.log(problems
         ? `  ${c.red(ui.sym.fail)} ${problems} ${problems === 1 ? "problem" : "problems"} ${c.dim("above")}\n`
         : `  ${c.green(ui.sym.ok)} ${c.dim("all good")}\n`);
+      return;
+    }
+
+    case "get-engine":
+    case "install-engine": {
+      await getEngine(cfg);
       return;
     }
 
