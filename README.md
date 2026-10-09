@@ -109,7 +109,8 @@ arcflare doctor
 | `arcflare gen` | 3D generation models (Hunyuan3D, TripoSR) and whether they are ready |
 | `arcflare gen setup <model>` | Install a generator (`--torch cuda\|cpu\|rocm`, `--torch-from <python>`, `--texture`) |
 | `arcflare gen 3d <image>` | Image → `.glb` mesh; `--prompt "…"` for text → mesh |
-| `arcflare gen tts "text"` | Text → `.wav` speech (Qwen3-TTS, Kokoro, Chatterbox, VoxCPM2, OuteTTS) |
+| `arcflare gen tts "text"` | Text → `.wav` speech (Qwen3-TTS, Kitten TTS 2, Kokoro, Chatterbox, VoxCPM2, OuteTTS) |
+| `arcflare gen voices` | Saved voices to clone: `add <name> <clip> --text "…"`, `rm <name>` |
 | `arcflare shop [search]` | Browse the model hub: what fits your GPU, and download it (`--fits`, `--cat`, `--json`, `show <model>`) |
 | `arcflare uninstall` | Remove ArcFlare and its files; lists everything first (`--dry-run`, `--models`, `--keep-cli`) |
 | `arcflare rc` | Remote control: QR code, key and relay (`/rc` inside a session; `arcflare rc qr` for just the code) |
@@ -769,6 +770,28 @@ A CUDA card should be much faster; this is an integrated AMD GPU.
 | `chatterbox` | 0.5B | yes | 23 languages via `--lang`; MIT |
 | `voxcpm2` | 2B | — | 48 kHz, 30 languages; wants CUDA 12+ |
 | `outetts` | 0.6B | yes | 14 languages |
+| `kitten-tts-2` | 1.7B | yes | 47 voices, emotion tags, CPU-friendly; [Stellon Labs Community License](https://huggingface.co/KittenML/kitten-tts-2/blob/main/LICENSE.md) |
+
+**Kitten TTS 2** clones from 5-30 seconds of one speaker and needs no
+transcript. Its ternary weights are a 0.95 GB download. `--instruct` takes one
+emotion (`angry`, `contemplative`, `excited`, `joyful`, `mundane`, `nervous`,
+`sad`, `stern`, `surprised`, `tender`), and `<laugh>`, `<sigh>`, `(((word)))` and
+the other tags on its model card work inline in the text. `--lang de` (or `fr`,
+`es`, `it`, `pt`, `ru`, `zh`, `hi`, `ar`) picks the voice for that language.
+Its licence is free for research and for commercial use under USD 1M in
+revenue or funding, with attribution.
+
+**Saved voices.** A clip you clone from often can be kept under a name:
+
+```
+> arcflare gen voices add narrator clip.wav --text "what the clip says"
+> arcflare gen tts "Chapter one." -m kitten-tts-2 --clone narrator
+```
+
+The clip is copied to `~/.arcflare/voices/<name>/`, and `--clone` fills in
+`--ref` and `--ref-text` from it, so the same voice works on every cloning
+model. The desktop app's voice studio saves to the same place. Only clone
+voices you have permission to use.
 
 **Each speech model gets its own environment** (`~/.arcflare/gen/envs/<name>`).
 `qwen-tts` pins an exact `transformers`; in one shared venv, installing it

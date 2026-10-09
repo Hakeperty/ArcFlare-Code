@@ -142,3 +142,55 @@ test("a speech worker that writes nothing fails, whatever it reports", async () 
   const r = await gen.runWorker(process.execPath, { out: path.join(os.tmpdir(), "af-nothing.wav") }, { worker });
   assert.ok(!fs.existsSync(r.file), "nothing was written");
 });
+
+// ---------------------------------------------------------- kitten / voices ----
+
+function wav(file, seconds, rate = 16000) {
+  const data = Buffer.alloc(Math.round(seconds * rate) * 2);
+  const h = Buffer.alloc(44);
+  h.write("RIFF", 0); h.writeUInt32LE(36 + data.length, 4); h.write("WAVE", 8);
+  h.write("fmt ", 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22);
+  h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34);
+  h.write("data", 36); h.writeUInt32LE(data.length, 40);
+  fs.writeFileSync(file, Buffer.concat([h, data]));
+  return file;
+}
+
+test("Kitten TTS 2 is registered as a cloning model with emotion tags", async () => {
+  const m = gen.byId("kitten-tts-2");
+  assert.strictEqual(m.kind, "tts");
+  assert.strictEqual(m.hf, "KittenML/kitten-tts-2");
+  assert.ok(m.cloning && m.emotions.includes("joyful"));
+  assert.strictEqual(gen.byId("KittenTTS2").id, "kitten-tts-2");
+  assert.strictEqual(gen.byId("kitten_tts_2").id, "kitten-tts-2");
+  await assert.rejects(gen.speak({}, { model: "kitten-tts-2", text: "hi", instruct: "reverent" }), /emotions/);
+});
+
+test("saved voices round-trip, measure their clip and refuse silent overwrites", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "af-voice-"));
+  const clip = wav(path.join(dir, "me.wav"), 6.5);
+  const v = gen.voices.save({ name: "My Voice", clip, text: "hello there", lang: "en" });
+  assert.strictEqual(v.id, "my-voice");
+  assert.strictEqual(v.seconds, 6.5);
+  assert.ok(fs.existsSync(v.clip) && v.clip !== clip, "the clip is copied in");
+  assert.strictEqual(gen.voices.get("my voice").text, "hello there");
+  assert.throws(() => gen.voices.save({ name: "my-voice", clip }), /already exists/);
+  assert.strictEqual(gen.voices.update("my-voice", { text: "changed" }).text, "changed");
+  assert.ok(gen.voices.list().some((x) => x.id === "my-voice"));
+  assert.match(gen.voices.advice(2), /3 s/);
+  assert.strictEqual(gen.voices.advice(10), null);
+  assert.throws(() => gen.voices.save({ name: "../..", clip }), /name/);
+  assert.ok(gen.voices.remove("my-voice"));
+  assert.strictEqual(gen.voices.get("my-voice"), null);
+});
+
+test("--clone stands in for --ref and --ref-text", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "af-voice-"));
+  gen.voices.save({ name: "narrator", clip: wav(path.join(dir, "n.wav"), 8), text: "the clip says this" });
+  await assert.rejects(gen.speak({}, { model: "kokoro", text: "hi", clone: "narrator" }), /cannot clone/);
+  await assert.rejects(gen.speak({}, { model: "kitten-tts-2", text: "hi", clone: "nobody" }), /no saved voice/);
+  await assert.rejects(gen.speak({}, { model: "kitten-tts-2", text: "hi", clone: "narrator", ref: "x.wav" }), /not both/);
+  // Past validation, it fails only for want of an install — not on --ref-text.
+  await assert.rejects(gen.speak({}, { model: "qwen3-tts-clone", text: "hi", clone: "narrator" }), /setup|not installed/);
+  gen.voices.remove("narrator");
+});

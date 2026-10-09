@@ -474,7 +474,8 @@ const HELP_GROUPS = [
   ["generate", [
     ["arcflare gen", "", "the 3D and speech models"],
     ["arcflare gen 3d", "<image>", "image to mesh (.glb); --prompt \"...\" for text"],
-    ["arcflare gen tts", "\"text\"", "text to speech (.wav): Qwen3-TTS, Kokoro, ..."],
+    ["arcflare gen tts", "\"text\"", "text to speech (.wav): Qwen3-TTS, Kitten TTS 2, Kokoro, ..."],
+    ["arcflare gen voices", "", "saved voices to clone: add <name> <clip> --text \"...\" · rm"],
     ["arcflare gen setup", "[model]", "install a generator (--torch cuda|cpu)"],
   ]],
   ["remote control", [
@@ -750,7 +751,7 @@ function flag(argv, name) {
 
 const GEN_FLAGS_WITH_VALUES = ["--model", "-m", "--out", "-o", "--steps", "--seed", "--octree",
   "--faces", "--prompt", "-p", "--torch", "--torch-from", "--device",
-  "--voice", "--ref", "--ref-text", "--lang", "--speed", "--instruct", "--file"];
+  "--voice", "--ref", "--ref-text", "--lang", "--speed", "--instruct", "--file", "--clone", "--text"];
 
 /** Positional arguments, skipping every flag and the value it takes. */
 function positionals(argv) {
@@ -890,6 +891,7 @@ async function genCommand(cfg, argv) {
         voice: flag(rest, "--voice"),
         ref: flag(rest, "--ref"),
         refText: flag(rest, "--ref-text"),
+        clone: flag(rest, "--clone"),
         lang: flag(rest, "--lang"),
         speed: flag(rest, "--speed"),
         instruct: flag(rest, "--instruct"),
@@ -909,6 +911,41 @@ async function genCommand(cfg, argv) {
     spin.stop(`${c.green(ui.sym.ok)} ${r.file}`);
     console.log(`  ${c.dim(`${r.seconds}s of audio · ${(r.sample_rate / 1000).toFixed(1)} kHz · ` +
       `${ui.fmtBytes(r.bytes)} · made in ${(r.ms / 1000).toFixed(1)}s · ${r.device || ""}`)}`);
+    return;
+  }
+
+  // `arcflare gen voices [add <name> <clip> --text "…" | rm <name>]`
+  if (sub === "voices" || sub === "voice") {
+    const rest = argv.slice(2);
+    const [action, name, clip] = positionals(rest);
+    if (action === "add" || action === "save") {
+      if (!name || !clip) die('usage: arcflare gen voices add <name> <clip.wav> --text "what the clip says" [--lang en]');
+      let v;
+      try {
+        v = gen.voices.save({ name, clip, text: flag(rest, "--text") || "", lang: flag(rest, "--lang"), replace: rest.includes("--replace") });
+      } catch (e) { die(e.message); }
+      console.log(`  ${c.green(ui.sym.ok)} saved ${c.accent(v.id)}${v.seconds != null ? c.dim(` · ${v.seconds}s`) : ""}`);
+      const tip = gen.voices.advice(v.seconds);
+      if (tip) console.log(`  ${c.dim("note: " + tip)}`);
+      if (!v.text) console.log(`  ${c.dim('no transcript: qwen3-tts-clone needs one (arcflare gen voices add ... --replace --text "...")')}`);
+      console.log(`  ${c.dim("use it:")} arcflare gen tts "hello" -m kitten-tts-2 --clone ${v.id}`);
+      return;
+    }
+    if (action === "rm" || action === "remove" || action === "delete") {
+      if (!name) die("usage: arcflare gen voices rm <name>");
+      if (!gen.voices.remove(name)) die(`no saved voice "${name}"`);
+      console.log(`  ${c.green(ui.sym.ok)} removed ${name}`);
+      return;
+    }
+    if (action) die(`unknown: arcflare gen voices ${action} (add, rm)`);
+    const all = gen.voices.list();
+    console.log(ui.section("voices", `${all.length} saved`));
+    if (!all.length) console.log(`  ${c.dim('none yet: arcflare gen voices add me clip.wav --text "what it says"')}`);
+    for (const v of all) {
+      const meta = [v.seconds != null ? `${v.seconds}s` : null, v.lang, v.text ? `"${v.text.slice(0, 50)}${v.text.length > 50 ? "…" : ""}"` : "no transcript"].filter(Boolean);
+      console.log(`  ${c.accent(v.id.padEnd(16))} ${c.dim(meta.join(" · "))}`);
+    }
+    console.log(`\n  ${c.dim("only clone voices you have permission to use · clips stay in")} ${c.dim(gen.voices.root())}\n`);
     return;
   }
 

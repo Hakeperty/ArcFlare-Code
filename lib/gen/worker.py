@@ -108,6 +108,7 @@ FAMILY_IMPORTS = {
     "chatterbox": ["chatterbox.tts"],
     "voxcpm": ["voxcpm", "soundfile"],
     "outetts": ["outetts"],
+    "kittentts": ["kittenml", "soundfile"],
 }
 
 
@@ -436,12 +437,61 @@ def tts_outetts(spec, device):
     finish_audio(spec["out"], device=device, cloned=bool(spec.get("ref")))
 
 
+# Kitten TTS 2 reaches languages other than English through voices named after
+# them, since the voice carries the accent; a short code picks that voice.
+KITTEN_LANG_VOICES = {"ar": "Arabic", "zh": "Chinese", "fr": "French", "de": "German", "hi": "Hindi",
+                      "it": "Italian", "pt": "Portuguese", "ru": "Russian", "es": "Spanish"}
+# Markup the model reads as expression rather than speech (see its model card).
+KITTEN_MARKUP = ("<gasp>", "<giggle>", "<growl>", "<gulp>", "<laugh>", "<pause>", "<scoff>", "<sigh>",
+                 "<sob>", "<um>", "(((")
+
+
+def tts_kitten(spec, device):
+    import soundfile as sf
+    from kittenml import KittenTTS
+
+    stage("load-model", repo=spec["hf"])
+
+    def load():
+        try:
+            return KittenTTS(spec["hf"], device=device)
+        except TypeError:  # versions that pick the device themselves
+            return KittenTTS(spec["hf"])
+
+    model = cached(("kittentts", spec["hf"], device), load)
+
+    text = spec["text"]
+    lang = (spec.get("lang") or "").lower()
+    voice = spec.get("voice")
+    if not spec.get("ref") and lang in KITTEN_LANG_VOICES and (not voice or voice == "Bruno"):
+        voice = KITTEN_LANG_VOICES[lang]
+    emotion = (spec.get("instruct") or "").strip().strip("[]").lower()
+    if emotion and not text.lstrip().startswith("["):
+        text = f"[{emotion}] {text}"
+    kw = {}
+    # The normaliser is tuned for English and mangles numbers in anything else.
+    if (lang and lang != "en") or voice in KITTEN_LANG_VOICES.values():
+        kw["normalize"] = False
+    if emotion or any(t in text for t in KITTEN_MARKUP):
+        kw["preset"] = "expressive"
+    if spec.get("ref"):
+        stage("clone-voice", ref=spec["ref"])
+        kw["reference"] = spec["ref"]
+    else:
+        kw["voice"] = voice or "Bruno"
+    stage("synthesize", voice=kw.get("voice") or "cloned")
+    audio = model.generate(text, **kw)
+    sf.write(spec["out"], to_numpy(audio), model.sample_rate)
+    finish_audio(spec["out"], device=device, voice=kw.get("voice") or "cloned", cloned=bool(spec.get("ref")))
+
+
 TTS = {
     "qwen3-tts": tts_qwen3,
     "kokoro": tts_kokoro,
     "chatterbox": tts_chatterbox,
     "voxcpm": tts_voxcpm,
     "outetts": tts_outetts,
+    "kittentts": tts_kitten,
 }
 
 
