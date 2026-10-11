@@ -51,9 +51,22 @@ cd ArcFlare-Code
 npm link          # no install step — there are no dependencies
 ```
 
-Requires Node 18+ and a llama.cpp build. ArcFlare looks for `llama-server` on
-`PATH`, then in `~/llamacpp/{vulkan,cuda,rocm}` and the usual places. If it
-lives somewhere else:
+Requires Node 18+ and a llama.cpp build. The one-line installers
+(`curl -fsSL https://arcflare.net/install.sh | sh`, or `irm https://arcflare.net/install.ps1 | iex`
+on Windows) fetch llama.cpp for you. Otherwise:
+
+```bash
+arcflare engine install      # the right prebuilt llama.cpp for this OS and GPU
+```
+
+It picks Metal on macOS, Vulkan (or CPU) on Linux, and CUDA or Vulkan on Windows;
+force one with `--vulkan`, `--cuda`, `--rocm` or `--cpu`. Each download is checked
+against the SHA-256 GitHub publishes for it, and an engine you already have is left
+alone with `--if-missing`. Engines land in `~/.arcflare/engine` and are found there
+again even if the settings file is lost.
+
+ArcFlare looks for `llama-server` on `PATH`, then in `~/.arcflare/engine`,
+`~/llamacpp/{vulkan,cuda,rocm}` and the usual places. If yours lives somewhere else:
 
 ```bash
 arcflare set-engine /path/to/llama-server

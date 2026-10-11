@@ -190,23 +190,52 @@ async function ensureServer(cfg, opts = {}) {
 
 // ---------------------------------------------------------------- engine ----
 
-/** `arcflare engine install [--vulkan|--cuda|--cpu|--rocm]`: get llama.cpp. Returns the server path. */
+// A program that runs us with no terminal (the desktop app) sets
+// ARCFLARE_PROGRESS=1 and gets download progress as plain lines it can read:
+//   progress 42 model-Q4_K_M.gguf  [####----] 42%  1.2/2.8 GB  35 MB/s
+// ("-" in place of the number when the size isn't known). About twice a second.
+const PROGRESS_LINES = process.env.ARCFLARE_PROGRESS === "1" && !process.stdout.isTTY;
+let lastProgressAt = 0;
+function reportProgress(text, p) {
+  if (!PROGRESS_LINES) return;
+  const now = Date.now();
+  const last = p && p.total && p.done >= p.total;
+  if (!last && p && now - lastProgressAt < 500) return;
+  lastProgressAt = now;
+  const pct = p && p.total ? Math.min(100, Math.floor((p.done / p.total) * 100)) : "-";
+  process.stdout.write(`progress ${pct} ${String(text).replace(/\s+/g, " ")}\n`);
+}
+
+/**
+ * `arcflare engine install [--vulkan|--cuda|--cpu|--rocm] [--if-missing]`: get llama.cpp.
+ * --if-missing leaves an engine you already have alone (what the installers pass).
+ * Returns the server path.
+ */
 async function engineInstall(argv = []) {
   const ei = require("../lib/engine-install");
   const dl = require("../lib/download");
   const want = ["vulkan", "cuda", "cpu", "rocm", "metal"].find((v) => argv.includes(`--${v}`));
+  if (argv.includes("--if-missing")) {
+    const cfg0 = loadConfig();
+    const have = engine.findServer(cfg0.llamaServer, cfg0.backend);
+    if (have) {
+      console.log(`  ${c.green(ui.sym.ok)} llama.cpp is already installed ${c.dim(have)}`);
+      return have;
+    }
+  }
   const spin = ui.spinner("finding the latest llama.cpp build");
   let step = "";
   try {
     const r = await ei.install({
       home: HOME,
       want,
-      onStep: (t) => { step = t; spin.update(t); },
-      onProgress: (p) => spin.update(`${step}  ${dl.progressText(p, ui.fmtBytes)}`),
+      onStep: (t) => { step = t; spin.update(t); reportProgress(t); },
+      onProgress: (p) => { const t = `${step}  ${dl.progressText(p, ui.fmtBytes)}`; spin.update(t); reportProgress(t, p); },
     });
     saveConfig({ ...loadConfig(), llamaServer: r.server, backend: undefined });
     spin.stop(`${c.green(ui.sym.ok)} llama.cpp ${c.accent(r.tag)} ${c.dim(`(${r.variant})`)} installed`);
     console.log(`  ${c.dim("engine")}  ${r.server}`);
+    console.log(`  ${c.dim(r.verified ? "checked against the SHA-256 GitHub publishes for the download" : "this release publishes no checksum, so the download could not be verified")}`);
     if (r.variant.includes("cpu") && !want) {
       console.log(`  ${c.dim("No GPU build matched this machine, so this is the CPU build. If you have a GPU, try")} ` +
         `${c.accent("arcflare engine install --vulkan")}`);
@@ -536,7 +565,7 @@ const HELP_GROUPS = [
     ["arcflare backend", "[kind]", "list or pick a llama.cpp backend"],
     ["arcflare memory", "[profile]", "lean | balanced | max"],
     ["arcflare batch", "[size]", "physical batch (prefill speed vs VRAM)"],
-    ["arcflare engine install", "", "download llama.cpp for this machine"],
+    ["arcflare engine install", "[--if-missing]", "download llama.cpp for this machine"],
     ["arcflare set-engine", "<path>", "remember where llama-server lives"],
   ]],
   ["maintain", [
@@ -1567,8 +1596,9 @@ async function main() {
           onFile: (f) => {
             label = `${path.basename(f.name)}${f.count > 1 ? c.dim(` (${f.index + 1}/${f.count})`) : ""}`;
             spin.update(label);
+            reportProgress(label);
           },
-          onProgress: (p) => spin.update(`${label}  ${dlmod.progressText(p, ui.fmtBytes)}`),
+          onProgress: (p) => { spin.update(`${label}  ${dlmod.progressText(p, ui.fmtBytes)}`); reportProgress(`${label}  ${dlmod.progressText(p, ui.fmtBytes)}`, p); },
         });
         const note = r.skipped === r.files.length ? " (already here)" : "";
         spin.stop(`${c.green(ui.sym.ok)} pulled ${c.accent(r.repo)}${r.quant ? c.dim(":" + r.quant) : ""}${c.dim(note)}`);
@@ -1943,7 +1973,7 @@ async function main() {
       const exe = engine.findServer(cfg.llamaServer, cfg.backend);
       if (exe) console.log(`  ${c.green(ui.sym.ok)} llama-server ${c.dim(exe)}`);
       else console.log(`  ${c.red(ui.sym.fail)} llama.cpp isn't installed: ${c.accent("arcflare engine install")}`);
-      console.log(c.dim("  arcflare engine install [--vulkan|--cuda|--cpu|--rocm]   download llama.cpp for this machine"));
+      console.log(c.dim("  arcflare engine install [--vulkan|--cuda|--cpu|--rocm] [--if-missing]   download llama.cpp for this machine"));
       return;
     }
 
