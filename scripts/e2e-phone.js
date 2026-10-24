@@ -517,6 +517,8 @@ flow(5, "Start, Wake, streamed text, tool line and tool result", async (P) => {
       innerHTMLish: tx.querySelectorAll("script, img, [onerror]").length,
     };
   });
+  const atBottom = await page.evaluate(() => { const t = document.getElementById("transcript"); return t.scrollHeight - t.scrollTop - t.clientHeight; });
+  assert.ok(atBottom < 4, `the conversation follows new output to the bottom (${atBottom}px short)`);
   assert.ok(rich.preScrolls, "a long code line scrolls horizontally inside its block");
   assert.match(rich.preText, /webpack\.config\.js/);
   assert.strictEqual(rich.thinkText, "Thinking");
@@ -752,6 +754,7 @@ flow(10, "hostile text renders as inert text", async (P) => {
   await page.waitForFunction((h) => document.getElementById("agent-name").textContent === h, HOST);
   await page.locator("#agent-back").tap();
   await visible(page, "#view-dashboard");
+  await page.waitForFunction(() => document.querySelectorAll("#agent-list li").length >= 2);
   const c = page.locator("#agent-list li").last();
   await c.waitFor();
   const ct = await c.textContent();
@@ -838,6 +841,18 @@ flow(11, "offline guarantee: only same-origin requests; nothing external needed"
 });
 
 flow(12, "layout: no sideways scroll, 44px targets, 16px inputs, both themes, screenshots", async (P) => {
+  const { page } = P;
+  P.step("reduced motion: no sheet animation");
+  await goHash(page, "#/");
+  await visible(page, "#view-dashboard");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.locator("#fab-new").tap();
+  await visible(page, "#sheet-new");
+  const anim = await page.evaluate(() => [".sheet", ".scrim"].map((q) => getComputedStyle(document.querySelector("#sheet-new " + q)).animationName));
+  assert.deepStrictEqual(anim, ["none", "none"], "sheets do not animate under prefers-reduced-motion");
+  await page.keyboard.press("Escape");
+  await hidden(page, "#sheet-new", { timeout: 500 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   const need = ["login-setup", "login", "login-locked", "dashboard-empty", "dashboard", "agent", "agent-approval", "devices", "hostile-agent", "hostile-dashboard", "new-sheet", "devices-confirm", "hostile-approval", "agent-rich"];
   const missing = need.filter((s) => !P.screens.has(s));
   const bad = P.layout.filter((l) => l.issues.length).map((l) => `${l.name}: ${l.issues.join("; ")}`);

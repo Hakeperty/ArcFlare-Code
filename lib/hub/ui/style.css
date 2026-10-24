@@ -62,7 +62,7 @@
   --accent-tonal: #f8dfae;    /* selected pill, user bubble */
   --accent-tonal-line: #e7be72;
   --on-accent: #11110f;
-  --ok: #0a7168;
+  --ok: #07665e;
   --ok-fill: #0b8a7e;
   --danger: #bf2f1c;
   --danger-soft: #f8e1dc;
@@ -652,7 +652,8 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent-ink); bo
 .codeblock { margin: 8px 0; border-radius: 8px; background: var(--code-bg); border: 1px solid var(--border); }
 .codeblock:first-child { margin-top: 0; }
 .codeblock:last-child { margin-bottom: 0; }
-.codeblock .lang { padding: 6px 12px 0; font: 12px/16px var(--mono); color: var(--muted-2); }
+.codeblock .lang { padding: 8px 12px 0; font: 12px/16px var(--mono); color: var(--muted-2); }
+.codeblock .lang + pre { padding-top: 4px; }
 .codeblock pre { margin: 0; padding: 10px 12px; overflow-x: auto; font: 13px/20px var(--mono); white-space: pre; overflow-wrap: normal; tab-size: 2; }
 .codeblock code { padding: 0; border: 0; background: none; font: inherit; }
 .pop { animation: pop 170ms var(--ease) both; }
