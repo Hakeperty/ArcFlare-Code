@@ -218,3 +218,39 @@ test("the website's install.sh is valid POSIX sh", { skip: (() => {
   const r = spawnSync("sh", ["-n", p], { encoding: "utf8" });
   assert.strictEqual(r.status, 0, r.stderr);
 });
+
+test("models.discover follows the snapshot symlinks of a Hugging Face cache", () => {
+  const models = require("../lib/models");
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "af-hf-"));
+  const repo = path.join(d, "models--Qwen--Qwen3-Embedding-0.6B-GGUF");
+  const blobs = path.join(repo, "blobs");
+  const snap = path.join(repo, "snapshots", "abc123");
+  fs.mkdirSync(blobs, { recursive: true });
+  fs.mkdirSync(snap, { recursive: true });
+  fs.writeFileSync(path.join(blobs, "deadbeef"), Buffer.alloc(64));
+  fs.symlinkSync(path.join("..", "..", "blobs", "deadbeef"), path.join(snap, "Qwen3-Embedding-0.6B-Q8_0.gguf"));
+  fs.symlinkSync(path.join(d, "nowhere"), path.join(snap, "broken.gguf"));
+  const found = models.discover({ roots: [d] });
+  assert.equal(found.length, 1);
+  assert.match(found[0].file, /Qwen3-Embedding-0\.6B-Q8_0\.gguf$/);
+});
+
+test("ensureServer names whoever already holds the port instead of showing a bind error", async () => {
+  const serve = require("../lib/serve");
+  const exe = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "af-exe-")), "llama-server");
+  fs.writeFileSync(exe, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const fake = http.createServer((req, res) => {
+    if (req.url === "/api/version") res.end(JSON.stringify({ version: "0.1.0" }));
+    else { res.statusCode = 404; res.end(); }
+  });
+  await new Promise((r) => fake.listen(0, "127.0.0.1", r));
+  const port = fake.address().port;
+  try {
+    await assert.rejects(serve.ensureServer({ llamaServer: exe }, { port }), (e) => {
+      assert.equal(e.code, "PORT_IN_USE");
+      assert.match(e.message, /Ollama is already using port/);
+      assert.match(e.message, new RegExp(`"port": ${port + 1}`));
+      return true;
+    });
+  } finally { fake.close(); }
+});

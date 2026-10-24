@@ -181,6 +181,7 @@ async function ensureServer(cfg, opts = {}) {
         `      ${c.accent("arcflare engine install")}   download it for this machine\n` +
         `      ${c.accent("arcflare set-engine <path>")}  if you already have llama-server`);
     }
+    if (e.code === "PORT_IN_USE") die(e.message);
     if (e.log) console.log(c.dim(e.log));
     process.exit(1);
   }
