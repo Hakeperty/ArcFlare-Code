@@ -431,3 +431,46 @@ test("models and agents list pass through", async () => {
   assert.strictEqual((await req(s.port, { path: "/api/agents/a1", headers: { Cookie: a.cookie } })).json.id, "a1");
   await s.close();
 });
+
+// ------------------------------------------------- red-team regressions ----
+
+test("a body that never arrives is cut off, with no login needed", async () => {
+  const net = require("node:net");
+  const s = await start({ config: { bodyIdleMs: 150 } });
+  const sock = net.connect(s.port, "127.0.0.1");
+  let got = "";
+  sock.on("data", (d) => { got += d; });
+  sock.write("POST /api/login HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n");
+  const closed = await Promise.race([
+    new Promise((r) => sock.on("close", () => r(true))),
+    new Promise((r) => setTimeout(() => r(false), 2000)),
+  ]);
+  sock.destroy();
+  assert.strictEqual(closed, true, "the stalled connection is closed by the server");
+  await s.close();
+});
+
+test("revoking a device closes its live stream immediately, not at the next beat", async () => {
+  const s = await start({ config: { heartbeatMs: 60000 } });
+  const a = await login(s);
+  const b = await login(s);
+  const c = await sse(s.port, "/api/events", { Cookie: a.cookie }, (t) => t.includes("retry:"));
+  const ended = new Promise((r) => c.res.on("end", () => r(true)));
+  const id = s.auth.sessions.get(a.cookie.split("=")[1]).session.id;
+  const r = await req(s.port, { method: "DELETE", path: "/api/sessions/" + id,
+    headers: { Cookie: b.cookie, "X-CSRF-Token": b.csrf } });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(await Promise.race([ended, new Promise((x) => setTimeout(() => x(false), 1000))]), true);
+  await s.close();
+});
+
+test("one session cannot hold more than a handful of streams open", async () => {
+  const s = await start({ config: { heartbeatMs: 60000 } });
+  const a = await login(s);
+  const open = [];
+  for (let i = 0; i < 8; i++) open.push(await sse(s.port, "/api/events", { Cookie: a.cookie }, (t) => t.includes("retry:")));
+  const ninth = await req(s.port, { path: "/api/events", headers: { Cookie: a.cookie } });
+  assert.strictEqual(ninth.status, 429);
+  for (const c of open) c.res.destroy();
+  await s.close();
+});
