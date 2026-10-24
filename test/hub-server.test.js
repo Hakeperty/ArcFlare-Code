@@ -299,6 +299,35 @@ test("static allowlist: serves ui files, never leaks traversal/auth.json, unknow
   await s.close();
 });
 
+test("static assets: fonts and images are served with the right type; near-miss paths 404", async () => {
+  const assets = {
+    "/assets/bitcount-single.ttf": "font/ttf",
+    "/assets/geist-latin.woff2": "font/woff2",
+    "/assets/geist-mono-latin.woff2": "font/woff2",
+    "/assets/mascot-light.png": "image/png",
+    "/assets/mascot-dark.png": "image/png",
+    "/assets/panda-search.png": "image/png",
+  };
+  fs.mkdirSync(path.join(uiDir, "assets"), { recursive: true });
+  for (const p of Object.keys(assets)) fs.writeFileSync(path.join(uiDir, p.slice(1)), "bytes:" + p);
+  const s = await start();
+  for (const [p, type] of Object.entries(assets)) {
+    const r = await req(s.port, { path: p });
+    assert.strictEqual(r.status, 200, p);
+    assert.strictEqual(r.headers["content-type"], type, p);
+    assert.strictEqual(r.text, "bytes:" + p);
+    assert.match(r.headers["content-security-policy"], /font-src 'self'/);
+  }
+  for (const p of ["/assets/", "/assets", "/assets/../auth.json", "/assets/%2e%2e/auth.json", "/assets/..%2fauth.json",
+    "/assets/mascot-light.png/../../auth.json", "/assets//mascot-light.png", "/assets/mascot-light.PNG",
+    "/assets/mascot-light.png%00.txt", "/assets/other.png", "/%2e%2e/assets/mascot-light.png/../../hubui-outside.txt"]) {
+    const r = await req(s.port, { path: p });
+    assert.strictEqual(r.status, 404, p);
+    assert.ok(!/secret|outside|bytes:/.test(r.text), p);
+  }
+  await s.close();
+});
+
 // Minimal SSE client: collects raw text until `until(text)` or timeout.
 function sse(port, p, headers, until, timeoutMs = 2000) {
   return new Promise((resolve, reject) => {

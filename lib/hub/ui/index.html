@@ -3,10 +3,14 @@
   ArcFlare Hub, phone UI.
 
   This page is served by the hub itself, so it has to work on a LAN with no
-  internet: no CDN, no web fonts, no images. The server's CSP allows scripts
-  and styles only from this origin, so this file carries no inline code or
-  inline styling of any kind. All behaviour is in app.js and all styling in
-  style.css.
+  internet: no CDN, no remote fonts or images. Fonts and the mascot are local
+  files under assets/ (each one an exact entry in the server's allowlist). The
+  server's CSP allows scripts, styles, fonts and images only from this origin,
+  so this file carries no inline code or inline styling of any kind. All
+  behaviour is in app.js and all styling in style.css.
+
+  The .eyebrow lines are decoration only: their text comes from data-c via CSS
+  and they are aria-hidden, so they add nothing to the accessible text.
 -->
 <html lang="en">
 <head>
@@ -22,7 +26,9 @@
   <noscript><p class="note page-pad">ArcFlare Hub needs JavaScript turned on.</p></noscript>
 
   <header id="topbar" class="topbar" hidden>
+    <span class="mascot mascot-sm" aria-hidden="true"></span>
     <a class="brand" href="#/">ArcFlare</a>
+    <span class="led-tag" aria-hidden="true"><span class="led"></span><span class="led-text" data-c="local"></span></span>
     <nav class="nav">
       <a href="#/">Agents</a>
       <a href="#/devices">Devices</a>
@@ -33,6 +39,8 @@
     <!-- Sign in -->
     <section id="view-login" class="view" hidden>
       <form id="login-form" class="card narrow" autocomplete="on">
+        <div class="hero" aria-hidden="true"><span class="mascot mascot-lg"></span></div>
+        <p class="eyebrow" aria-hidden="true"><span class="t" data-c="[ 00 ]"></span><span class="l" data-c="// hub access"></span><span class="rule"></span></p>
         <h1>Sign in</h1>
         <p id="login-note" class="note" hidden></p>
         <div id="login-fields">
@@ -51,12 +59,14 @@
 
     <!-- Dashboard -->
     <section id="view-dashboard" class="view" hidden>
+      <p class="eyebrow" aria-hidden="true"><span class="t" data-c="[ 01 ]"></span><span class="l" data-c="// agents"></span><span class="rule"></span></p>
       <h1>Agents</h1>
       <p id="dash-error" class="error" role="alert" hidden></p>
-      <p id="dash-empty" class="note" hidden>No agents yet. Create one below.</p>
+      <p id="dash-empty" class="note empty" hidden>No agents yet. Create one below.</p>
       <ul id="agent-list" class="stack"></ul>
 
       <section class="card">
+        <p class="eyebrow" aria-hidden="true"><span class="t" data-c="[ 02 ]"></span><span class="l" data-c="// spawn"></span><span class="rule"></span></p>
         <h2>New agent</h2>
         <form id="new-form" class="form">
           <label>Name
@@ -74,6 +84,11 @@
             </select>
           </label>
           <p class="hint">Hard is reserved for the toughest tasks. Standard covers most work.</p>
+          <ul class="tier-legend" aria-hidden="true">
+            <li class="tl tl-light"><span class="n" data-c="light"></span><span>Quick questions and small edits. Fastest.</span></li>
+            <li class="tl tl-standard"><span class="n" data-c="standard"></span><span>The default. Covers most work.</span></li>
+            <li class="tl tl-hard"><span class="n" data-c="hard"></span><span>Reserved: slow and costly, for the toughest tasks only.</span></li>
+          </ul>
           <label>First task <span class="hint-inline">(optional)</span>
             <textarea id="new-task" rows="3"></textarea>
           </label>
@@ -95,12 +110,14 @@
       </div>
 
       <div id="approval" class="approval" role="alertdialog" aria-labelledby="approval-title" hidden>
-        <p id="approval-title" class="approval-title">Approval needed</p>
-        <p id="approval-kind" class="approval-kind"></p>
-        <pre id="approval-detail" class="approval-detail"></pre>
-        <div class="approval-actions">
-          <button id="approve-deny" class="btn big deny" type="button">Deny</button>
-          <button id="approve-allow" class="btn big allow" type="button">Allow</button>
+        <div class="approval-inner">
+          <p id="approval-title" class="approval-title">Approval needed</p>
+          <p id="approval-kind" class="approval-kind"></p>
+          <pre id="approval-detail" class="approval-detail" tabindex="0"></pre>
+          <div class="approval-actions">
+            <button id="approve-deny" class="btn big deny" type="button">Deny</button>
+            <button id="approve-allow" class="btn big allow" type="button">Allow</button>
+          </div>
         </div>
       </div>
 
@@ -116,6 +133,7 @@
 
     <!-- Signed-in devices -->
     <section id="view-devices" class="view" hidden>
+      <p class="eyebrow" aria-hidden="true"><span class="t" data-c="[ 03 ]"></span><span class="l" data-c="// devices"></span><span class="rule"></span></p>
       <h1>Devices</h1>
       <p class="note">Browsers and phones signed in to this hub. Revoking one signs it out.</p>
       <p id="dev-error" class="error" role="alert" hidden></p>
@@ -125,6 +143,7 @@
         <button id="logout" class="btn ghost block" type="button">Log out</button>
       </div>
     </section>
+    <p class="foot" aria-hidden="true"><span class="led"></span><span data-c="arcflare hub // local only // no cloud"></span></p>
   </main>
 </body>
 </html>
