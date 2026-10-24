@@ -397,3 +397,27 @@ test("parseCookies handles spacing, quotes, junk and duplicates", () => {
   assert.deepStrictEqual(auth.parseCookies(""), {});
   assert.strictEqual(auth.parseCookies("__proto__=x").__proto__, Object.prototype);
 });
+
+// ------------------------------------------------- red-team regressions ----
+
+test("names that exist on Object.prototype cannot be accounts", () => {
+  const a = new AuthStore({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "af-auth-rt-")) });
+  for (const n of ["__proto__", "constructor"]) {
+    assert.throws(() => a.createAccount(n, "a long enough password"), (e) => e.code === "BAD_USERNAME");
+  }
+  assert.strictEqual(a.hasAccounts(), false);
+});
+
+test("a flood of logins is bounded: a few at a time, the excess turned away", async () => {
+  const a = new AuthStore({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "af-auth-rt-")) });
+  a.createAccount("real", "a long enough password");
+  const rs = await Promise.all(Array.from({ length: 40 }, (_, i) =>
+    a.login({ username: "ghost" + i, password: "wrong password!", ip: "10.0.0." + i })));
+  const codes = rs.map((r) => r.code);
+  assert.ok(codes.includes("BUSY"), "some attempts are refused outright");
+  assert.ok(codes.includes("BAD_CREDENTIALS"), "the rest are still checked");
+  assert.ok(rs.filter((r) => r.code === "BUSY").every((r) => r.retryAfterMs > 0));
+  // and the real user can still get in once the flood has drained
+  const ok = await a.login({ username: "real", password: "a long enough password", ip: "10.9.9.9" });
+  assert.strictEqual(ok.ok, true);
+});
