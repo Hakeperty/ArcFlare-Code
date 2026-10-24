@@ -282,9 +282,10 @@ test("pair, approve, log in and use the real handler through the tunnel; CSRF st
 
     env.store.approve(device.deviceId);
     const tun = await TC.connect(device, env.opts);
-    assert.strictEqual(env.hub.sessions.size, 1);
+    assert.strictEqual(env.hub.pending.size, 1, "handshaken, but not a session until its first authenticated frame");
 
     let r = await tun.request("GET", "/api/me");
+    assert.strictEqual(env.hub.sessions.size, 1);
     assert.strictEqual(r.status, 401, "no session yet");
 
     r = await login(tun, "wrong-password-1");
