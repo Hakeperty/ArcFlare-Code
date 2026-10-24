@@ -2,148 +2,239 @@
 <!--
   ArcFlare Hub, phone UI.
 
-  This page is served by the hub itself, so it has to work on a LAN with no
-  internet: no CDN, no remote fonts or images. Fonts and the mascot are local
-  files under assets/ (each one an exact entry in the server's allowlist). The
-  server's CSP allows scripts, styles, fonts and images only from this origin,
-  so this file carries no inline code or inline styling of any kind. All
+  An app shell: slim top app bar, one screen at a time, bottom navigation, a
+  floating action button and bottom sheets (new agent, menus, confirmations and
+  the approval prompt). The hub serves this page itself, so it has to work on a
+  LAN with no internet: no CDN, no remote fonts or images. Fonts and the mascot
+  are local files under assets/ (each an exact entry in the server's allowlist).
+  The server's CSP allows scripts, styles, fonts and images only from this
+  origin, so this file carries no inline script and no style attributes. All
   behaviour is in app.js and all styling in style.css.
 
-  The .eyebrow lines are decoration only: their text comes from data-c via CSS
-  and they are aria-hidden, so they add nothing to the accessible text.
+  Icons are inline SVG: 24px grid, 2px stroke, round caps, drawn in currentColor.
 -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0b0b0a" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
   <meta name="referrer" content="no-referrer">
   <title>ArcFlare Hub</title>
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
 </head>
 <body>
-  <noscript><p class="note page-pad">ArcFlare Hub needs JavaScript turned on.</p></noscript>
+  <noscript><p class="noscript">ArcFlare Hub needs JavaScript turned on.</p></noscript>
 
-  <header id="topbar" class="topbar" hidden>
-    <span class="mascot mascot-sm" aria-hidden="true"></span>
-    <a class="brand" href="#/">ArcFlare</a>
-    <span class="led-tag" aria-hidden="true"><span class="led"></span><span class="led-text" data-c="local"></span></span>
-    <nav class="nav">
-      <a href="#/">Agents</a>
-      <a href="#/devices">Devices</a>
-    </nav>
-  </header>
+  <div id="app" class="app">
 
-  <main class="page">
-    <!-- Sign in -->
-    <section id="view-login" class="view" hidden>
-      <form id="login-form" class="card narrow" autocomplete="on">
-        <div class="hero" aria-hidden="true"><span class="mascot mascot-lg"></span></div>
-        <p class="eyebrow" aria-hidden="true"><span class="t" data-c="[ 00 ]"></span><span class="l" data-c="// hub access"></span><span class="rule"></span></p>
-        <h1>Sign in</h1>
-        <p id="login-note" class="note" hidden></p>
-        <div id="login-fields">
-          <label>Username
-            <input id="login-user" name="username" type="text" autocomplete="username"
-                   autocapitalize="none" autocorrect="off" spellcheck="false" required>
-          </label>
-          <label>Password
-            <input id="login-pass" name="password" type="password" autocomplete="current-password" required>
-          </label>
-          <button type="submit" class="btn primary block">Sign in</button>
-        </div>
-        <p id="login-error" class="error" role="alert" hidden></p>
-      </form>
-    </section>
+    <!-- Top app bar: brand mode on the main screens, back + title inside an agent -->
+    <header id="topbar" class="topbar" hidden>
+      <a id="tb-brand" class="brand" href="#/">
+        <span class="mascot mascot-sm" aria-hidden="true"></span>
+        <span class="wordmark">arcflare<span class="us">_</span></span>
+      </a>
+      <div id="tb-agent" class="tb-agent" hidden>
+        <a id="agent-back" class="icon-btn" href="#/" aria-label="Back">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        </a>
+        <h1 id="agent-name" class="tb-title"></h1>
+      </div>
+      <span id="conn-chip" class="chip conn" data-kind="home"><span class="conn-dot" aria-hidden="true"></span><span id="conn-text">Home network</span></span>
+    </header>
 
-    <!-- Dashboard -->
-    <section id="view-dashboard" class="view" hidden>
-      <p class="eyebrow" aria-hidden="true"><span class="t" data-c="[ 01 ]"></span><span class="l" data-c="// agents"></span><span class="rule"></span></p>
-      <h1>Agents</h1>
-      <p id="dash-error" class="error" role="alert" hidden></p>
-      <p id="dash-empty" class="note empty" hidden>No agents yet. Create one below.</p>
-      <ul id="agent-list" class="stack"></ul>
+    <main class="page">
 
-      <section class="card">
-        <p class="eyebrow" aria-hidden="true"><span class="t" data-c="[ 02 ]"></span><span class="l" data-c="// spawn"></span><span class="rule"></span></p>
-        <h2>New agent</h2>
-        <form id="new-form" class="form">
-          <label>Name
-            <input id="new-name" type="text" maxlength="64" required>
-          </label>
-          <label>Folder on the computer
-            <input id="new-cwd" type="text" autocapitalize="none" autocorrect="off" spellcheck="false"
-                   placeholder="/home/you/project" required>
-          </label>
-          <label>Tier
-            <select id="new-tier">
-              <option value="light">Light</option>
-              <option value="standard" selected>Standard</option>
-              <option value="hard">Hard</option>
-            </select>
-          </label>
-          <p class="hint">Hard is reserved for the toughest tasks. Standard covers most work.</p>
-          <ul class="tier-legend" aria-hidden="true">
-            <li class="tl tl-light"><span class="n" data-c="light"></span><span>Quick questions and small edits. Fastest.</span></li>
-            <li class="tl tl-standard"><span class="n" data-c="standard"></span><span>The default. Covers most work.</span></li>
-            <li class="tl tl-hard"><span class="n" data-c="hard"></span><span>Reserved: slow and costly, for the toughest tasks only.</span></li>
-          </ul>
-          <label>First task <span class="hint-inline">(optional)</span>
-            <textarea id="new-task" rows="3"></textarea>
-          </label>
-          <p id="new-error" class="error" role="alert" hidden></p>
-          <button id="new-submit" type="submit" class="btn primary block">Create agent</button>
+      <!-- Sign in -->
+      <section id="view-login" class="view view-login" hidden>
+        <form id="login-form" class="login-card" autocomplete="on">
+          <div class="login-brand">
+            <span class="mascot mascot-lg" aria-hidden="true"></span>
+            <p class="wordmark wordmark-lg" aria-hidden="true">arcflare<span class="us">_</span></p>
+          </div>
+          <h1 class="title">Sign in</h1>
+          <div id="login-note" class="setup-note" hidden>
+            <p>No account yet. On the computer run:</p>
+            <div class="codebox">
+              <code id="login-cmd">arcflare phone user add</code>
+              <button id="copy-cmd" class="icon-btn" type="button" aria-label="Copy command">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 9h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              </button>
+            </div>
+            <p class="small">Then come back here and sign in.</p>
+          </div>
+          <div id="login-fields">
+            <label class="field"><span class="lbl">Username</span>
+              <input id="login-user" name="username" type="text" autocomplete="username"
+                     autocapitalize="none" autocorrect="off" spellcheck="false" required>
+            </label>
+            <label class="field"><span class="lbl">Password</span>
+              <input id="login-pass" name="password" type="password" autocomplete="current-password" required>
+            </label>
+            <button type="submit" class="btn primary block lg">Sign in</button>
+          </div>
+          <p id="login-error" class="banner error" role="alert" hidden></p>
         </form>
       </section>
-    </section>
 
-    <!-- One agent: live transcript, approvals, messages -->
-    <section id="view-agent" class="view" hidden>
-      <div class="agent-head">
-        <a class="btn" href="#/">Back</a>
-        <div class="agent-title">
-          <h1 id="agent-name"></h1>
-          <p class="meta"><span id="agent-dot" class="dot dot-off" aria-hidden="true"></span><span id="agent-status"></span></p>
+      <!-- Agents -->
+      <section id="view-dashboard" class="view" hidden>
+        <h1 class="view-title">Agents</h1>
+        <p id="dash-error" class="banner error" role="alert" hidden></p>
+        <ul id="dash-skeleton" class="stack" aria-hidden="true" hidden>
+          <li class="card skel"><span class="bar w60"></span><span class="bar w90"></span><span class="bar w40"></span></li>
+          <li class="card skel"><span class="bar w40"></span><span class="bar w90"></span><span class="bar w60"></span></li>
+          <li class="card skel"><span class="bar w60"></span><span class="bar w90"></span><span class="bar w40"></span></li>
+        </ul>
+        <div id="dash-empty" class="empty" hidden>
+          <img class="panda" src="assets/panda-search.png" alt="" width="150" height="131">
+          <h2 class="pixel-head">No agents yet</h2>
+          <p>Tap <strong>+</strong> to start one on this computer.</p>
         </div>
-        <button id="agent-stop" class="btn danger" type="button">Stop</button>
-      </div>
+        <ul id="agent-list" class="stack"></ul>
+      </section>
 
-      <div id="approval" class="approval" role="alertdialog" aria-labelledby="approval-title" hidden>
-        <div class="approval-inner">
-          <p id="approval-title" class="approval-title">Approval needed</p>
-          <p id="approval-kind" class="approval-kind"></p>
-          <pre id="approval-detail" class="approval-detail" tabindex="0"></pre>
-          <div class="approval-actions">
-            <button id="approve-deny" class="btn big deny" type="button">Deny</button>
-            <button id="approve-allow" class="btn big allow" type="button">Allow</button>
+      <!-- One agent: conversation -->
+      <section id="view-agent" class="view view-agent" hidden>
+        <div id="agent-statusbar" class="statusbar">
+          <span id="agent-dot" class="dot dot-off" aria-hidden="true"></span>
+          <span id="agent-status" class="st" role="status"></span>
+          <button id="agent-start" class="btn primary sm" type="button" hidden>Start</button>
+          <button id="agent-stop" class="btn danger sm" type="button" hidden>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>Stop
+          </button>
+          <span class="progress" aria-hidden="true"></span>
+        </div>
+
+        <div id="transcript" class="transcript" aria-live="polite"></div>
+        <p class="chat-empty">Write a message below to get this agent working.</p>
+
+        <p id="agent-error" class="banner error" role="alert" hidden></p>
+        <form id="compose" class="compose">
+          <label class="sr-only" for="compose-text">Message the agent</label>
+          <textarea id="compose-text" rows="1" placeholder="Message the agent" enterkeyhint="enter"></textarea>
+          <button id="compose-send" type="submit" class="send" aria-label="Send" disabled>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+          </button>
+        </form>
+      </section>
+
+      <!-- Devices -->
+      <section id="view-devices" class="view" hidden>
+        <h1 class="view-title">Devices</h1>
+        <p class="lead">Browsers and phones signed in to this hub. Revoking one signs it out.</p>
+        <p id="dev-error" class="banner error" role="alert" hidden></p>
+        <ul id="dev-skeleton" class="stack" aria-hidden="true" hidden>
+          <li class="card skel"><span class="bar w60"></span><span class="bar w90"></span></li>
+          <li class="card skel"><span class="bar w40"></span><span class="bar w90"></span></li>
+        </ul>
+        <ul id="session-list" class="stack"></ul>
+        <div class="dev-actions">
+          <button id="revoke-others" class="btn outline block" type="button">Sign out other devices</button>
+          <button id="logout" class="btn danger block" type="button">Log out</button>
+        </div>
+      </section>
+    </main>
+
+    <nav id="bottomnav" class="bottomnav" aria-label="Main" hidden>
+      <a id="tab-agents" href="#/">
+        <span class="pill"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8V4H8"/><path d="M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></span>
+        <span class="lbl">Agents</span>
+      </a>
+      <a id="tab-devices" href="#/devices">
+        <span class="pill"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M12 18h.01"/></svg></span>
+        <span class="lbl">Devices</span>
+      </a>
+    </nav>
+
+    <button id="fab-new" class="fab" type="button" aria-label="New agent" hidden>
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+    </button>
+  </div>
+
+  <!-- Bottom sheets live outside #app so the app behind them can be made inert. -->
+
+  <!-- New agent -->
+  <div id="sheet-new" class="sheet-wrap" hidden>
+    <div class="scrim" data-dismiss="sheet-new"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="new-title" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <h2 id="new-title" class="sheet-title">New agent</h2>
+      <form id="new-form" autocomplete="off">
+        <label class="field"><span class="lbl">Name</span>
+          <input id="new-name" type="text" maxlength="64" required>
+        </label>
+        <label class="field"><span class="lbl">Folder on the computer</span>
+          <input id="new-cwd" class="mono" type="text" autocapitalize="none" autocorrect="off" spellcheck="false"
+                 placeholder="/home/you/project" required>
+        </label>
+        <fieldset class="field" id="new-tier">
+          <legend class="lbl">Tier</legend>
+          <div class="segmented" role="radiogroup" aria-describedby="tier-hint">
+            <label class="seg"><input type="radio" name="tier" value="light"><span>Light</span></label>
+            <label class="seg"><input type="radio" name="tier" value="standard" checked><span>Standard</span></label>
+            <label class="seg"><input type="radio" name="tier" value="hard"><span>Hard</span></label>
           </div>
-        </div>
-      </div>
-
-      <div id="transcript" class="transcript" aria-live="polite"></div>
-      <p id="agent-error" class="error" role="alert" hidden></p>
-
-      <form id="compose" class="compose">
-        <label class="sr-only" for="compose-text">Message the agent</label>
-        <textarea id="compose-text" rows="2" placeholder="Message the agent"></textarea>
-        <button type="submit" class="btn primary">Send</button>
+          <p id="tier-hint" class="hint">Hard is reserved for the toughest tasks.</p>
+        </fieldset>
+        <label class="field"><span class="lbl">First task <span class="opt">(optional)</span></span>
+          <textarea id="new-task" rows="2"></textarea>
+        </label>
+        <p id="new-error" class="banner error" role="alert" hidden></p>
+        <button id="new-submit" type="submit" class="btn primary block lg">Create agent</button>
       </form>
-    </section>
+    </div>
+  </div>
 
-    <!-- Signed-in devices -->
-    <section id="view-devices" class="view" hidden>
-      <p class="eyebrow" aria-hidden="true"><span class="t" data-c="[ 03 ]"></span><span class="l" data-c="// devices"></span><span class="rule"></span></p>
-      <h1>Devices</h1>
-      <p class="note">Browsers and phones signed in to this hub. Revoking one signs it out.</p>
-      <p id="dev-error" class="error" role="alert" hidden></p>
-      <ul id="session-list" class="stack"></ul>
-      <div class="stack-actions">
-        <button id="revoke-others" class="btn block" type="button">Sign out other devices</button>
-        <button id="logout" class="btn ghost block" type="button">Log out</button>
+  <!-- Agent actions -->
+  <div id="sheet-menu" class="sheet-wrap" hidden>
+    <div class="scrim" data-dismiss="sheet-menu"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="menu-title" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <h2 id="menu-title" class="sheet-title ellip"></h2>
+      <ul class="menu">
+        <li><button id="menu-wake" class="menu-item" type="button">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Wake</button></li>
+        <li><button id="menu-stop" class="menu-item danger" type="button">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>Stop</button></li>
+      </ul>
+      <button id="menu-cancel" class="btn outline block" type="button">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Confirm -->
+  <div id="sheet-confirm" class="sheet-wrap" hidden>
+    <div class="scrim" data-dismiss="sheet-confirm"></div>
+    <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-body" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <h2 id="confirm-title" class="sheet-title">Sign out other devices?</h2>
+      <p id="confirm-body" class="lead">Every other browser and phone will need to sign in again. This device stays signed in.</p>
+      <div class="two">
+        <button id="confirm-cancel" class="btn outline block lg" type="button">Cancel</button>
+        <button id="confirm-ok" class="btn danger-fill block lg" type="button">Sign out</button>
       </div>
-    </section>
-    <p class="foot" aria-hidden="true"><span class="led"></span><span data-c="arcflare hub // local only // no cloud"></span></p>
-  </main>
+    </div>
+  </div>
+
+  <!-- Approval: modal, cannot be dismissed, only answered -->
+  <div id="approval" class="sheet-wrap strong" hidden>
+    <div class="scrim"></div>
+    <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="approval-title" aria-describedby="approval-detail" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <div class="approval-head">
+        <span class="shield" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+        <h2 id="approval-title" class="sheet-title">Allow this command?</h2>
+      </div>
+      <p class="approval-meta"><span>Tool</span><span id="approval-kind" class="kind"></span></p>
+      <pre id="approval-detail" class="approval-detail" tabindex="0"></pre>
+      <p class="small">The agent is paused until you answer.</p>
+      <div class="two">
+        <button id="approve-deny" class="btn deny block lg" type="button">Deny</button>
+        <button id="approve-allow" class="btn primary block lg" type="button">Allow</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
