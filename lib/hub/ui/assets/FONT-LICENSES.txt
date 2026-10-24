@@ -1,0 +1,9 @@
+Fonts bundled with the ArcFlare Hub phone UI (not served; kept for attribution).
+
+Geist and Geist Mono (latin subsets)
+  Copyright 2023 The Geist Project Authors (https://github.com/vercel/geist-font)
+  SIL Open Font License, Version 1.1: https://openfontlicense.org
+
+Bitcount Single
+  Copyright The Bitcount Project Authors
+  SIL Open Font License, Version 1.1: https://openfontlicense.org
