@@ -190,8 +190,16 @@ async function ensureServer(cfg, opts = {}) {
 
 // ---------------------------------------------------------------- engine ----
 
-/** `arcflare engine install [--vulkan|--cuda|--cpu|--rocm]`: get llama.cpp. Returns the server path. */
+/** `arcflare engine install [--if-missing] [--vulkan|--cuda|--cpu|--rocm]`: get llama.cpp. Returns the server path. */
 async function engineInstall(argv = []) {
+  if (argv.includes("--if-missing")) {
+    const cfg = loadConfig();
+    const have = engine.findServer(cfg.llamaServer, cfg.backend);
+    if (have) {
+      console.log(`  ${c.green(ui.sym.ok)} llama.cpp already installed ${c.dim(have)}`);
+      return have;
+    }
+  }
   const ei = require("../lib/engine-install");
   const dl = require("../lib/download");
   const want = ["vulkan", "cuda", "cpu", "rocm", "metal"].find((v) => argv.includes(`--${v}`));
@@ -1943,7 +1951,7 @@ async function main() {
       const exe = engine.findServer(cfg.llamaServer, cfg.backend);
       if (exe) console.log(`  ${c.green(ui.sym.ok)} llama-server ${c.dim(exe)}`);
       else console.log(`  ${c.red(ui.sym.fail)} llama.cpp isn't installed: ${c.accent("arcflare engine install")}`);
-      console.log(c.dim("  arcflare engine install [--vulkan|--cuda|--cpu|--rocm]   download llama.cpp for this machine"));
+      console.log(c.dim("  arcflare engine install [--vulkan|--cuda|--cpu|--rocm]   download llama.cpp for this machine (--if-missing: only if none is found)"));
       return;
     }
 
