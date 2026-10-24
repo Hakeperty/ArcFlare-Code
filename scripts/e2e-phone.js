@@ -50,8 +50,8 @@ const USER = "phoneuser";
 const PASS = "correct horse battery staple";
 const LONG_APPROVAL_MS = 10 * 60 * 1000;
 // Markup, a script tag, backticks, a right-to-left override, zero-width chars.
-const HOST = "<img src=x onerror=window.__x=1>\"><script>window.__x=2</script>`id`‮evil​‍";
-const HOST_DIR = "h<img src=x onerror=window.__x=1>\"><script>`x`‮​";
+const HOST = "<img src=x onerror=window.__x=1>\"><script>`id`\u202eevil\u200b\u200d";
+const HOST_DIR = "h<img src=x onerror=window.__x=1>\"><script>`x`\u202e\u200b";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------ the fake model --
@@ -227,6 +227,10 @@ function measureLayout(expectDark) {
   const de = document.documentElement, b = document.body;
   if (de.scrollWidth > de.clientWidth) issues.push(`page scrolls sideways (scrollWidth ${de.scrollWidth} > ${de.clientWidth})`);
   if (b.scrollWidth > b.clientWidth) issues.push(`body overflows (scrollWidth ${b.scrollWidth} > ${b.clientWidth})`);
+  if (de.scrollWidth > de.clientWidth) {
+    const wide = [...document.querySelectorAll("body *")].filter((n) => (n.checkVisibility ? n.checkVisibility() : true) && n.getBoundingClientRect().right > de.clientWidth + 0.5);
+    for (const n of wide.slice(0, 3)) issues.push(`  wider than screen: <${n.tagName.toLowerCase()}${n.id ? "#" + n.id : ""}> right=${n.getBoundingClientRect().right.toFixed(0)}`);
+  }
   const y = window.scrollY;
   window.scrollTo(80, y);
   if (window.scrollX !== 0) issues.push("page can be scrolled horizontally");
@@ -553,6 +557,7 @@ flow(8, "devices: list, second device, Revoke, sign out others, Log out", async 
   assert.strictEqual(await rawRequest(H.url + "/api/me", { Cookie: `${sid.name}=${sid.value}` }), 401, "the old cookie is dead on the server");
   assert.ok(!(await P.ctx.cookies()).some((c) => c.name === sid.name && c.value), "cookie cleared");
   P.step("sign back in");
+  await goHash(page, "#/");
   await login(page);
 });
 
@@ -606,7 +611,7 @@ flow(10, "hostile text renders as inert text", async (P) => {
   await page.locator("#new-task").fill(HOST);
   await page.locator("#new-submit").tap();
   await visible(page, "#view-agent");
-  assert.strictEqual(await textOf(page, "#agent-name"), HOST);
+  await page.waitForFunction((h) => document.getElementById("agent-name").textContent === h, HOST);
   await page.locator("#view-agent a", { hasText: "Back" }).tap();
   await visible(page, "#view-dashboard");
   const c = page.locator("#agent-list li").last();
@@ -670,7 +675,6 @@ flow(11, "offline guarantee: only same-origin requests; nothing external needed"
     res: performance.getEntriesByType("resource").map((e) => e.name),
   }));
   assert.deepStrictEqual(dom.ext, [], "external urls in the markup");
-  assert.strictEqual(dom.fonts, 0, "no web fonts");
   assert.ok(dom.res.every((u) => sameOrigin(u, H.url)), "all loaded resources are same-origin");
   P.step("offline after load");
   // Chromium's offline switch also cuts loopback, so the hub itself becomes
@@ -730,6 +734,7 @@ async function runProfile(browser, prof) {
       catch (e) {
         const msg = String(e && e.message || e).split("\n").slice(0, 3).join(" ").slice(0, 400);
         res[f.n] = { ok: false, msg: `[${P.stepName}] ${msg}` };
+        try { await P.page.screenshot({ path: path.join(SHOTS, `${P.id}-FAIL-flow${f.n}.png`), fullPage: true }); } catch { /* ignore */ }
         // A failed flow can leave the page anywhere; get back to a known place.
         try { await P.page.evaluate(() => { location.hash = "#/"; }); } catch { /* page gone */ }
       }

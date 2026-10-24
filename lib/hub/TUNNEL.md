@@ -433,10 +433,13 @@ phone long-poll; same auth and channel binding (binds if new). →
 
 CORS (the app runs at `https://localhost` / `capacitor://localhost`): the two
 `/client` endpoints MUST answer `OPTIONS` preflights and send
-`Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: GET, POST, OPTIONS`,
+`Access-Control-Allow-Origin` set to the request's origin ONLY when it is exactly
+`https://localhost` or `capacitor://localhost` (with `Vary: Origin`), never `*`;
+`Access-Control-Allow-Methods: GET, POST, OPTIONS`,
 `Access-Control-Allow-Headers: Authorization, Content-Type`,
-`Access-Control-Max-Age: 600`. `*` is safe: auth is a bearer header, never a
-cookie. The hub endpoints need no CORS.
+`Access-Control-Expose-Headers: Retry-After`, `Access-Control-Max-Age: 600`. Other
+origins get no CORS headers. Auth is a bearer header, never a cookie, so this is
+defence in depth rather than the control. The hub endpoints need no CORS.
 
 ### Limits and retention
 

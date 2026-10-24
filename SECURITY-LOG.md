@@ -60,6 +60,18 @@ Severity: critical / high / medium / low. Status: open / fixed / accepted.
 - The web-server attack agent reported and ran its scripts against a real in-process server (rows 15 to 17). Held up: spoofed forwarding headers and odd IPv6 forms, Host-header and DNS-rebinding tricks, cross-site requests of every simple form, file-leak and traversal variants, header splitting, request smuggling, oversized headers, clickjacking, response caching, and script injection in the phone UI (checked live in a real headless browser).
 - Round 1 is **not yet closed**: the fixes still need the whole round re-run, and the login attacker agent never ran its dynamic attacks (only the two suspicions I checked by hand). Its two unconfirmed suspicions were checked by hand (rows 1 and 2); the rest of its areas still need dynamic testing.
 
+## Round 2 status (tunnel and relay), in progress
+
+- Tunnel protocol, hub side and phone-side module written by one agent; an independent opus review of it has been started and **has not reported**. Nothing here counts until it does.
+- Website relay routes written and checked by script: 288 checks across the in-memory and Redis stores (memory re-run after the last change: 141 of 141), CORS limited to the exact app origins, blind to frame contents, nothing secret in responses or server output.
+- Relay open items (not yet verified):
+  - Not tested on a real Upstash or Vercel KV store (only real Redis 7 behind a local REST shim). Lua scripting limits there are unknown.
+  - Frame-age (5 min), channel-idle (15 min) and room-expiry (30 days) paths are implemented but their timeouts were never waited out.
+  - The failed-login lockout keys on the last `X-Forwarded-For` entry, which is right behind Vercel but would lump users together behind several appending proxies.
+  - The `wait` clamp (25 s) was not exercised at its upper bound.
+  - CORS was tested with hand-set headers, not in a real browser or the real app.
+  - Anyone can create a room for their own token (spec); the only brake is per-IP and per-token limits.
+
 ## Controls in place (what the attacks run against)
 
 - Accounts are created at the keyboard only. There is no sign-up endpoint.
