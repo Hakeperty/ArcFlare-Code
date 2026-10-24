@@ -370,3 +370,18 @@ test("a model still going after the retry is reported truncated, not passing", a
   assert.strictEqual(row.probes.truncated, 5);
   assert.ok(row.probes.detail.every((d) => d.retried), "each one got its second chance");
 });
+
+test("hub.recommend picks the biggest commercial chat/code model that fits", () => {
+  const hub = require("../lib/hub");
+  const m = (slug, vram, extra = {}) => ({ slug, name: slug, category: "Chat", vram, commercial: true, run: `arcflare pull a/${slug}`, ...extra });
+  const models = [
+    m("tiny", "~0.5 GB"), m("small", "~6 GB"), m("mid", "~14 GB"), m("big", "~60 GB"),
+    m("nc", "~12 GB", { commercial: false }),
+    m("img", "~10 GB", { category: "Image" }),
+    m("ollama", "~11 GB", { run: "arcflare run x" }),
+  ];
+  assert.equal(hub.recommend(models, 24).slug, "mid");
+  assert.equal(hub.recommend(models, 8).slug, "small");
+  assert.equal(hub.recommend(models, 0).slug, "small");
+  assert.equal(hub.recommend(models, 2), null);
+});

@@ -54,7 +54,10 @@ curl -fsSL https://arcflare.net/install.sh | sh          # macOS / Linux
 irm https://arcflare.net/install.ps1 | iex               # Windows (PowerShell)
 ```
 
-Pass `--no-engine` to skip the llama.cpp download. From a clone instead:
+Pass `--no-engine` to skip the llama.cpp download, or `--model` to also pull a
+model that fits your GPU (opt-in, it is a large download; `$env:ARCFLARE_MODEL=1`
+on Windows). `arcflare shop best` does the same later, and `--dry-run` shows the
+pick first. From a clone instead:
 
 ```bash
 git clone https://github.com/Hakeperty/ArcFlare-Code.git

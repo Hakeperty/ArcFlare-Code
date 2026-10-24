@@ -1307,6 +1307,17 @@ async function shopCommand(cfg, argv) {
   const { data, source, url, age } = loaded;
   const freeGb = (() => { try { return freeDeviceBytes(cfg) / 1e9; } catch { return 0; } })();
 
+  // `arcflare shop best [--dry-run]`: pull the one model that suits this machine.
+  if (rest[0] === "best") {
+    const m = hub.recommend(data.models, freeGb);
+    if (!m) { console.log(`  ${c.dim("no model in the hub fits this machine; browse with")} ${c.accent("arcflare shop")}`); return; }
+    const plan = hub.installPlan(m);
+    console.log(`  ${c.dim("for this machine")} ${c.bold(m.name)} ${c.dim(`· ${m.defaultSize} · ${m.vram}${freeGb ? ` · ${freeGb.toFixed(0)} GB free` : ""}`)}`);
+    if (rest.includes("--dry-run")) { console.log(`  ${c.dim("would run")} ${c.accent("arcflare " + plan.argv.join(" "))}`); return; }
+    if (!runSelf(plan.argv)) process.exitCode = 1;
+    return;
+  }
+
   let list = data.models;
   const cat = flag(rest, "--cat");
   if (cat) list = list.filter((m) => m.category.toLowerCase() === cat.toLowerCase());
