@@ -45,15 +45,29 @@ The model is mapped once, by the engine that owns it. ArcFlare just supervises.
 
 ## Install
 
+One command sets up everything: Node.js (a private copy, if you lack 18+), the
+`arcflare` CLI, and a prebuilt llama.cpp matched to your machine. No root or
+admin needed.
+
+```bash
+curl -fsSL https://arcflare.net/install.sh | sh          # macOS / Linux
+irm https://arcflare.net/install.ps1 | iex               # Windows (PowerShell)
+```
+
+Pass `--no-engine` to skip the llama.cpp download. From a clone instead:
+
 ```bash
 git clone https://github.com/Hakeperty/ArcFlare-Code.git
 cd ArcFlare-Code
 npm link          # no install step — there are no dependencies
+arcflare engine install
 ```
 
-Requires Node 18+ and a llama.cpp build. ArcFlare looks for `llama-server` on
-`PATH`, then in `~/llamacpp/{vulkan,cuda,rocm}` and the usual places. If it
-lives somewhere else:
+`arcflare engine install` picks the build for your OS and GPU (Metal on macOS,
+Vulkan or CPU on Linux, CUDA or Vulkan on Windows) and unpacks it into
+`~/.arcflare/engine`. Already have a llama.cpp build? ArcFlare looks for
+`llama-server` on `PATH`, then in `~/llamacpp/{vulkan,cuda,rocm}` and the usual
+places. If it lives somewhere else:
 
 ```bash
 arcflare set-engine /path/to/llama-server
@@ -118,6 +132,7 @@ arcflare doctor
 | `arcflare report` | Send a bug, complaint or idea to [arcflare.net/report](https://arcflare.net/report) (`--title`, `--body`, `--kind`); `/report` in a session |
 | `arcflare mcp logout <server\|--all>` | Delete stored OAuth tokens for hosted MCP servers |
 | `arcflare doctor` | Check engine, GPU and harnesses |
+| `arcflare engine install` | Download a prebuilt llama.cpp for this machine (`--if-missing`) |
 | `arcflare set-engine <path>` | Remember where `llama-server` lives |
 
 `arcflare <model>` is shorthand for `arcflare run <model>`.
