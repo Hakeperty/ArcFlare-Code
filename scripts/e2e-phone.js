@@ -286,7 +286,7 @@ flow(1, "unauthenticated load: login; no accounts shows the setup message", asyn
   await visible(page, "#login-note");
   const note = (await textOf(page, "#login-note")).trim();
   assert.match(note, /computer/i, `setup note should say to use the computer: ${note}`);
-  assert.match(note, /arcflare (hub|phone) user add/, `setup note should name the add-user command: ${note}`);
+  assert.match(note, /arcflare phone user add/, `setup note should name the add-user command: ${note}`);
   P.notes.add(`setup message is: "${note}"`);
   await hidden(page, "#login-fields");
   await hidden(page, "#topbar");
@@ -447,6 +447,20 @@ flow(6, "approvals: full command, Deny, Allow, timeout", async (P) => {
   const st = (await textOf(page, "#agent-status")).trim();
   if (!/needs approval/i.test(st)) P.notes.add(`agent status during an approval reads "${st}", not "Needs approval" (the status event arrives before the approval event)`);
   assert.match(st, /approval/i, "status shows that an approval is needed");
+  // The two answers are the most important buttons on screen: each label must
+  // sit on one line (not "ALLO / W") and inside the viewport, even at 320px.
+  const fit = await page.evaluate(() => ["approve-deny", "approve-allow"].map((id) => {
+    const b = document.getElementById(id);
+    const r = document.createRange();
+    r.selectNodeContents(b);
+    const tops = new Set([...r.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.top / 3)));
+    const box = b.getBoundingClientRect();
+    return { id, lines: tops.size, inside: box.left >= 0 && box.right <= window.innerWidth, clipped: b.scrollWidth > b.clientWidth + 1 };
+  }));
+  for (const f of fit) {
+    assert.strictEqual(f.lines, 1, `${f.id} label wraps onto ${f.lines} lines`);
+    assert.ok(f.inside && !f.clipped, `${f.id} is clipped or off screen`);
+  }
   await screen(P, page, "agent-approval");
   await page.locator("#approve-deny").tap();
   await hidden(page, "#approval");

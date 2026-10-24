@@ -229,6 +229,7 @@ label {
 /* ---------- Top bar ---------- */
 
 .topbar {
+  min-width: 0;
   position: sticky;
   top: 0;
   z-index: 50;
@@ -280,6 +281,15 @@ label {
 @media (max-width: 479px) { .led-text { display: none; } }
 
 .nav { display: flex; gap: 0; margin-left: auto; white-space: nowrap; }
+
+/* Narrowest phones (320px): drop the status tag and tighten, so the bar never
+   pushes the page sideways. */
+@media (max-width: 359px) {
+  .topbar { gap: 6px; }
+  .led-tag { display: none; }
+  .brand { font-size: 17px; }
+  .nav a { padding: 0 6px; letter-spacing: 0.06em; }
+}
 .nav a {
   display: inline-flex;
   align-items: center;
@@ -575,6 +585,13 @@ select { appearance: auto; }
 .btn.deny::before { content: "\2715"; font-size: 20px; }
 .btn.allow:hover, .btn.deny:hover { color: inherit; filter: brightness(1.1); }
 .btn.allow:hover { color: var(--on-ok); }
+/* The two answers must never wrap or clip, even at 320px. */
+.approval-actions .btn { white-space: nowrap; min-width: 0; }
+@media (max-width: 359px) {
+  .approval-actions { gap: 8px; }
+  .approval-actions .btn { padding-left: 6px; padding-right: 6px; letter-spacing: 0.06em; gap: 4px; }
+  .btn.allow::before, .btn.deny::before { font-size: 16px; }
+}
 .btn.deny:hover { color: var(--on-danger); }
 
 /* ---------- Transcript ---------- */
