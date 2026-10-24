@@ -1,0 +1,130 @@
+<!doctype html>
+<!--
+  ArcFlare Hub, phone UI.
+
+  This page is served by the hub itself, so it has to work on a LAN with no
+  internet: no CDN, no web fonts, no images. The server's CSP allows scripts
+  and styles only from this origin, so this file carries no inline code or
+  inline styling of any kind. All behaviour is in app.js and all styling in
+  style.css.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>ArcFlare Hub</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <noscript><p class="note page-pad">ArcFlare Hub needs JavaScript turned on.</p></noscript>
+
+  <header id="topbar" class="topbar" hidden>
+    <a class="brand" href="#/">ArcFlare</a>
+    <nav class="nav">
+      <a href="#/">Agents</a>
+      <a href="#/devices">Devices</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    <!-- Sign in -->
+    <section id="view-login" class="view" hidden>
+      <form id="login-form" class="card narrow" autocomplete="on">
+        <h1>Sign in</h1>
+        <p id="login-note" class="note" hidden></p>
+        <div id="login-fields">
+          <label>Username
+            <input id="login-user" name="username" type="text" autocomplete="username"
+                   autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          </label>
+          <label>Password
+            <input id="login-pass" name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <button type="submit" class="btn primary block">Sign in</button>
+        </div>
+        <p id="login-error" class="error" role="alert" hidden></p>
+      </form>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="view-dashboard" class="view" hidden>
+      <h1>Agents</h1>
+      <p id="dash-error" class="error" role="alert" hidden></p>
+      <p id="dash-empty" class="note" hidden>No agents yet. Create one below.</p>
+      <ul id="agent-list" class="stack"></ul>
+
+      <section class="card">
+        <h2>New agent</h2>
+        <form id="new-form" class="form">
+          <label>Name
+            <input id="new-name" type="text" maxlength="64" required>
+          </label>
+          <label>Folder on the computer
+            <input id="new-cwd" type="text" autocapitalize="none" autocorrect="off" spellcheck="false"
+                   placeholder="/home/you/project" required>
+          </label>
+          <label>Tier
+            <select id="new-tier">
+              <option value="light">Light</option>
+              <option value="standard" selected>Standard</option>
+              <option value="hard">Hard</option>
+            </select>
+          </label>
+          <p class="hint">Hard is reserved for the toughest tasks. Standard covers most work.</p>
+          <label>First task <span class="hint-inline">(optional)</span>
+            <textarea id="new-task" rows="3"></textarea>
+          </label>
+          <p id="new-error" class="error" role="alert" hidden></p>
+          <button id="new-submit" type="submit" class="btn primary block">Create agent</button>
+        </form>
+      </section>
+    </section>
+
+    <!-- One agent: live transcript, approvals, messages -->
+    <section id="view-agent" class="view" hidden>
+      <div class="agent-head">
+        <a class="btn" href="#/">Back</a>
+        <div class="agent-title">
+          <h1 id="agent-name"></h1>
+          <p class="meta"><span id="agent-dot" class="dot dot-off" aria-hidden="true"></span><span id="agent-status"></span></p>
+        </div>
+        <button id="agent-stop" class="btn danger" type="button">Stop</button>
+      </div>
+
+      <div id="approval" class="approval" role="alertdialog" aria-labelledby="approval-title" hidden>
+        <p id="approval-title" class="approval-title">Approval needed</p>
+        <p id="approval-kind" class="approval-kind"></p>
+        <pre id="approval-detail" class="approval-detail"></pre>
+        <div class="approval-actions">
+          <button id="approve-deny" class="btn big deny" type="button">Deny</button>
+          <button id="approve-allow" class="btn big allow" type="button">Allow</button>
+        </div>
+      </div>
+
+      <div id="transcript" class="transcript" aria-live="polite"></div>
+      <p id="agent-error" class="error" role="alert" hidden></p>
+
+      <form id="compose" class="compose">
+        <label class="sr-only" for="compose-text">Message the agent</label>
+        <textarea id="compose-text" rows="2" placeholder="Message the agent"></textarea>
+        <button type="submit" class="btn primary">Send</button>
+      </form>
+    </section>
+
+    <!-- Signed-in devices -->
+    <section id="view-devices" class="view" hidden>
+      <h1>Devices</h1>
+      <p class="note">Browsers and phones signed in to this hub. Revoking one signs it out.</p>
+      <p id="dev-error" class="error" role="alert" hidden></p>
+      <ul id="session-list" class="stack"></ul>
+      <div class="stack-actions">
+        <button id="revoke-others" class="btn block" type="button">Sign out other devices</button>
+        <button id="logout" class="btn ghost block" type="button">Log out</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
