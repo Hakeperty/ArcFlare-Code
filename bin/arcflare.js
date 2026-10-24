@@ -528,6 +528,12 @@ const HELP_GROUPS = [
     ["arcflare rc qr", "", "just the QR code, to scan with your phone"],
     ["arcflare rc relay", "<url>", "the site that relays sessions"],
   ]],
+  ["phone hub (local network)", [
+    ["arcflare phone user add", "<name>", "make an account, here at the keyboard"],
+    ["arcflare phone root add", "<folder>", "let agents work in a folder"],
+    ["arcflare phone", "[--port N]", "start the hub; scan the QR with your phone"],
+    ["arcflare phone tier set", "<tier> <model>", "light / standard / hard model"],
+  ]],
   ["server", [
     ["arcflare serve", "[--port N]", "start the server only"],
     ["arcflare ps", "", "server status and loaded models"],
@@ -1858,6 +1864,8 @@ async function main() {
     case "rc":
     case "remote":
       return rcCommand(cfg, argv);
+    case "phone":
+      return require("../lib/hub/cli").command(cfg, argv);
     case "report":
     case "bug":
       return reportCommand(argv);
