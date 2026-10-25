@@ -1,0 +1,22 @@
+{
+  "name": "arcflare-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ArcFlare Android app (Capacitor wrapper). Not part of the hub package.",
+  "license": "MIT",
+  "scripts": {
+    "sync-ui": "node scripts/sync-ui.js",
+    "test": "node --test test/*.test.js",
+    "test:e2e": "node test/shell.e2e.js",
+    "cap:sync": "node scripts/sync-ui.js && cap sync android"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/cli": "8.5.3",
+    "@capacitor/core": "8.5.3"
+  }
+}

@@ -864,6 +864,67 @@ flow(12, "layout: no sideways scroll, 44px targets, 16px inputs, both themes, sc
   assert.strictEqual(problems.length, 0, problems.join(" | "));
 });
 
+flow(13, "transport seam: all API traffic uses window.ArcFlareTransport, read once; chip follows relay", async (P) => {
+  const { H } = P;
+  const second = await newCtx(P);
+  const page = second.page;
+  const seen = [];
+  page.on("request", (r) => { const u = new URL(r.url()); if (u.pathname.startsWith("/api/")) seen.push(u.pathname + u.search); });
+  try {
+    P.step("wrapper installed before the app loads");
+    await second.ctx.addInitScript(() => {
+      const realFetch = window.fetch.bind(window);
+      const RealES = window.EventSource;
+      const calls = { fetch: [], es: [], swapped: 0 };
+      window.__calls = calls;
+      window.ArcFlareTransport = {
+        fetch: (p, i) => { calls.fetch.push(String(p)); return realFetch(p, i); },
+        eventSource: (p) => { calls.es.push(String(p)); return new RealES(p); },
+      };
+    });
+    await page.goto(H.url + "/");
+    await visible(page, "#view-login");
+    P.step("login and open an agent");
+    await login(page);
+    await openAgentView(P, page, "alpha");
+    await page.locator("#agent-status", { hasText: /Ready|Working|Stopped/ }).waitFor({ state: "visible" });
+    const calls = await page.evaluate(() => window.__calls);
+    assert.ok(calls.fetch.length > 0, "the wrapper saw fetch calls");
+    assert.ok(calls.es.some((p) => p === "/api/events"), "dashboard stream opened through the wrapper");
+    assert.ok(calls.es.some((p) => /^\/api\/agents\/[^/]+\/events\?after=\d+$/.test(p)), "agent stream opened through the wrapper");
+    P.step("every request the browser made came from the wrapper");
+    const wrapped = new Set([...calls.fetch, ...calls.es]);
+    assert.ok(seen.length > 0, "the browser made API requests");
+    const stray = seen.filter((u) => !wrapped.has(u));
+    assert.deepStrictEqual(stray, [], "API requests the wrapper never saw (the page used fetch/EventSource directly)");
+    P.step("replacing the transport after load has no effect");
+    await page.evaluate(() => {
+      window.ArcFlareTransport = {
+        fetch: () => { window.__calls.swapped++; return Promise.reject(new Error("swapped")); },
+        eventSource: () => { window.__calls.swapped++; throw new Error("swapped"); },
+      };
+    });
+    await tab(page, "Devices").tap();
+    await visible(page, "#view-devices");
+    await page.locator("#session-list li").first().waitFor();
+    await hidden(page, "#dev-error");
+    const after = await page.evaluate(() => window.__calls);
+    assert.strictEqual(after.swapped, 0, "the replacement transport was never called");
+    assert.ok(after.fetch.includes("/api/sessions"), "the original wrapper served /api/sessions");
+    P.step("connection chip");
+    await tab(page, "Agents").tap();
+    await visible(page, "#view-dashboard");
+    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Home network");
+    await page.evaluate(() => window.arcflareSetConnection("relay"));
+    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Relay");
+    await tab(page, "Devices").tap();
+    await tab(page, "Agents").tap();
+    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Relay", "the chip keeps Relay across screens");
+    await page.evaluate(() => window.arcflareSetConnection("home"));
+    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Home network");
+  } finally { await second.ctx.close().catch(() => {}); }
+});
+
 // -------------------------------------------------------------------- runner --
 
 const PROFILES = [

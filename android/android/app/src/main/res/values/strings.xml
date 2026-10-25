@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ArcFlare</string>
+    <string name="title_activity_main">ArcFlare</string>
+    <string name="package_name">net.arcflare.app</string>
+    <string name="custom_url_scheme">net.arcflare.app</string>
+</resources>
