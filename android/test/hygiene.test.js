@@ -161,11 +161,6 @@ test("no keystore, key or local.properties is tracked in the project tree", () =
 });
 
 test("sync-ui transformIndex refuses a page it does not understand", () => {
-  const { transformIndex } = require("../scripts/sync-ui.js");
-  const realExit = process.exit, realErr = process.stderr.write;
-  let exited = false;
-  process.exit = () => { exited = true; throw new Error("exit"); };
-  process.stderr.write = () => true;
-  try { assert.throws(() => transformIndex("<html><head><meta charset=\"utf-8\"></head></html>")); } finally { process.exit = realExit; process.stderr.write = realErr; }
-  assert.equal(exited, true);
+  const { transformIndex, SyncError } = require("../scripts/sync-ui.js");
+  assert.throws(() => transformIndex("<html><head><meta charset=\"utf-8\"></head></html>"), SyncError);
 });
