@@ -1,7 +1,11 @@
 // Thin wrappers over Capacitor's bridge. Everything native the shell uses is here.
 // Capacitor's core runtime (vendor/capacitor.js, copied at build time) provides registerPlugin();
-// the native side (CapacitorHttp, CapacitorCookies, App, NavGuard) answers over Capacitor's own bridge.
+// the native side (CapacitorHttp, CapacitorCookies, App) answers over Capacitor's own bridge.
 // window.ArcFlareNative.
+//
+// CapacitorHttp is exposed ONLY as the object lanfetch.js wraps (which refuses everything but the stored LAN
+// mailbox); no other file calls it. There is no navigation plugin any more: the native navigation guard
+// (MainActivity / NavPolicy.java) has no settable exception, and the WebView only ever shows https://localhost.
 (function () {
   "use strict";
 
@@ -13,13 +17,14 @@
     return p;
   }
 
+  // The only page the shell may send the WebView to: the bundled UI, optionally with the connection hint.
+  var NAV_OK = /^ui\/index\.html(\?via=(home|relay))?$/;
+
   window.ArcFlareNative = {
-    /** GET with the native HTTP stack: no CORS, no mixed-content rules. Redirects are not followed. */
-    httpGet: function (o) {
-      return plugin("CapacitorHttp").get({
-        url: o.url, connectTimeout: o.timeoutMs, readTimeout: o.timeoutMs, disableRedirects: true,
-        responseType: "json", headers: { Accept: "application/json" },
-      });
+    /** Capacitor's native HTTP, handed to ArcFlareLanFetch.create({ http }) and to nothing else. */
+    nativeHttp: function () {
+      var p = plugin("CapacitorHttp");
+      return { get: function (o) { return p.get(o); }, post: function (o) { return p.post(o); } };
     },
     /** The arcflare:// URL the app was started with, or null. */
     getLaunchUrl: async function () {
@@ -29,13 +34,19 @@
     onAppUrl: function (fn) {
       try { var h = plugin("App").addListener("appUrlOpen", function (e) { if (e && e.url) fn(String(e.url)); }); if (h && h.catch) h.catch(function () {}); } catch (e) { /* not native */ }
     },
-    /** Tell MainActivity which exact origin the WebView may navigate to (null = none). */
-    setLan: function (url) { return plugin("NavGuard").setLan({ url: url || "" }); },
+    /** Calls fn() whenever the app comes to the foreground. */
+    onForeground: function (fn) {
+      try { var h = plugin("App").addListener("appStateChange", function (e) { if (e && e.isActive) fn(); }); if (h && h.catch) h.catch(function () {}); } catch (e) { /* not native */ }
+    },
     clearCookies: function () { return plugin("CapacitorCookies").clearAllCookies(); },
     /** TUNNEL.md section 2: feature-detect X25519; never fall back. */
     supportsX25519: async function () {
       try { await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]); return true; } catch (e) { return false; }
     },
-    navigate: function (url) { window.location.assign(url); },
+    /** Only the bundled UI (the native guard refuses anything else anyway). */
+    navigate: function (path) {
+      if (!NAV_OK.test(path)) throw new Error("refused navigation target");
+      window.location.assign(path);
+    },
   };
 })();

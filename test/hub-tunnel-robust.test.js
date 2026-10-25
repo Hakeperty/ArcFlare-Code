@@ -361,3 +361,31 @@ test("info: the phone's relay URL check is as strict as the hub's", () => {
   }
   assert.ok(TC.parsePairingLink(`arcflare://pair?v=1&r=${encodeURIComponent("https://relay.test")}&rm=${k()}&hk=${k()}&ps=${k()}`));
 });
+
+// ------------------------------------------------------------------ L4 ----
+
+test("L4: a relay that answers every poll at once with no frames cannot make the phone spin (about 1 poll per second)", async (t) => {
+  if (!needX(t)) return;
+  const b = () => I.b64u(nodeCrypto.randomBytes(32));
+  const kp = await globalThis.crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]);
+  const device = {
+    v: 1, relay: "https://relay.test", room: b(), hubKey: b(), deviceId: I.b64u(nodeCrypto.randomBytes(16)),
+    roomToken: "aftc_" + b(), privateKey: kp.privateKey, publicKey: b(),
+  };
+  const calls = { get: 0, post: 0 };
+  const lying = async (url, init) => {
+    if (init.method === "GET") { calls.get++; return new Response(JSON.stringify({ frames: [], head: 0, online: true })); }
+    calls.post++;
+    return new Response('{"ok":true}');
+  };
+  const t0 = Date.now();
+  await assert.rejects(TC.connect(device, { fetch: lying, handshakeTimeoutMs: 2500 }), { code: "TIMEOUT" });
+  const secs = (Date.now() - t0) / 1000;
+  assert.ok(calls.get >= 1, "it did poll");
+  assert.ok(calls.get <= Math.ceil(secs) + 1, `${calls.get} polls in ${secs.toFixed(1)} s is a spin`);
+  // and the floor is configurable (so tests and slow links can lower it) but defaults to 1 s
+  const calls2 = { get: 0 };
+  const quick = async (url, init) => { if (init.method === "GET") calls2.get++; return new Response(init.method === "GET" ? '{"frames":[],"head":0,"online":true}' : '{"ok":true}'); };
+  await assert.rejects(TC.connect(device, { fetch: quick, handshakeTimeoutMs: 600, minPollMs: 20 }), { code: "TIMEOUT" });
+  assert.ok(calls2.get > 5, "the floor is configurable; the default (1 s) is the protection");
+});

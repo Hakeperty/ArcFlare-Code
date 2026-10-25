@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Build step: copy the phone UI (lib/hub/ui) into www/ui and turn its index.html into the
-// bundled relay-mode page. www/ui and www/vendor are generated and never committed.
+// bundled tunnel-mode page. www/ui and www/vendor are generated and never committed.
 //
 //  - ui/index.html gets a Content-Security-Policy <meta> (the hub sends its CSP as a header;
 //    a bundled file has no header), and its script list becomes
-//      tunnel-client, store, transport adapter, relay-boot (sets window.ArcFlareTransport),
-//      app.js, relay-chip (chip = "Relay")
+//      tunnel-client, Capacitor runtime, link/mode/native/lanfetch/store/connector, transport adapter,
+//      relay-boot (sets window.ArcFlareTransport), app.js, relay-chip (chip = "Home network" | "Relay")
 //    so the transport exists BEFORE app.js reads it.
 //  - vendor/capacitor.js = @capacitor/core's browser runtime (registerPlugin for the shell).
 "use strict";
@@ -55,7 +55,13 @@ function transformIndex(html) {
   if (!/<head[\s>]/i.test(html)) die("expected a <head> in index.html");
   const scripts = [
     '<script src="tunnel-client.js" defer></script>',
+    '<script src="../vendor/capacitor.js" defer></script>',
+    '<script src="../link.js" defer></script>',
+    '<script src="../mode.js" defer></script>',
+    '<script src="../native.js" defer></script>',
+    '<script src="../lanfetch.js" defer></script>',
     '<script src="../store.js" defer></script>',
+    '<script src="../connector.js" defer></script>',
     '<script src="../transport.js" defer></script>',
     '<script src="../relay-boot.js" defer></script>',
     APP_TAG,
@@ -104,7 +110,7 @@ function copyUi(srcDir, outDir) {
   if (st.isSymbolicLink() || !st.isDirectory()) die("UI source must be a real directory, not a symlink: " + srcDir);
   const data = new Map();
   for (const rel of FILES) data.set(rel, readAllowed(srcDir, rel));
-  if (!/window\.ArcFlareTransport/.test(data.get("app.js").toString("utf8"))) die("app.js does not read window.ArcFlareTransport; the relay mode would not work");
+  if (!/window\.ArcFlareTransport/.test(data.get("app.js").toString("utf8"))) die("app.js does not read window.ArcFlareTransport; the tunnel mode would not work");
   data.set("index.html", Buffer.from(transformIndex(data.get("index.html").toString("utf8"))));
   fs.rmSync(outDir, { recursive: true, force: true });
   for (const [rel, buf] of data) {

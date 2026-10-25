@@ -167,10 +167,10 @@ async function setup({ limits, createPairing = true } = {}) {
   const logs = [];
   const hub = new HubTunnel({
     store, relay: RELAY, dispatch: server.dispatchTunnel, auth, fetch: relay.fetch,
-    pollWaitSec: 1, limits, log: (m) => logs.push(String(m && m.message || m)),
+    pollWaitSec: 1, minPollMs: 50, limits, log: (m) => logs.push(String(m && m.message || m)),
   });
   await hub.start();
-  const opts = { fetch: relay.fetch, pollWaitSec: 1, handshakeTimeoutMs: 4000 };
+  const opts = { fetch: relay.fetch, pollWaitSec: 1, minPollMs: 50, handshakeTimeoutMs: 4000 };
   return {
     dir, auth, supervisor, server, relay, store, room, hub, link, secret, opts, logs,
     async close() { await hub.stop(); fs.rmSync(dir, { recursive: true, force: true }); },
@@ -178,7 +178,7 @@ async function setup({ limits, createPairing = true } = {}) {
 }
 
 async function pairAndApprove(env, label = "Pixel test") {
-  const { device, sas } = await TC.pair({ link: env.link, label, fetch: env.relay.fetch, pollWaitSec: 1, timeoutMs: 4000 });
+  const { device, sas } = await TC.pair({ link: env.link, label, fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 });
   const rec = env.store.listDevices().find((d) => d.id === device.deviceId);
   assert.ok(rec, "hub recorded the device");
   assert.strictEqual(rec.sas, sas, "both sides show the same confirmation code");

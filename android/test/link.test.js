@@ -24,8 +24,9 @@ test("accepted without LAN, with surrounding whitespace, .local LAN, 10.x and 17
   assert.equal(validateLink(hubLink({ lan: null })).value.lan, null);
   assert.equal(validateLink("  " + hubLink() + "\n").ok, true);
   assert.equal(validateLink(mk({ l: enc("http://studio.local:9000") })).value.lan, "http://studio.local:9000");
-  assert.equal(validateLink(mk({ l: enc("http://10.0.0.5:80") })).ok, true);
-  assert.equal(validateLink(mk({ l: enc("https://172.31.255.1:443") })).ok, true);
+  assert.equal(validateLink(mk({ l: enc("http://10.0.0.5:8080") })).ok, true);
+  assert.equal(validateLink(mk({ l: enc("http://172.31.255.1:65535") })).ok, true);
+  assert.equal(validateLink(mk({ l: enc("http://172.16.0.1:1") })).ok, true);
   assert.equal(validateLink(mk({ r: enc("https://relay.example.org/base/") })).value.relay, "https://relay.example.org/base");
 });
 
@@ -115,6 +116,41 @@ const bad = {
   "l IPv6": mk({ l: enc("http://[fd00::1]:8765") }),
   "l empty": mk({ l: "" }),
   "l 999 octet": mk({ l: enc("http://192.168.1.999:8765") }),
+  // ---- LAN exception (TUNNEL.md 5.1): everything that is not exactly a private http base with an explicit port ----
+  "LAN: l public IPv4 8.8.8.8": mk({ l: enc("http://8.8.8.8:8765") }),
+  "LAN: l 0.0.0.0": mk({ l: enc("http://0.0.0.0:8765") }),
+  "LAN: l link-local 169.254.169.254": mk({ l: enc("http://169.254.169.254:8765") }),
+  "LAN: l 127.0.0.1": mk({ l: enc("http://127.0.0.1:8765") }),
+  "LAN: l 127.1.2.3": mk({ l: enc("http://127.1.2.3:8765") }),
+  "LAN: l IPv6 loopback": mk({ l: enc("http://[::1]:8765") }),
+  "LAN: l IPv6 ULA": mk({ l: enc("http://[fd12:3456::1]:8765") }),
+  "LAN: l IPv4-mapped IPv6": mk({ l: enc("http://[::ffff:192.168.1.20]:8765") }),
+  "LAN: l .local.evil.com": mk({ l: enc("http://printer.local.evil.com:8765") }),
+  "LAN: l evil.com.local-like suffix": mk({ l: enc("http://hub.localx:8765") }),
+  "LAN: l bare .local": mk({ l: enc("http://.local:8765") }),
+  "LAN: l trailing dot .local.": mk({ l: enc("http://hub.local.:8765") }),
+  "LAN: l port 0": mk({ l: enc("http://192.168.1.20:0") }),
+  "LAN: l port 80": mk({ l: enc("http://192.168.1.20:80") }),
+  "LAN: l port 443": mk({ l: enc("http://192.168.1.20:443") }),
+  "LAN: l port 65536": mk({ l: enc("http://192.168.1.20:65536") }),
+  "LAN: l https with a private IP": mk({ l: enc("https://192.168.1.20:8765") }),
+  "LAN: l https .local": mk({ l: enc("https://hub.local:8765") }),
+  "LAN: l userinfo": mk({ l: enc("http://admin@192.168.1.20:8765") }),
+  "LAN: l path": mk({ l: enc("http://192.168.1.20:8765/api") }),
+  "LAN: l dot-dot path": mk({ l: enc("http://192.168.1.20:8765/..") }),
+  "LAN: l query": mk({ l: enc("http://192.168.1.20:8765?a=b") }),
+  "LAN: r http but no l": mk({ r: enc("http://192.168.1.20:8765"), l: undefined }),
+  "LAN: r http and l mismatch (other host)": mk({ r: enc("http://192.168.1.20:8765"), l: enc("http://192.168.1.21:8765") }),
+  "LAN: r http and l mismatch (other port)": mk({ r: enc("http://192.168.1.20:8765"), l: enc("http://192.168.1.20:8766") }),
+  "LAN: r http private, l fine, but https relay expected": mk({ r: enc("http://10.0.0.5:8765"), l: enc("http://192.168.1.20:8765") }),
+  "LAN: r http public IP equal to l": mk({ r: enc("http://8.8.8.8:8765"), l: enc("http://8.8.8.8:8765") }),
+  "LAN: r http .local lookalike equal to l": mk({ r: enc("http://hub.local.evil.com:8765"), l: enc("http://hub.local.evil.com:8765") }),
+  "LAN: r http port 80 equal to l": mk({ r: enc("http://192.168.1.20:80"), l: enc("http://192.168.1.20:80") }),
+  "LAN: r https private IP literal (no https IP relays)": mk({ r: enc("https://192.168.1.20:8765"), l: enc("http://192.168.1.20:8765") }),
+  "LAN: r https .local": mk({ r: enc("https://hub.local:8765"), l: enc("http://192.168.1.20:8765") }),
+  "LAN: r http with a path": mk({ r: enc("http://192.168.1.20:8765/x"), l: enc("http://192.168.1.20:8765") }),
+  "LAN: r http with userinfo": mk({ r: enc("http://u@192.168.1.20:8765"), l: enc("http://192.168.1.20:8765") }),
+  "LAN: rm missing even with a LAN r": mk({ r: enc("http://192.168.1.20:8765"), l: enc("http://192.168.1.20:8765"), rm: undefined }),
   "huge input": "arcflare://pair?" + "a".repeat(1_000_000),
   "just over 1 KB": mk({ l: enc("http://192.168.1.20:8765") }) + "&" + "x".repeat(1100),
   "huge relay": mk({ r: enc("https://" + "a".repeat(2000) + ".com") }),
@@ -161,6 +197,8 @@ test("a dev build accepts an http loopback relay; a production build does not", 
 
 test("validateLanUrl re-checks a stored value", () => {
   assert.equal(validateLanUrl("http://192.168.1.20:8765"), true);
+  assert.equal(validateLanUrl("http://192.168.1.20:80"), false);
+  assert.equal(validateLanUrl("https://192.168.1.20:8765"), false);
   assert.equal(validateLanUrl("http://evil.example:8765"), false);
   assert.equal(validateLanUrl(null), false);
 });
@@ -169,5 +207,59 @@ test("fuzz: random garbage never throws and never validates", () => {
   for (let i = 0; i < 500; i++) {
     const s = "arcflare://pair?" + crypto.randomBytes(1 + (i % 120)).toString("latin1");
     assert.equal(validateLink(s).ok, false);
+  }
+});
+
+// ---------------------------------------------------------------- LAN exception: accepted forms
+
+const LAN = "http://192.168.1.20:8765";
+
+test("LAN-only link (internet relay off): r equals l, both kept, canonical round-trips", () => {
+  const link = hubLink({ relay: LAN, lan: LAN });
+  const r = validateLink(link);
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.value.relay, LAN);
+  assert.equal(r.value.lan, LAN);
+  assert.equal(r.value.relayIsLan, true);
+  assert.equal(r.value.relayHost, "192.168.1.20:8765");
+  const again = validateLink(r.canonical);
+  assert.equal(again.ok, true);
+  assert.deepEqual(again.value, r.value);
+});
+
+test("relay + LAN link keeps both bases separately; relayIsLan is false", () => {
+  const r = validateLink(hubLink());
+  assert.equal(r.value.relay, "https://arcflare.net");
+  assert.equal(r.value.lan, LAN);
+  assert.equal(r.value.relayIsLan, false);
+});
+
+test("every private range and a .local name are accepted as LAN bases (r = l)", () => {
+  for (const b of ["http://10.0.0.5:8765", "http://10.255.255.254:9", "http://172.16.0.1:8765", "http://172.31.255.254:8765", "http://192.168.0.1:65535", "http://studio.local:9000", "http://a-b.my-hub.local:8765"]) {
+    const r = validateLink(mk({ r: enc(b), l: enc(b) }));
+    assert.equal(r.ok, true, b + " " + (r.error || ""));
+    assert.equal(r.value.relay, b);
+  }
+});
+
+test("LAN host names are lower-cased; the stored base is the canonical form", () => {
+  const r = validateLink(mk({ r: enc("http://Studio.LOCAL:9000"), l: enc("http://studio.local:9000") }));
+  assert.equal(r.ok, true);
+  assert.equal(r.value.lan, "http://studio.local:9000");
+});
+
+test("canonicalFor builds a link whose r is either base and that validates again", () => {
+  const { canonicalFor } = require("../www/link.js");
+  const r = validateLink(hubLink());
+  const viaLan = canonicalFor(r.value, r.value.lan);
+  assert.equal(validateLink(viaLan).ok, true);
+  assert.ok(viaLan.includes("r=" + enc(LAN)));
+  assert.ok(canonicalFor(r.value, r.value.relay).includes("r=" + enc("https://arcflare.net")));
+});
+
+test("error text of a rejected LAN link never echoes the link", () => {
+  for (const l of ["http://8.8.8.8:8765", "http://192.168.1.20:80", "http://hub.local.evil.com:8765"]) {
+    const r = validateLink(mk({ l: enc(l) }));
+    assert.ok(!r.error.includes(l) && !r.error.includes(A43));
   }
 });

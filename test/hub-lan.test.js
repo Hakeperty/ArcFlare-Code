@@ -43,7 +43,7 @@ async function lanEnv({ withRelay = false } = {}) {
   const logs = [];
   hub = new HubTunnel({
     store, relay: withRelay ? RELAY : null, local: mailbox.local, dispatch: server.dispatchTunnel, auth,
-    fetch: relay.fetch, pollWaitSec: 1, log: (m) => logs.push(String(m && m.message || m)),
+    fetch: relay.fetch, pollWaitSec: 1, minPollMs: 50, log: (m) => logs.push(String(m && m.message || m)),
   });
   const where = await server.listen({ port: 0, host: "127.0.0.1" });
   await hub.start();
@@ -60,7 +60,7 @@ async function lanEnv({ withRelay = false } = {}) {
   const link = pairingLink({ relay: base, roomId: room.roomId, hubPub: room.hubPub, secret, lan: base });
   return {
     dir, auth, supervisor, store, room, mailbox, server, hub, base, relay, remote, logs, wire, link, secret,
-    opts: { fetch: spyFetch, pollWaitSec: 1, handshakeTimeoutMs: 4000 },
+    opts: { fetch: spyFetch, pollWaitSec: 1, minPollMs: 50, handshakeTimeoutMs: 4000 },
     async close() { await hub.stop(); await server.close(); fs.rmSync(dir, { recursive: true, force: true }); },
   };
 }
@@ -76,7 +76,7 @@ test("pair, approve, log in, CSRF, create an agent: all over the LAN mailbox, re
   const env = await lanEnv();
   try {
     assert.strictEqual(env.hub.relay, null, "no internet relay configured");
-    const { device, sas } = await TC.pair({ link: env.link, label: "Pixel LAN", fetch: env.opts.fetch, pollWaitSec: 1, timeoutMs: 4000 });
+    const { device, sas } = await TC.pair({ link: env.link, label: "Pixel LAN", fetch: env.opts.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 });
     assert.strictEqual(device.relay, env.base, "the pairing record's relay is the LAN base URL");
     assert.match(sas, /^\d{6}$/);
     const rec = env.store.listDevices().find((d) => d.id === device.deviceId);
@@ -195,11 +195,11 @@ test("both carriers at once: one device, one hub-side session, either mailbox", 
   try {
     // Pair over the internet relay (fake), connect over the LAN mailbox and over the relay.
     const relayLink = pairingLink({ relay: RELAY, roomId: env.room.roomId, hubPub: env.room.hubPub, secret: env.secret, lan: env.base });
-    const { device } = await TC.pair({ link: relayLink, label: "Both", fetch: env.relay.fetch, pollWaitSec: 1, timeoutMs: 5000 });
+    const { device } = await TC.pair({ link: relayLink, label: "Both", fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 5000 });
     env.store.approve(device.deviceId);
     const lanDevice = { ...device, relay: env.base };
     const viaLan = await TC.connect(lanDevice, env.opts);
-    const viaNet = await TC.connect(device, { fetch: env.relay.fetch, pollWaitSec: 1, handshakeTimeoutMs: 4000 });
+    const viaNet = await TC.connect(device, { fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, handshakeTimeoutMs: 4000 });
     const r = await H.login(viaLan);
     assert.strictEqual(r.status, 200);
     assert.strictEqual((await viaNet.request("GET", "/api/me")).status, 200, "the relay carrier shares the device's hub-side session");
@@ -216,7 +216,7 @@ test("both carriers at once: one device, one hub-side session, either mailbox", 
     env.store.revoke(device.deviceId);
     assert.ok(await until(() => env.hub.sessions.size === 0), "all sessions gone");
     await assert.rejects(TC.connect(lanDevice, { ...env.opts, handshakeTimeoutMs: 1500 }));
-    await assert.rejects(TC.connect(device, { fetch: env.relay.fetch, pollWaitSec: 1, handshakeTimeoutMs: 1500 }));
+    await assert.rejects(TC.connect(device, { fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, handshakeTimeoutMs: 1500 }));
     viaLan.close(); viaNet.close();
   } finally { await env.close(); }
 });
@@ -225,7 +225,7 @@ test("revoking a device over the LAN mailbox: allowlist republished, token refus
   if (!needX(t)) return;
   const env = await lanEnv();
   try {
-    const { device } = await TC.pair({ link: env.link, label: "Pixel", fetch: env.opts.fetch, pollWaitSec: 1, timeoutMs: 4000 });
+    const { device } = await TC.pair({ link: env.link, label: "Pixel", fetch: env.opts.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 });
     env.store.approve(device.deviceId);
     const tun = await TC.connect(device, env.opts);
     assert.strictEqual((await H.login(tun)).status, 200);
@@ -258,4 +258,35 @@ test("link rules: http only for the LAN (private IPv4 / .local); the internet re
   assert.throws(() => TC.parsePairingLink(link("http://relay.example", null)), { code: "BAD_LINK" });
   assert.throws(() => TC.parsePairingLink(link("https://arcflare.net", "http://8.8.8.8:7878")), { code: "BAD_LINK" });
   assert.throws(() => TC.parsePairingLink(link("https://arcflare.net", "http://evil.example")), { code: "BAD_LINK" });
+});
+
+// ---- contract with the phone app ------------------------------------------
+// The hub must never print a pairing link the app refuses (the app's link.js is
+// the strict side; it is a pure module, so it can be run here against the hub's
+// own output).
+
+test("pairing-link LAN addresses: what the hub prints is always what the app accepts", () => {
+  const appLink = require("../android/www/link.js");
+  const parse = appLink.parseLink || appLink.validateLink || appLink.parse || appLink.validate;
+  assert.strictEqual(typeof parse, "function", "android/www/link.js exposes its validator");
+
+  const good = ["http://192.168.1.5:7878", "http://10.0.0.2:7878", "http://172.16.0.9:9000", "http://my-pc.local:7878"];
+  for (const lan of good) {
+    const base = tunnel.checkPairingLanUrl(lan);
+    const link = tunnel.pairingLink({
+      relay: base, roomId: Buffer.alloc(32, 5).toString("base64url"), hubPub: Buffer.alloc(32, 7), secret: Buffer.alloc(32, 9).toString("base64url"), lan: base,
+    });
+    const res = parse(link);
+    assert.ok(res && (res.ok === undefined || res.ok === true), `the app accepts the hub's own link for ${lan}: ${JSON.stringify(res)}`);
+  }
+
+  const bad = [
+    "https://192.168.1.5:7878",   // a certificate for an IP cannot be validated
+    "http://localhost:7878", "http://127.0.0.1:7878", "http://[::1]:7878",
+    "http://192.168.1.5",         // no port
+    "http://192.168.1.5:80", "http://192.168.1.5:443", "http://192.168.1.5:0", "http://192.168.1.5:65536",
+    "http://192.168.1.5:7878/ui", "http://192.168.1.5:7878/?x=1", "http://u:p@192.168.1.5:7878",
+    "http://8.8.8.8:7878", "http://169.254.1.1:7878", "http://my-pc.local.evil.com:7878", "http://192.168.1.5.evil.com:7878",
+  ];
+  for (const url of bad) assert.throws(() => tunnel.checkPairingLanUrl(url), undefined, `refused: ${url}`);
 });

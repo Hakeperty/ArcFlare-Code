@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- allowBackup=false and both rule files below: nothing leaves the phone through backup or device transfer. -->
-    <!-- networkSecurityConfig: cleartext only because the user's own LAN hub is plain http; MainActivity pins navigation. -->
+    <!-- networkSecurityConfig: cleartext is permitted for native requests to the hub's LAN mailbox only in practice (see the file); the WebView cannot navigate to anything but https://localhost. -->
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"

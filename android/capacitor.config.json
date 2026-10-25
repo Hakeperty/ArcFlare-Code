@@ -6,13 +6,19 @@
   "android": {
     "allowMixedContent": false,
     "webContentsDebuggingEnabled": false,
-    "backgroundColor": "#0b0b0a"
+    "backgroundColor": "#0b0b0a",
+    "minWebViewVersion": 133
   },
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "errorPath": "webview-error.html"
   },
   "plugins": {
-    "CapacitorHttp": { "enabled": false },
-    "CapacitorCookies": { "enabled": false }
+    "CapacitorHttp": {
+      "enabled": false
+    },
+    "CapacitorCookies": {
+      "enabled": false
+    }
   }
 }

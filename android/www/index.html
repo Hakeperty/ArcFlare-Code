@@ -1,9 +1,10 @@
 <!doctype html>
 <!--
   ArcFlare app shell: pairing, launch-time routing and "forget". It is the page Capacitor loads
-  (https://localhost). It never shows the hub UI itself: it sends the WebView to the hub on the
-  home network, or to the bundled copy of the hub UI (ui/, copied from lib/hub/ui at build time)
-  running over the relay tunnel. Styling and assets come from that copy (ui/style.css, ui/assets).
+  (https://localhost). It never shows the hub's own web page: the WebView only ever shows bundled files. It sends
+  the WebView to the bundled copy of the hub UI (ui/, copied from lib/hub/ui at build time), which talks to the
+  hub through the encrypted tunnel over the home network or, if that fails, the internet relay. Styling and
+  assets come from that copy (ui/style.css, ui/assets).
   No inline script or style anywhere (the CSP below forbids them).
 -->
 <html lang="en">
@@ -23,9 +24,12 @@
   <script src="link.js" defer></script>
   <script src="fingerprint.js" defer></script>
   <script src="mode.js" defer></script>
+  <script src="linkgate.js" defer></script>
   <script src="store.js" defer></script>
   <script src="ui/tunnel-client.js" defer></script>
   <script src="native.js" defer></script>
+  <script src="lanfetch.js" defer></script>
+  <script src="connector.js" defer></script>
   <script src="shell.js" defer></script>
 </head>
 <body>
@@ -68,14 +72,16 @@
       <!-- Confirm before pairing -->
       <section id="v-confirm" class="view view-login" data-view hidden>
         <div class="login-card">
-          <h1 class="title">Pair with this computer?</h1>
-          <p class="lead center">Pair with the computer showing fingerprint <strong id="cf-fp-inline" class="mono"></strong>? Only continue if you just scanned this on your own computer.</p>
+          <h1 class="title" id="cf-title">Pair with this computer?</h1>
+          <p class="lead center" id="cf-lead"></p>
           <dl class="facts">
+            <div id="cf-old-row" hidden><dt>Current computer (replaced only after the new one is approved)</dt><dd id="cf-old-fp" class="mono"></dd></div>
             <div><dt>Fingerprint</dt><dd id="cf-fp" class="mono big"></dd></div>
             <div><dt>Relay</dt><dd id="cf-relay" class="mono"></dd></div>
             <div id="cf-lan-row"><dt>Home network</dt><dd id="cf-lan" class="mono"></dd></div>
           </dl>
           <p class="hint center">The fingerprint should be the same as the "hub key" line shown on the computer.</p>
+          <p id="cf-notice" class="banner" role="status" hidden></p>
           <div class="btn-row">
             <button id="cf-cancel" type="button" class="btn outline block lg">Cancel</button>
             <button id="cf-pair" type="button" class="btn primary block lg">Pair</button>
@@ -87,12 +93,13 @@
       <section id="v-code" class="view view-login" data-view hidden>
         <div class="login-card">
           <h1 class="title" id="code-title">Pairing...</h1>
-          <p id="code-wait" class="center muted" role="status">Contacting your computer through the relay. This can take up to half a minute.</p>
+          <p id="code-wait" class="center muted" role="status">Contacting your computer. This can take up to half a minute.</p>
           <div id="code-box" hidden>
             <p class="center">Compare this code with the one on your computer.</p>
             <p id="code-digits" class="code-digits" aria-live="polite"></p>
             <p class="lead center">If they match, confirm it <strong>on the computer</strong>. If they differ, do not confirm: cancel and start again.</p>
           </div>
+          <p id="code-notice" class="banner" role="status" hidden></p>
           <p id="code-error" class="banner error" role="alert" hidden></p>
           <div class="btn-row stack-btns">
             <button id="code-done" type="button" class="btn primary block lg" hidden>I confirmed it on the computer</button>
@@ -127,6 +134,7 @@
         <div class="login-card">
           <h1 class="title">Forget this computer?</h1>
           <p class="lead center">This removes the pairing, the key kept on this phone and any sign-in from the app. To use ArcFlare again you pair again. The computer keeps listing this phone until you run <span class="mono">arcflare phone devices revoke</span>.</p>
+          <p id="fg-error" class="banner error" role="alert" hidden></p>
           <div class="btn-row">
             <button id="fg-cancel" type="button" class="btn outline block lg">Cancel</button>
             <button id="fg-go" type="button" class="btn danger-fill block lg">Forget</button>
