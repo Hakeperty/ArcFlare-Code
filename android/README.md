@@ -248,7 +248,7 @@ debug key and are for testing only.
   address in Android's native cookie jar, which Capacitor's default Java cookie handler would send in clear. This build
   clears the native cookie jar ONCE on its first start (a marker in IndexedDB, written only after the clear succeeded),
   before it talks to the LAN. As a backstop `NavPolicy` refuses any URL containing Capacitor's
-  `/_capacitor_http_interceptor_` path in any spelling.
+  `/_capacitor_http_interceptor_` (and the `https` variant) path after fully percent-decoding the URL (repeatedly, so `%63`, `%5F` and `%255F` are caught). Whether Chromium already decodes URLs before they reach the guard has not been checked on a device; Capacitor itself also refuses document requests to that path and the config has `CapacitorHttp.enabled: false`, so this is a second layer.
 - **Capacitor's `CapacitorHttp` and `CapacitorCookies` JavaScript interfaces exist on the bundled origin**
   (`CapacitorHttpAndroidInterface`, `CapacitorCookiesAndroidInterface`, plus the plugins reachable over Capacitor's bridge).
   They cannot be removed without patching Capacitor; `enabled:false` only stops `fetch`/`document.cookie` patching. So the

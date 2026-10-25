@@ -61,6 +61,7 @@ const REFUSED = [
   "https://localhost/_capacitor_http_interceptor_", "https://localhost/_capacitor_http_interceptor_?url=http%3A%2F%2F192.168.1.20%3A8765%2Fapi%2Ftunnel",
   "https://localhost/_Capacitor_HTTP_Interceptor_?url=x", "https://localhost/%5Fcapacitor_http_interceptor_?url=x", "https://localhost/_capacitor%5Fhttp%5Finterceptor%5F?url=x",
   "https://localhost/./_capacitor_http_interceptor_", "https://localhost/x/../_capacitor_http_interceptor_?url=x", "https://localhost//_capacitor_http_interceptor_", "https://localhost/_capacitor_http_interceptor_/x", "https://localhost/ui/_capacitor_http_interceptor_", "https://localhost?q=/_capacitor_http_interceptor_",
+  "https://localhost/_%63apacitor_http_interceptor_?u=x", "https://localhost/_%43apacitor_http_interceptor_?u=x", "https://localhost/_capacitor_https_interceptor_?u=x", "https://localhost/%255Fcapacitor_http_interceptor_?u=x", "https://localhost/_%2563apacitor_http_interceptor_?u=x", "https://localhost/%5f%63apacitor_http_interceptor_?u=x", "https://localhost/_capacitor_http_interceptor%5f?u=x",
   "about:blank", "intent://x#Intent;scheme=https;end", "content://x", "market://details?id=x", "arcflare://pair?v=1", "ftp://localhost/", "wss://localhost/", "view-source:https://localhost/",
 ];
 
@@ -101,7 +102,10 @@ test("NavPolicy.java fuzz: 30000 generated URLs, anything allowed parses (like C
     assert.equal(p.origin, "https://localhost", JSON.stringify(s));
     assert.equal(p.username + p.password, "", JSON.stringify(s));
     // JS mirror of the interceptor rule: nothing allowed may normalise to Capacitor's http-interceptor path
-    assert.ok(!/^\/_capacitor_http_interceptor_/i.test(decodeURIComponent(p.pathname.replace(/%(?![0-9a-f]{2})/gi, "%25"))), "interceptor path allowed: " + JSON.stringify(s));
+    // decode repeatedly, as NavPolicy.decode does (%2563 -> %63 -> c); stray % stays literal
+    let dec = p.pathname, prev;
+    for (let n = 0; n < 5 && dec !== prev; n++) { prev = dec; dec = dec.replace(/%([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16))); }
+    assert.ok(!/_capacitor_https?_interceptor_/i.test(dec), "interceptor path allowed: " + JSON.stringify(s));
   });
   assert.ok(allowed > 100, "the corpus must exercise the allowed branch too (" + allowed + ")");
 });

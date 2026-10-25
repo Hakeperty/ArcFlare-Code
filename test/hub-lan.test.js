@@ -456,3 +456,17 @@ test("N8b: housekeeping does not re-read pairing.json while nothing changed, and
     assert.ok(JSON.parse(env.mailbox._dump()).clients.some((c) => c.h === tokenHash(tunnel.derivePairing(Buffer.from(sec.secret, "base64url")).pairToken)), "and published to the LAN allowlist");
   } finally { await env.close(); }
 });
+
+test("3c F6: the browser-side client applies the same .local rule as the hub and the app", () => {
+  const client = require("../lib/hub/ui/tunnel-client.js");
+  const link = (host) => tunnel.pairingLink({
+    relay: `http://${host}:7878`, roomId: Buffer.alloc(32, 5).toString("base64url"), hubPub: Buffer.alloc(32, 7),
+    secret: Buffer.alloc(32, 9).toString("base64url"), lan: `http://${host}:7878`,
+  });
+  const accepts = (host) => { try { client.parsePairingLink(link(host)); return true; } catch { return false; } };
+  for (const ok of ["my-pc.local", "a.b.local", "192.168.1.5", "10.0.0.2"]) assert.ok(accepts(ok), `client accepts ${ok}`);
+  for (const bad of ["-x.local", "a-.local", "a..local", `${"x".repeat(80)}.local`, "8.8.8.8", "my-pc.local.evil.com"]) {
+    assert.ok(!accepts(bad), `client refuses ${bad.slice(0, 20)}`);
+    assert.strictEqual(tunnel.isLanHost(bad), false, `and so does the hub: ${bad.slice(0, 20)}`);
+  }
+});

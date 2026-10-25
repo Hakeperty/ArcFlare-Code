@@ -28,13 +28,35 @@ final class NavPolicy {
     // native cookie jar) on behalf of the page. The WebView must never be sent there, however the path is spelled
     // (dot segments, upper case, %5F for the underscore): refused anywhere in the URL, not only as a prefix.
     private static final String INTERCEPTOR = "_capacitor_http_interceptor_";
+    private static final String INTERCEPTOR_HTTPS = "_capacitor_https_interceptor_";
 
     private NavPolicy() {}
 
     /** True only for the bundled origin. Null and everything else (http, other hosts, ports, user info, data:, javascript:, blob:, file:, about:) is false. */
     static boolean allows(String url) {
         if (url == null || !BUNDLED.matcher(url).matches()) return false;
-        String low = url.toLowerCase(Locale.ROOT).replace("%5f", "_");
-        return !low.contains(INTERCEPTOR);
+        // Compare against the fully percent-decoded form: Capacitor matches the DECODED path, so %63, %5F, %255F
+        // and friends must not hide the interceptor path. The https variant of the path is refused as well.
+        String low = decode(url).toLowerCase(Locale.ROOT);
+        return !low.contains(INTERCEPTOR) && !low.contains(INTERCEPTOR_HTTPS);
+    }
+
+    /** Percent-decode until nothing changes (at most 5 passes: %2563 is %63 is c). Malformed escapes stay as they are. */
+    static String decode(String s) {
+        for (int pass = 0; pass < 5; pass++) {
+            StringBuilder sb = new StringBuilder(s.length());
+            boolean changed = false;
+            for (int i = 0; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (c == '%' && i + 2 < s.length()) {
+                    int hi = Character.digit(s.charAt(i + 1), 16), lo = Character.digit(s.charAt(i + 2), 16);
+                    if (hi >= 0 && lo >= 0) { sb.append((char) (hi * 16 + lo)); i += 2; changed = true; continue; }
+                }
+                sb.append(c);
+            }
+            s = sb.toString();
+            if (!changed) break;
+        }
+        return s;
     }
 }
