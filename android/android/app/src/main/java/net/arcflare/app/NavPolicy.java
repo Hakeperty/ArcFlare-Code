@@ -1,5 +1,6 @@
 package net.arcflare.app;
 
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
@@ -23,10 +24,17 @@ final class NavPolicy {
         "https://localhost(?:[/?#][^\\\\\\x00-\\x20\\x7f]*)?",
         Pattern.CASE_INSENSITIVE);
 
+    // Capacitor's local server answers this path by fetching the URL in its query with the native stack (and the
+    // native cookie jar) on behalf of the page. The WebView must never be sent there, however the path is spelled
+    // (dot segments, upper case, %5F for the underscore): refused anywhere in the URL, not only as a prefix.
+    private static final String INTERCEPTOR = "_capacitor_http_interceptor_";
+
     private NavPolicy() {}
 
     /** True only for the bundled origin. Null and everything else (http, other hosts, ports, user info, data:, javascript:, blob:, file:, about:) is false. */
     static boolean allows(String url) {
-        return url != null && BUNDLED.matcher(url).matches();
+        if (url == null || !BUNDLED.matcher(url).matches()) return false;
+        String low = url.toLowerCase(Locale.ROOT).replace("%5f", "_");
+        return !low.contains(INTERCEPTOR);
     }
 }

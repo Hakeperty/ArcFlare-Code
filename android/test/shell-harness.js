@@ -53,7 +53,7 @@ function makeShell(opts = {}) {
   const fakeSetTimeout = (fn, ms) => { timers.push({ id: ++timerId, at: clock.t + (ms || 0), fn }); return timerId; };
   const fakeClearTimeout = (id) => { const i = timers.findIndex((t) => t.id === id); if (i !== -1) timers.splice(i, 1); };
   const log = [];
-  const state = { stored: opts.store || null, appUrl: null, docListeners: {}, appState: null };
+  const state = { flags: opts.firstRun ? {} : { "cookies-wiped-v1": true }, stored: opts.store || null, appUrl: null, docListeners: {}, appState: null };
   const doc = {
     hidden: !!opts.hidden,
     getElementById: (id) => { if (!els[id]) throw new Error("shell asked for an element that index.html does not have: " + id); return els[id]; },
@@ -91,6 +91,8 @@ function makeShell(opts = {}) {
   ctx.ArcFlareStore = {
     load: async () => state.stored,
     save: async (d, bases) => { storeCalls.save++; log.push("STORE.save hubKey=" + d.hubKey.slice(0, 6)); if (opts.saveFails) throw new Error("disk"); state.stored = Object.assign({}, d, { relay: bases.relay, lan: bases.lan }); },
+    getFlag: async (n) => state.flags[n] === true,
+    setFlag: async (n) => { if (opts.flagFails) throw new Error("disk"); state.flags[n] = true; log.push("FLAG " + n); },
     wipeAll: async () => { storeCalls.wipe++; if (opts.wipe) return opts.wipe(); state.stored = null; return { ok: true, failed: [] }; },
   };
 
@@ -100,7 +102,7 @@ function makeShell(opts = {}) {
     behave: opts.behave || (() => "ok"),
     pair: (o) => new Promise((res, rej) => {
       const u = new URL(o.link.replace("arcflare://", "https://"));
-      const device = { v: 1, relay: u.searchParams.get("r"), room: u.searchParams.get("rm"), hubKey: u.searchParams.get("hk"), deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + key(9), label: "x", privateKey: { k: 1 }, publicKey: key(4) };
+      const device = { v: 1, relay: u.searchParams.get("r"), room: u.searchParams.get("rm"), hubKey: u.searchParams.get("hk"), deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + key(9), lanToken: "aftl_" + key(8), label: "x", privateKey: { k: 1 }, publicKey: key(4) };
       pairs.push({ link: o.link, opts: o, resolve: () => res({ sas: "123456", device }), reject: (code) => rej(Object.assign(new Error(code), { code })) });
     }),
     connect: (device, o) => new Promise((res, rej) => {
@@ -145,7 +147,7 @@ function makeShell(opts = {}) {
 
 /** A stored pairing the way store.save writes it. */
 function pairedRecord(hk, o = {}) {
-  return Object.assign({ v: 1, relay: RELAY, room: key(1), hubKey: hk, lan: LAN, deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + key(9), label: "Android phone", privateKey: { k: 1 }, publicKey: key(4), pairedAt: 1 }, o);
+  return Object.assign({ v: 1, relay: RELAY, room: key(1), hubKey: hk, lan: LAN, deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + key(9), lanToken: "aftl_" + key(8), label: "Android phone", privateKey: { k: 1 }, publicKey: key(4), pairedAt: 1 }, o);
 }
 
 module.exports = { makeShell, link, key, pairedRecord, LAN, RELAY };

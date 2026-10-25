@@ -64,12 +64,12 @@ const FAKE_TUNNEL = `
       var q = new URL(o.link).searchParams;
       var key = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
       return { sas: "042917", device: { v: 1, relay: q.get("r"), room: q.get("rm"), hubKey: q.get("hk"), lan: q.get("l"),
-        deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + q.get("ps"), label: o.label, privateKey: key.privateKey, publicKey: q.get("hk") } };
+        deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + q.get("ps"), lanToken: "aftl_" + q.get("ps"), label: o.label, privateKey: key.privateKey, publicKey: q.get("hk") } };
     },
     connect: async function (device, opts) {
-      await window.__rec("connect", device.relay + (opts && opts.fetch ? " [lan-fetch]" : " [page-fetch]"));
+      await window.__rec("connect", device.relay + (opts && opts.fetch && device.relay.indexOf("http://") === 0 ? " [lan-fetch]" : " [page-fetch]"));
       var lan = device.relay.indexOf("http://") === 0;
-      if (lan && opts && opts.fetch) await opts.fetch(device.relay + "/api/tunnel/room/" + device.room + "/client?ch=AAAAAAAAAAAAAAAAAAAAAA&after=0&wait=25", { headers: { Authorization: "Bearer " + device.roomToken } });   // goes through CapacitorHttp; rejects when the LAN is down
+      if (lan && opts && opts.fetch) await opts.fetch(device.relay + "/api/tunnel/room/" + device.room + "/client?ch=AAAAAAAAAAAAAAAAAAAAAA&after=0&wait=25", { headers: { Authorization: "Bearer " + device.lanToken } });   // goes through CapacitorHttp; rejects when the LAN is down
       if (cfg().connectError) { var e = new Error("x"); e.code = cfg().connectError; throw e; }
       if (!lan && cfg().relayError) { var e2 = new Error("x"); e2.code = cfg().relayError; throw e2; }
       var t = {
@@ -126,7 +126,7 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     await page.evaluate(async ([lan, relay]) => {
       const key = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
       const A = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc";
-      await window.ArcFlareStore.save({ v: 1, relay: "https://arcflare.net", room: A, hubKey: A, deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + A, label: "Android phone", privateKey: key.privateKey, publicKey: A }, { relay, lan });
+      await window.ArcFlareStore.save({ v: 1, relay: "https://arcflare.net", room: A, hubKey: A, deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + A, lanToken: "aftl_" + A, label: "Android phone", privateKey: key.privateKey, publicKey: A }, { relay, lan });
     }, [lan, relay]);
     await page.reload();
   }
@@ -223,7 +223,7 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     assert.equal(rec.lan, LAN);
     assert.equal(rec.hasKey, true);
     assert.equal(rec.keyExtractable, false);
-    assert.deepEqual(rec.keys, ["deviceId", "hubKey", "label", "lan", "pairedAt", "privateKey", "publicKey", "relay", "room", "roomToken", "v"]);
+    assert.deepEqual(rec.keys, ["deviceId", "hubKey", "label", "lan", "lanToken", "pairedAt", "privateKey", "publicKey", "relay", "room", "roomToken", "v"]);
     const web = await page.evaluate(() => ({ ls: JSON.stringify(localStorage), ss: JSON.stringify(sessionStorage), ck: document.cookie }));
     assert.deepEqual(web, { ls: "{}", ss: "{}", ck: "" });
     assert.ok(!JSON.stringify(web).includes(A43));
@@ -413,6 +413,21 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     await ctx.close();
   });
 
+  await t.test("N8: the native cookie jar is cleared once on the first start (flag in IndexedDB, not localStorage), not on later starts", async () => {
+    const { ctx, page, log } = await open({});
+    await page.goto(base + "/index.html");
+    await page.waitForSelector("#v-pair:not([hidden])");
+    assert.deepEqual(kinds(log, "cookies"), ["cleared"], "cleared on the first start");
+    assert.ok((await idb(page)).includes("arcflare-pairing"), "the marker is in IndexedDB");
+    assert.equal(await page.evaluate(() => localStorage.length), 0, "nothing in localStorage");
+    await page.reload();
+    await page.waitForSelector("#v-pair:not([hidden])");
+    await page.reload();
+    await page.waitForSelector("#v-pair:not([hidden])");
+    assert.deepEqual(kinds(log, "cookies"), ["cleared"], "not again on later starts");
+    await ctx.close();
+  });
+
   await t.test("Forget wipes IndexedDB, Web Storage and cookies, then shows pairing", async () => {
     const { ctx, page, log } = await open({ homeMode: "down", relayError: "OFFLINE" });
     await page.goto(base + "/index.html");
@@ -432,7 +447,7 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     assert.equal(await storedRecord(page), null);
     const web = await page.evaluate(() => ({ ls: localStorage.length, ss: sessionStorage.length }));
     assert.deepEqual(web, { ls: 0, ss: 0 });
-    assert.deepEqual(kinds(log, "cookies"), ["cleared"], "native cookie manager was asked to clear every cookie");
+    assert.deepEqual(kinds(log, "cookies"), ["cleared", "cleared"], "the one-time first-start wipe, then Forget: the native cookie manager was asked to clear every cookie");
     await page.reload();
     await page.waitForSelector("#v-pair:not([hidden])");
     await ctx.close();

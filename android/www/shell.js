@@ -30,7 +30,7 @@
   var deps = {
     get Tunnel() { return window.ArcFlareTunnel; },
     // The ONLY use of the native HTTP stack: a fetch that refuses everything except the stored LAN base's mailbox.
-    lanFetch: function (lanBase) { return LanFetch.create({ http: Native.nativeHttp(), lanBase: lanBase }); },
+    lanFetch: function (lanBase, o) { return LanFetch.create({ http: Native.nativeHttp(), lanBase: lanBase, refuse: o && o.refuse }); },
   };
 
   function show(id) {
@@ -44,6 +44,10 @@
   function hostOf(url) { try { return new URL(url).host; } catch (e) { return ""; } }
 
   var TOO_OLD = "This phone's Android System WebView is too old for the secure tunnel (it needs version 133 or newer). Update it in Google Play and try again.";
+  // A record from a build before the home network had its own token: relay only until the phone is paired again.
+  var REPAIR = "This phone was paired before the home network had its own key, so it cannot use the home network yet. Re-pair to use the home network. (Through the relay it still works.)";
+  var repairAck = false;     // the person chose to continue via the relay for this launch
+  var statusAck = false;     // the status screen on show is that notice (its main button continues via the relay)
   var IGNORED = "Another pairing link arrived while this one was open and was ignored. Finish or cancel this one first.";
 
   // ---------------------------------------------------------------- pairing
@@ -96,12 +100,28 @@
       $("cf-lead").textContent = "Pair with the computer showing fingerprint " + f.fp.split(" ")[0] + "…? Only continue if you just scanned this on your own computer.";
     }
     setNotice("cf-notice", "");
+    // Replacing an existing pairing takes a deliberate act: type the first 4 characters of the OLD fingerprint. A
+    // phishing link cannot do that for the person, and having to read the old fingerprint makes "Replace" register.
+    $("cf-type-row").hidden = !f.hadPairing;
+    $("cf-type").value = "";
     // The Pair button stays off for a moment after the content (re)renders, so a tap meant for something else cannot land on it.
     var delay = typeof CFG.pairDelayMs === "number" ? CFG.pairDelayMs : 1500;
     f.enableAt = now() + delay;
     $("cf-pair").disabled = true;
-    setTimeout(function () { if (flow === f && f.stage === "confirm") $("cf-pair").disabled = false; }, delay);
+    setTimeout(function () { if (flow === f && f.stage === "confirm") refreshPairButton(); }, delay);
     show("v-confirm");
+  }
+
+  /** Has the person typed the first 4 hex characters of the fingerprint being replaced? (Always true for a first pairing.) */
+  function typedOldOk(f) {
+    if (!f.hadPairing) return true;
+    var want = String(f.oldFp || "").replace(/\s/g, "").toLowerCase().slice(0, 4);
+    return want.length === 4 && $("cf-type").value.replace(/\s/g, "").toLowerCase() === want;
+  }
+  function refreshPairButton() {
+    var f = flow;
+    if (!f || f.stage !== "confirm") return;
+    $("cf-pair").disabled = !(now() >= f.enableAt && typedOldOk(f));
   }
 
   function pairErrorText(e) {
@@ -118,6 +138,7 @@
     var f = flow;
     if (busy || !f || f.stage !== "confirm") return;
     if ($("cf-pair").disabled || now() < f.enableAt) return;   // the button is still locked after a re-render
+    if (!typedOldOk(f)) { setNotice("cf-notice", "Type the first 4 characters of the current computer's fingerprint to replace it."); return; }
     // The pending pairing is bound to the link that started it: check that this screen still shows it.
     var again = Link.validateLink(f.raw, { dev: !!CFG.allowLoopbackDev });
     if (!again.ok || again.canonical !== f.canonical || $("cf-fp").textContent !== f.fp) {
@@ -190,6 +211,7 @@
   async function showStatus(rec, opts) {
     record = rec;
     opts = opts || {};
+    statusAck = !!opts.ack;
     $("st-title").textContent = opts.title || "Can't reach your computer";
     $("st-msg").textContent = opts.msg || problemText({}, {}, rec);
     $("st-retry").textContent = opts.retryLabel || "Retry";
@@ -242,7 +264,13 @@
     }
     var mode = Mode.decideMode({ record: rec, home: home, relay: relay });
     if (mode === "home") { Native.navigate("ui/index.html?via=home"); return; }
-    if (mode === "relay") { Native.navigate("ui/index.html?via=relay"); return; }
+    if (mode === "relay") {
+      if (Mode.needsHomeRepair(rec) && !repairAck) {
+        await showStatus(rec, { title: "Re-pair to use the home network", msg: REPAIR, retryLabel: "Continue via the relay", ack: true });
+        return;
+      }
+      Native.navigate("ui/index.html?via=relay"); return;
+    }
     await showStatus(rec, { msg: problemText(home, relay, rec) });
   }
 
@@ -251,8 +279,9 @@
     if (codes.indexOf("PENDING") !== -1) return "This phone is paired but the computer has not confirmed it yet. Compare the code and confirm it on the computer (arcflare phone devices).";
     if (relay && relay.code === "REFUSED") return "The relay no longer accepts this phone. It may have been removed on the computer. Pair again to use it.";
     if (relay && relay.code === "HANDSHAKE") return "The answer from the relay did not match your computer's key, so it was refused. Try again later, or pair again.";
+    if (Mode.needsHomeRepair(rec) && rec.relay === rec.lan) return REPAIR + " The internet relay is not set up, so there is nothing else to connect through.";
     if (rec && rec.relay === rec.lan) return "Your computer did not answer on your home network. Check that this phone is on the same Wi-Fi, that the computer is on and that arcflare phone is running, then try again. The internet relay is not set up.";
-    return "Your computer did not answer on your home network or through the relay. Check that it is on and that arcflare phone is running with the relay on, then try again.";
+    return "Your computer did not answer on your home network or through the relay. Check that it is on and that arcflare phone is running with the relay on, then try again." + (Mode.needsHomeRepair(rec) ? " " + REPAIR : "");
   }
 
   function showUnsupported() {
@@ -302,7 +331,21 @@
     if (h) deliver(h.url, h.at);
   }
 
+  // A phone that ran an earlier build may hold a session cookie (arcflare_sid) for the hub's home address in Android's
+  // native cookie jar, which Capacitor's default Java cookie handler would send in clear to that address. This build never
+  // asks for one, but it clears the jar ONCE on its first start, before any request to the LAN. The "done" marker is in
+  // IndexedDB and is only written after the clear succeeded (a failure is retried at the next start).
+  var COOKIE_FLAG = "cookies-wiped-v1";
+  async function firstRunCookieWipe() {
+    try {
+      if (await Store.getFlag(COOKIE_FLAG)) return;
+      await Native.clearCookies();
+      await Store.setFlag(COOKIE_FLAG);
+    } catch (e) { /* not fatal; tried again next start */ }
+  }
+
   async function start() {
+    await firstRunCookieWipe();
     $("pair-form").addEventListener("submit", function (ev) {
       ev.preventDefault();
       var text = $("pair-link").value;
@@ -312,9 +355,13 @@
     });
     $("cf-cancel").addEventListener("click", function () { if (flow && flow.stage === "confirm") leaveFlow(); });
     $("cf-pair").addEventListener("click", startPairing);
+    $("cf-type").addEventListener("input", refreshPairButton);
     $("code-done").addEventListener("click", checkConfirmed);
     $("code-cancel").addEventListener("click", cancelCode);
-    $("st-retry").addEventListener("click", function () { if (unsupported) { unsupported = false; start2(); } else boot(); });
+    $("st-retry").addEventListener("click", function () {
+      if (statusAck) { repairAck = true; statusAck = false; }
+      if (unsupported) { unsupported = false; start2(); } else boot();
+    });
     $("st-repair").addEventListener("click", function () { showPairScreen(""); });
     $("st-forget").addEventListener("click", function () { setError("fg-error", ""); show("v-forget"); });
     $("fg-cancel").addEventListener("click", function () { boot({ settings: true }); });

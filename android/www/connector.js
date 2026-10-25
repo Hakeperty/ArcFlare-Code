@@ -37,11 +37,28 @@
     ]);
   }
 
-  /** Open one tunnel to one target of the record. Resolves to an open Tunnel; rejects with .code. */
+  /** fetch that refuses any request whose Authorization carries `secret` (a token that belongs to the other carrier). */
+  function guardFetch(fetchFn, secret) {
+    return function (url, init) {
+      var h = init && init.headers, a = h && (h.Authorization || h.authorization);
+      if (typeof a === "string" && a.indexOf(secret) !== -1) return Promise.reject(fail("TOKEN_MISUSE", "refused: a token for the other network"));
+      return fetchFn(url, init);
+    };
+  }
+
+  /**
+   * Open one tunnel to one target of the record. Resolves to an open Tunnel; rejects with .code.
+   * Token rule (TUNNEL.md 16.5): requests to the HOME base carry only the record's lanToken, requests to the RELAY
+   * only its roomToken. tunnel-client picks the token by base; the guards below refuse the wrong one as well.
+   */
   function connectTarget(deps, rec, target) {
     var home = target.kind === "home";
     var opts = { handshakeTimeoutMs: home ? HOME_MS : RELAY_MS };
-    if (home) opts.fetch = deps.lanFetch(target.base).fetch;
+    if (home) opts.fetch = deps.lanFetch(target.base, { refuse: [rec.roomToken] }).fetch;
+    else if (rec.lanToken) {
+      var plain = deps.relayFetch || (typeof root.fetch === "function" ? root.fetch.bind(root) : null);
+      if (plain) opts.fetch = guardFetch(plain, rec.lanToken);
+    }
     if (deps.extra) Object.assign(opts, deps.extra);          // tests only (poll timing)
     // The tunnel client reads the base from device.relay: point it at this target, nothing else changes.
     var device = Object.assign({}, rec, { relay: target.base });
@@ -88,7 +105,8 @@
   /**
    * Pair through the LAN mailbox first (short cap when a relay exists), then the relay. Only network-type failures
    * fall through to the next target: a wrong key (HANDSHAKE) or a refused/used secret (REFUSED) end it at once, as
-   * the same secret could not work elsewhere and a wrong key is a warning. `value` is link.js's accepted value.
+   * a wrong key is a warning. Exception: when the HOME attempt ends that way and a relay target remains, the relay is tried
+   * (an impostor at the LAN address must not be able to block pairing). `value` is link.js's accepted value.
    * Resolves { sas, device, via }.
    */
   async function pairBest(deps, value, label) {
@@ -108,7 +126,10 @@
       } catch (e) {
         last = e;
         var c = codeOf(e);
-        if (c === "HANDSHAKE" || c === "REFUSED" || c === "BAD_LINK" || c === "BAD_VERSION" || c === "NO_X25519") break;
+        // A bad answer or a refusal from the HOME address proves nothing about the relay: whoever answers at a stored
+        // LAN address can say anything. With a relay still to try, try it. Only the last target's verdict is final.
+        if (c === "BAD_LINK" || c === "BAD_VERSION" || c === "NO_X25519") break;
+        if ((c === "HANDSHAKE" || c === "REFUSED") && !(home && i < bases.length - 1)) break;
       }
     }
     throw last || fail("FAILED", "pairing failed");

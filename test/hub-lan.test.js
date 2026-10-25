@@ -120,9 +120,16 @@ test("pair, approve, log in, CSRF, create an agent: all over the LAN mailbox, re
       assert.ok(!everything.includes(s), `the mailbox/wire held the ${what}`);
       assert.ok(!everything.includes(Buffer.from(s).toString("base64url").slice(0, 16)), `the mailbox/wire held the ${what} (base64)`);
     }
-    assert.ok(!env.mailbox._dump().includes(device.roomToken), "the mailbox keeps token hashes only");
-    assert.ok(env.mailbox._dump().includes(tokenHash(device.roomToken)));
-    assert.ok(!env.logs.join("\n").includes(device.roomToken));
+    // N1: the home mailbox knows ONLY the LAN token's hash. The internet-relay token never reaches it: not on the
+    // wire (everything here went to the LAN base), not in the allowlist.
+    assert.match(device.lanToken, /^aftl_[A-Za-z0-9_-]{43}$/);
+    assert.notStrictEqual(device.lanToken, device.roomToken);
+    assert.ok(!env.mailbox._dump().includes(device.lanToken), "the mailbox keeps token hashes only");
+    assert.ok(env.mailbox._dump().includes(tokenHash(device.lanToken)), "H(lanToken) is on the LAN allowlist");
+    assert.ok(!env.mailbox._dump().includes(tokenHash(device.roomToken)), "H(roomToken) is NOT on the LAN allowlist");
+    assert.ok(!everything.includes(device.roomToken), "the relay token was never sent to the LAN base");
+    assert.ok(env.wire.some((w) => w.includes(device.lanToken)), "the LAN token is what the phone sent");
+    assert.ok(!env.logs.join("\n").includes(device.roomToken) && !env.logs.join("\n").includes(device.lanToken));
   } finally { await env.close(); }
 });
 
@@ -130,11 +137,13 @@ test("access: no token is 401, a public address is refused, a wrong Host is refu
   const env = await lanEnv();
   try {
     const p = `/api/tunnel/room/${env.room.roomId}`;
-    for (const [m, u] of [["GET", `${p}/client?ch=${"A".repeat(22)}`], ["POST", `${p}/client`], ["GET", `${p}/hub`], ["PUT", p], ["GET", "/api/tunnel"], ["GET", "/api/tunnel/"]]) {
+    for (const [m, u] of [["GET", `${p}/client?ch=${"A".repeat(22)}`], ["POST", `${p}/client`], ["GET", "/api/tunnel"], ["GET", "/api/tunnel/"]]) {
       const r = await status(env, m, u, m === "GET" ? {} : { headers: { "content-type": "application/json" }, body: "{}" });
       assert.strictEqual(r.status, 401, `${m} ${u} without a token`);
       assert.ok(!r.h.get("access-control-allow-origin"));
     }
+    // The hub side is not served over HTTP at all (N4): 404, with or without a token.
+    for (const [m, u] of [["GET", `${p}/hub`], ["PUT", p]]) assert.strictEqual((await status(env, m, u, m === "GET" ? {} : { headers: { "content-type": "application/json" }, body: "{}" })).status, 404, `${m} ${u}`);
     // A cookie is not a credential here.
     const r = await status(env, "GET", `${p}/client?ch=${"A".repeat(22)}`, { headers: { cookie: "arcflare_sid=abc" } });
     assert.strictEqual(r.status, 401);
@@ -178,10 +187,10 @@ test("the web UI keeps its cookie and CSRF rules exactly; the mailbox has neithe
     // The mailbox ignores the signed-in cookie entirely: a session is not a mailbox credential...
     const p = `/api/tunnel/room/${env.room.roomId}`;
     assert.strictEqual((await status(env, "GET", `${p}/client?ch=${"A".repeat(22)}`, { headers: { cookie, "x-csrf-token": csrf } })).status, 401);
-    // ...and a bearer-token mailbox call needs no cookie and no CSRF token (hub token, as the hub itself would).
+    // ...and a bearer-token mailbox call needs no cookie and no CSRF token (the hub's PUT is 404 here, N4).
     const hubTok = env.store.room().hubToken;
     const put = await status(env, "PUT", p, { headers: { authorization: `Bearer ${hubTok}`, "content-type": "application/json" }, body: JSON.stringify({ v: 1, clients: [] }) });
-    assert.strictEqual(put.status, 200);
+    assert.strictEqual(put.status, 404);
     assert.strictEqual(put.h.get("set-cookie"), null, "the mailbox never sets a cookie");
     // Unknown /api paths still answer through the session logic (401 without a cookie, 404 with one).
     assert.strictEqual((await status(env, "GET", "/api/nothing")).status, 401);
@@ -289,4 +298,161 @@ test("pairing-link LAN addresses: what the hub prints is always what the app acc
     "http://8.8.8.8:7878", "http://169.254.1.1:7878", "http://my-pc.local.evil.com:7878", "http://192.168.1.5.evil.com:7878",
   ];
   for (const url of bad) assert.throws(() => tunnel.checkPairingLanUrl(url), undefined, `refused: ${url}`);
+});
+
+test("N7: .local names: the hub accepts exactly what the app's link.js accepts (it can never print a link the app refuses)", () => {
+  const appLink = require("../android/www/link.js");
+  const names = [
+    "my-pc.local", "a.local", "x.y.local", "a-b.c-d.local", "xn--bcher-kva.local", "9lives.local", "A.LOCAL", "bücher.local",
+    "-x.local", "x-.local", "a.-b.local", "a-.b.local", ".local", "..local", "x..local", "x.local.", "x_y.local", "-.local", "--.local",
+    "a".repeat(63) + ".local", "a".repeat(69) + ".local", "a".repeat(70) + ".local", "a".repeat(75) + ".local", "a.".repeat(37) + "local", "a.".repeat(38) + "local",
+    "my pc.local", "my%20pc.local", "x.local.evil.com", "local", "x.localx", "x.local@evil.com",
+  ];
+  for (const name of names) {
+    const url = `http://${name}:7878`;
+    let hub = null;
+    try { hub = tunnel.checkPairingLanUrl(url); } catch { /* refused */ }
+    if (hub) {
+      assert.ok(appLink.validateLanUrl(hub), `the hub would print ${hub}, which the app refuses`);
+      assert.ok(appLink.validateLink(tunnel.pairingLink({ relay: hub, roomId: Buffer.alloc(32, 5).toString("base64url"), hubPub: Buffer.alloc(32, 7), secret: Buffer.alloc(32, 9).toString("base64url"), lan: hub })).ok, `app refuses the whole link for ${hub}`);
+    } else {
+      // what the app refuses, the hub refused; and what the app takes as typed (already lower case, ASCII), the hub takes
+      if (appLink.validateLanUrl(url)) assert.fail(`the app accepts ${url} but the hub refuses it`);
+    }
+  }
+  // the isLanHost rule itself (also used by checkLanUrl)
+  for (const bad of ["-x.local", "x-.local", "a".repeat(75) + ".local", ".local", "x..local"]) assert.strictEqual(tunnel.isLanHost(bad), false, bad);
+  for (const good of ["my-pc.local", "x.local", "a".repeat(74) + ".local"]) assert.strictEqual(tunnel.isLanHost(good), true, good);
+});
+
+test("N4: the room PUT and the /hub endpoints are not served over the LAN socket; a drifted allowlist is put right", async () => {
+  const env = await lanEnv();
+  try {
+    env.store.createPairing(); await env.hub._syncRoom(true);
+    const n = () => JSON.parse(env.mailbox._dump()).clients.length;
+    const before = n();
+    assert.ok(before >= 1);
+    const hubAuth = { authorization: `Bearer ${env.room.hubToken}`, "content-type": "application/json" };
+    const room = `/api/tunnel/room/${env.room.roomId}`;
+    let r = await status(env, "PUT", room, { headers: hubAuth, body: JSON.stringify({ v: 1, clients: [] }) });
+    assert.strictEqual(r.status, 404, "PUT with the real hub token: 404");
+    r = await status(env, "GET", `${room}/hub?after=0&wait=0`, { headers: hubAuth });
+    assert.strictEqual(r.status, 404, "hub poll over HTTP: 404");
+    r = await status(env, "POST", `${room}/hub`, { headers: hubAuth, body: JSON.stringify({ frames: [] }) });
+    assert.strictEqual(r.status, 404, "hub send over HTTP: 404");
+    assert.strictEqual(n(), before, "the allowlist was not touched");
+    // Whatever else may drift the mailbox (a bug, a future endpoint): the next housekeeping pass restores it.
+    env.mailbox.local.putRoom([]);
+    assert.strictEqual(n(), 0);
+    env.hub._housekeeping();
+    assert.strictEqual(n(), before, "housekeeping re-asserted the allowlist");
+  } finally { await env.close(); }
+});
+
+test("N1: per-carrier allowlists: H(lanToken) only on the LAN mailbox, H(roomToken) only on the internet relay; revoke removes both", async (t) => {
+  if (!needX(t)) return;
+  const env = await lanEnv({ withRelay: true });
+  try {
+    const relayLink = pairingLink({ relay: RELAY, roomId: env.room.roomId, hubPub: env.room.hubPub, secret: env.secret, lan: env.base });
+    const { device } = await TC.pair({ link: relayLink, label: "Both", fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 5000 });
+    env.store.approve(device.deviceId);
+    await env.hub._syncRoom(true);
+    const relayList = () => { const room = env.relay.rooms.get(env.room.roomId); return room ? room.clients.map((c) => c.h) : []; };
+    const lanList = () => JSON.parse(env.mailbox._dump()).clients.map((c) => c.h);
+    const hR = tokenHash(device.roomToken), hL = tokenHash(device.lanToken);
+    assert.ok(relayList().includes(hR) && !relayList().includes(hL), "relay: H(roomToken) only");
+    assert.ok(lanList().includes(hL) && !lanList().includes(hR), "LAN: H(lanToken) only");
+    // the relay token is useless on the LAN mailbox, whatever is asked
+    const q = `${env.base}/api/tunnel/room/${env.room.roomId}/client?ch=${"C".repeat(22)}&after=0&wait=0`;
+    assert.strictEqual((await fetch(q, { headers: { authorization: `Bearer ${device.roomToken}` } })).status, 401, "relay token on the LAN mailbox");
+    assert.strictEqual((await fetch(q, { headers: { authorization: `Bearer ${device.lanToken}` } })).status, 200, "LAN token on the LAN mailbox");
+    // and the LAN token is useless on the relay
+    const rres = await env.relay.fetch(`${RELAY}/api/tunnel/room/${env.room.roomId}/client?ch=${"C".repeat(22)}&after=0&wait=0`, { headers: { Authorization: `Bearer ${device.lanToken}` } });
+    assert.ok(rres.status === 401 || rres.status === 403, "LAN token on the relay: " + rres.status);
+    // the hub never sent the LAN token hash to the relay (the operator could not even use it) and vice versa
+    assert.ok(!env.relay.seen.join("\n").includes(hL), "the relay operator never saw H(lanToken)");
+    // a phone with this record talks to each base with its own token only
+    const spyLan = [], spyNet = [];
+    const viaLan = await TC.connect({ ...device, relay: env.base }, { ...env.opts, fetch: async (url, init = {}) => { spyLan.push({ url, auth: (init.headers || {}).Authorization }); return env.opts.fetch(url, init); } });
+    const viaNet = await TC.connect(device, { fetch: async (url, init = {}) => { spyNet.push({ url, auth: (init.headers || {}).Authorization }); return env.relay.fetch(url, init); }, pollWaitSec: 1, minPollMs: 50, handshakeTimeoutMs: 4000 });
+    assert.ok(spyLan.length && spyLan.every((x) => x.url.startsWith(env.base) && x.auth === `Bearer ${device.lanToken}`), "every request to the LAN base carries the LAN token");
+    assert.ok(spyNet.length && spyNet.every((x) => x.url.startsWith(RELAY) && x.auth === `Bearer ${device.roomToken}`), "every request to the relay carries the relay token");
+    viaLan.close(); viaNet.close();
+    // revoke: both allowlists lose the device
+    env.hub.revokeDevice(device.deviceId);
+    await env.hub._syncRoom(true);
+    assert.ok(!relayList().includes(hR) && !lanList().includes(hL), "revoked on both carriers");
+  } finally { await env.close(); }
+});
+
+test("N1: a device paired by an earlier build (no lanToken) is relay-only: no LAN allowlist entry, the phone sends nothing to the LAN", async (t) => {
+  if (!needX(t)) return;
+  const env = await lanEnv({ withRelay: true });
+  try {
+    const relayLink = pairingLink({ relay: RELAY, roomId: env.room.roomId, hubPub: env.room.hubPub, secret: env.secret, lan: env.base });
+    const { device } = await TC.pair({ link: relayLink, label: "Old", fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 5000 });
+    env.store.approve(device.deviceId);
+    // make the stored device look like an old build's: no lanTokenHash on the hub, no lanToken on the phone
+    env.store._mutateDevices((devs) => { delete devs[device.deviceId].lanTokenHash; });
+    env.hub._reload(true); await env.hub._syncRoom(true);
+    const lan = JSON.parse(env.mailbox._dump()).clients.map((c) => c.h);
+    assert.ok(!lan.includes(tokenHash(device.roomToken)) && !lan.includes(tokenHash(device.lanToken)), "no LAN entry for it");
+    const old = { ...device, lanToken: null };
+    delete old.lanToken;
+    const seen = [];
+    await assert.rejects(TC.connect({ ...old, relay: env.base }, { ...env.opts, fetch: async (u, i) => { seen.push(u); return env.opts.fetch(u, i); } }), { code: "NO_LAN_TOKEN" });
+    assert.deepStrictEqual(seen, [], "not one request went to the LAN base, and the relay token never left");
+    // over the internet relay it still works
+    const viaNet = await TC.connect(old, { fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, handshakeTimeoutMs: 4000 });
+    assert.strictEqual((await viaNet.request("GET", "/api/me")).status, 401);
+    viaNet.close();
+    // and the relay token is never offered to a plain-http base that is not the stored LAN base
+    await assert.rejects(TC.connect({ ...old, relay: "http://192.168.9.9:8765" }, { ...env.opts, fetch: async (u) => { seen.push(u); throw new Error("must not be called"); } }), { code: "BAD_DEVICE" });
+    assert.deepStrictEqual(seen, []);
+  } finally { await env.close(); }
+});
+
+test("N2: one handshake budget per carrier plus an overall ceiling: a flooded relay cannot shut the home path", async (t) => {
+  if (!needX(t)) return;
+  const env = await lanEnv({ withRelay: true });
+  try {
+    const relayLink = pairingLink({ relay: RELAY, roomId: env.room.roomId, hubPub: env.room.hubPub, secret: env.secret, lan: env.base });
+    const { device } = await TC.pair({ link: relayLink, label: "Both", fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 5000 });
+    env.store.approve(device.deviceId);
+    const per = env.hub.limits.handshakesPerMinute, total = env.hub.limits.handshakesTotalPerMinute;
+    assert.ok(per < total && total < 2 * per, "ceiling between one budget and two");
+    // a flood arriving over the internet relay uses up ITS budget (one handshake was spent on the pairing above)
+    let used = 0;
+    while (env.hub._rateOk("net")) used++;
+    assert.ok(used >= per - 2 && used <= per, "net budget exhausted: " + used);
+    assert.strictEqual(env.hub._rateOk("net"), false);
+    // the relay carrier is now refused: its handshake times out...
+    await assert.rejects(TC.connect(device, { fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, handshakeTimeoutMs: 1200 }), { code: "TIMEOUT" });
+    // ...and the home path still works
+    const viaLan = await TC.connect({ ...device, relay: env.base }, env.opts);
+    assert.strictEqual((await viaLan.request("GET", "/api/me")).status, 401);
+    viaLan.close();
+    // the overall ceiling holds for both together, and always leaves the other carrier at least total - per
+    let lan = 0;
+    while (env.hub._rateOk("lan")) lan++;
+    assert.ok(lan >= total - per - 4 && lan <= total - per, "lan got what the ceiling leaves: " + lan);
+    assert.ok(total - per >= 30);
+  } finally { await env.close(); }
+});
+
+test("N8b: housekeeping does not re-read pairing.json while nothing changed, and notices a new pairing at once", async () => {
+  const env = await lanEnv();
+  try {
+    let reads = 0;
+    const orig = env.store.pendingPairings.bind(env.store);
+    env.store.pendingPairings = () => { reads++; return orig(); };
+    env.hub._housekeeping();
+    const base = reads;
+    for (let i = 0; i < 10; i++) env.hub._housekeeping();
+    assert.strictEqual(reads, base, "ten idle passes read the file zero more times");
+    const sec = env.store.createPairing();
+    env.hub._housekeeping();
+    assert.ok(reads > base, "a new pairing is picked up");
+    assert.ok(JSON.parse(env.mailbox._dump()).clients.some((c) => c.h === tokenHash(tunnel.derivePairing(Buffer.from(sec.secret, "base64url")).pairToken)), "and published to the LAN allowlist");
+  } finally { await env.close(); }
 });

@@ -8,6 +8,8 @@ const { makeShell, link, key, pairedRecord, LAN, RELAY } = require("./shell-harn
 
 const fpOf = (k) => crypto.createHash("sha256").update(Buffer.alloc(32, k)).digest("hex").slice(0, 20).match(/.{4}/g).join(" ");
 const REAL = 3, EVIL = 5;
+/** Replacing a pairing: the person types the first 4 characters of the OLD fingerprint. */
+const typeOld = (s, k = REAL, text) => { s.els["cf-type"].value = text === undefined ? fpOf(k).slice(0, 4) : text; s.els["cf-type"].fire("input"); };
 
 // ---------------------------------------------------------------- M1 race 1: replacing an existing pairing
 
@@ -24,6 +26,7 @@ test("M1/1: with a pairing, a link shows 'Replace the computer <old> with <new>?
   assert.equal(s.text("cf-old-fp"), fpOf(REAL));
   assert.equal(s.text("cf-fp"), fpOf(EVIL));
   await s.advance(1500);
+  typeOld(s);
   s.els["cf-pair"].click(); await s.tick();
   assert.equal(s.pairs.length, 1);
   s.pairs[0].resolve(); await s.tick();
@@ -50,6 +53,7 @@ test("M1/1: the old pairing is replaced only after the computer approved the new
   await s.start();
   await s.deepLink(link({ hk: key(EVIL) }));
   await s.advance(1500);
+  typeOld(s);
   s.els["cf-pair"].click(); await s.tick(); s.pairs[0].resolve(); await s.tick();
   assert.equal(s.state.stored.hubKey, key(REAL));
   approved = true;
@@ -66,6 +70,7 @@ test("M1/1: a failed pairing (timeout) or a failed save never wipes the old pair
   await s.start();
   await s.deepLink(link({ hk: key(EVIL) }));
   await s.advance(1500);
+  typeOld(s);
   s.els["cf-pair"].click(); await s.tick();
   s.pairs[0].reject("TIMEOUT"); await s.tick();
   // LAN attempt failed with TIMEOUT: the relay is tried next
@@ -81,6 +86,7 @@ test("M1/1: a failed pairing (timeout) or a failed save never wipes the old pair
   await s.start();
   await s.deepLink(link({ hk: key(EVIL) }));
   await s.advance(1500);
+  typeOld(s);
   s.els["cf-pair"].click(); await s.tick(); s.pairs[0].resolve(); await s.tick();
   s.els["code-done"].click(); await s.tick(10);
   assert.match(s.text("code-error"), /could not save/);
@@ -177,6 +183,7 @@ test("M1/3: the same link works again after Cancel (the old lastLink dedupe swal
   // and after a failed pairing and Back
   await s.advance(1500);
   s.els["cf-pair"].click(); await s.tick(); s.pairs[0].reject("REFUSED"); await s.tick();
+  s.pairs[1].reject("REFUSED"); await s.tick();   // a REFUSED from the home address is not final: the relay was asked too
   s.els["code-cancel"].click(); await s.tick();
   assert.equal(s.visible(), "v-pair");
   await s.deepLink(C);
@@ -407,4 +414,101 @@ test("LAN-only link (r = l): the confirm screen says the relay is not used; pair
   assert.equal(s.pairs.length, 1);
   assert.ok(s.pairs[0].link.includes("r=" + encodeURIComponent(LAN)));
   assert.equal(typeof s.pairs[0].opts.fetch, "function", "paired over the native LAN fetch");
+});
+
+// ---------------------------------------------------------------- N1: an earlier build's pairing has no LAN token
+
+test("N1: a pairing from an earlier build (no lanToken): relay works, but the person is told to re-pair for the home network", async () => {
+  const old = pairedRecord(key(REAL)); delete old.lanToken;
+  const s = makeShell({ store: old, behave: () => "ok" });
+  await s.start();
+  assert.equal(s.visible(), "v-status", "no silent skip of the home network");
+  assert.match(s.text("st-title"), /Re-pair to use the home network/);
+  assert.match(s.text("st-msg"), /home network/i);
+  assert.deepEqual(s.connects.map((c) => c.base), [RELAY], "the home network was never contacted, the relay token never offered to it");
+  assert.deepEqual(s.assigned, [], "waiting for the person's choice");
+  assert.equal(s.text("st-retry"), "Continue via the relay");
+  s.els["st-retry"].click(); await s.tick();
+  assert.match(s.assigned.join(), /via=relay/);
+  assert.ok(!s.els["st-repair"].hidden, "Re-pair is offered");
+});
+
+test("N1: an earlier build's LAN-only pairing says why it cannot connect", async () => {
+  const old = pairedRecord(key(REAL), { relay: LAN }); delete old.lanToken;
+  const s = makeShell({ store: old, behave: () => "ok" });
+  await s.start();
+  assert.equal(s.visible(), "v-status");
+  assert.match(s.text("st-msg"), /Re-pair to use the home network/);
+  assert.deepEqual(s.connects, []);
+});
+
+// ---------------------------------------------------------------- N8: one-time cookie wipe
+
+test("N8: the first start clears the native cookie jar once, BEFORE any request to the LAN, and records it; the second start does not", async () => {
+  const s = makeShell({ firstRun: true, store: pairedRecord(key(REAL)), behave: () => "ok" });
+  await s.start();
+  const i = s.log.indexOf("cookies cleared");
+  assert.ok(i !== -1, "cookies cleared on the first start");
+  assert.equal(s.log.filter((l) => l === "cookies cleared").length, 1);
+  assert.ok(s.log.indexOf("FLAG cookies-wiped-v1") > i, "the marker is written after the clear");
+  assert.deepEqual(s.nativeCalls, [], "no request went to the LAN before/while wiping");
+  assert.ok(s.connects.length > 0 && s.state.flags["cookies-wiped-v1"] === true);
+  // the next start of the same app (same persisted flag): no wipe
+  const s2 = makeShell({ store: pairedRecord(key(REAL)), behave: () => "ok" });
+  s2.state.flags["cookies-wiped-v1"] = true;
+  await s2.start();
+  assert.ok(!s2.log.includes("cookies cleared"));
+});
+
+test("N8: when the clear fails the marker is NOT written (retried next start) and the app still starts", async () => {
+  const s = makeShell({ firstRun: true, cookiesFail: true, behave: () => "ok" });
+  await s.start();
+  assert.equal(s.state.flags["cookies-wiped-v1"], undefined);
+  assert.equal(s.visible(), "v-pair", "the app went on to its normal screen");
+});
+
+
+// ---------------------------------------------------------------- N5: Replace needs the old fingerprint typed
+
+test("N5: replacing a pairing needs the first 4 characters of the OLD fingerprint typed; a first pairing needs nothing", async () => {
+  const s = makeShell({ store: pairedRecord(key(REAL)), behave: () => "PENDING" });
+  await s.start();
+  await s.deepLink(link({ hk: key(EVIL) }));
+  assert.equal(s.els["cf-type-row"].hidden, false, "the field is shown when a pairing would be replaced");
+  assert.equal(s.els["cf-type"].value, "");
+  await s.advance(1500);
+  assert.equal(s.els["cf-pair"].disabled, true, "the delay is over but nothing is typed");
+  s.els["cf-pair"].forceClick(); await s.tick();
+  assert.equal(s.pairs.length, 0, "a forced click does nothing");
+  typeOld(s);                                                        // unlocks...
+  s.els["cf-type"].value = "zzzz";                                   // ...then the text changes without an input event
+  s.els["cf-pair"].click(); await s.tick();
+  assert.equal(s.pairs.length, 0, "the click re-checks the typed text itself");
+  assert.match(s.text("cf-notice"), /first 4 characters/);
+  typeOld(s, EVIL);                                                  // the NEW computer's fingerprint is the wrong answer
+  assert.equal(s.els["cf-pair"].disabled, true);
+  typeOld(s, REAL, fpOf(REAL).slice(0, 3));
+  assert.equal(s.els["cf-pair"].disabled, true, "3 of 4 is not enough");
+  typeOld(s, REAL, "  " + fpOf(REAL).slice(0, 4).toUpperCase() + " ");
+  assert.equal(s.els["cf-pair"].disabled, false, "case and spaces do not matter");
+  typeOld(s, REAL, fpOf(REAL).slice(0, 4) + "x");
+  assert.equal(s.els["cf-pair"].disabled, true, "changing it locks the button again");
+  typeOld(s);
+  s.els["cf-pair"].click(); await s.tick();
+  assert.equal(s.pairs.length, 1);
+
+  // typing before the delay is over does not unlock early; and a first pairing has no such field
+  const t = makeShell({ store: pairedRecord(key(REAL)), behave: () => "PENDING" });
+  await t.start();
+  await t.deepLink(link({ hk: key(EVIL) }));
+  typeOld(t);
+  assert.equal(t.els["cf-pair"].disabled, true, "still inside the 1.5 s lock");
+  await t.advance(1500);
+  assert.equal(t.els["cf-pair"].disabled, false, "unlocks when the delay ends, the text being right");
+  const u = makeShell({});
+  await u.start();
+  await u.deepLink(link({ hk: key(EVIL) }));
+  assert.equal(u.els["cf-type-row"].hidden, true);
+  await u.advance(1500);
+  assert.equal(u.els["cf-pair"].disabled, false);
 });

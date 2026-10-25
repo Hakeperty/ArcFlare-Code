@@ -1,16 +1,33 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { decideMode, targets, isPairedRecord } = require("../www/mode.js");
+const { decideMode, targets, isPairedRecord, needsHomeRepair } = require("../www/mode.js");
 const { A43 } = require("./helpers.js");
 
 const LAN = "http://192.168.1.20:8765";
 const rec = (o = {}) => Object.assign({
   v: 1, relay: "https://arcflare.net", room: A43, hubKey: A43, lan: LAN,
-  deviceId: A43.slice(0, 22), roomToken: "aftc_" + A43, label: "Android phone", privateKey: { fake: "CryptoKey" }, publicKey: A43,
+  deviceId: A43.slice(0, 22), roomToken: "aftc_" + A43, lanToken: "aftl_" + A43, label: "Android phone", privateKey: { fake: "CryptoKey" }, publicKey: A43,
 }, o);
 const lanOnly = (o = {}) => rec(Object.assign({ relay: LAN }, o));
 const OK = { ok: true }, NO = { ok: false };
+
+test("N1: a record without a lanToken (earlier build) has no home target and needs a re-pair; a relay token is not a lanToken", () => {
+  const old = (o = {}) => { const r = rec(o); delete r.lanToken; return r; };
+  assert.deepEqual(targets(old()).map((t) => t.kind), ["relay"], "the relay token is never offered to the LAN base");
+  assert.deepEqual(targets(rec()).map((t) => t.kind), ["home", "relay"]);
+  assert.equal(needsHomeRepair(old()), true);
+  assert.equal(needsHomeRepair(rec()), false);
+  assert.equal(needsHomeRepair(old({ lan: null })), false, "no LAN base, nothing to repair");
+  assert.equal(needsHomeRepair(null), false);
+  assert.deepEqual(targets(old({ relay: LAN })), [], "LAN-only record from an earlier build: nothing to connect to");
+  assert.equal(decideMode({ record: old(), home: OK, relay: NO }), "unreachable", "a home result means nothing without a LAN token");
+  assert.equal(decideMode({ record: old(), home: NO, relay: OK }), "relay");
+  assert.equal(isPairedRecord(old()), true, "still a valid (relay) pairing");
+  assert.equal(isPairedRecord(rec({ lanToken: "aftc_" + A43 })), false, "the relay token kind cannot be a LAN token");
+  assert.equal(isPairedRecord(rec({ lanToken: "aftl_short" })), false);
+  assert.equal(isPairedRecord(rec({ lanToken: null })), true);
+});
 
 test("no record, or a damaged one -> unpaired (whatever the handshakes said)", () => {
   assert.equal(decideMode({ record: null, home: OK, relay: OK }), "unpaired");

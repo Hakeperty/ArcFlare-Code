@@ -11,7 +11,7 @@
 
   var deps = {
     get Tunnel() { return window.ArcFlareTunnel; },
-    lanFetch: function (lanBase) { return window.ArcFlareLanFetch.create({ http: window.ArcFlareNative.nativeHttp(), lanBase: lanBase }); },
+    lanFetch: function (lanBase, o) { return window.ArcFlareLanFetch.create({ http: window.ArcFlareNative.nativeHttp(), lanBase: lanBase, refuse: o && o.refuse }); },
   };
   var transport = window.ArcFlareTransportAdapter.create({
     connect: async function () {

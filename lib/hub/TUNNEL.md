@@ -67,7 +67,7 @@ temp-file + rename, re-read by the running hub when it changes on disk:
 | File | Contents | Secret? |
 |---|---|---|
 | `tunnel-key.json` | hub static X25519 private key `HS`, room secret `R` (32 B) | yes |
-| `devices.json` | per device: id, label, X25519 public key, `H(roomToken)`, paired/approved times, pending SAS | no (public keys and hashes only) |
+| `devices.json` | per device: id, label, X25519 public key, `H(roomToken)`, `H(lanToken)` (absent for a device paired by a build from before 16.6), paired/approved times, pending SAS | no (public keys and hashes only) |
 | `pairing.json` | per pending pairing: `pid`, `psk`, `H(pairToken)`, expiry, failures | `psk`, for ≤ 10 min; erased on use |
 
 Derived:
@@ -76,7 +76,7 @@ Derived:
 - `roomId = H(hubToken)` (43 chars). `roomRaw` = its 32 raw bytes.
 
 On the phone (app storage; IndexedDB, never `localStorage`): `relay`, `roomId`,
-pinned hub public key `HS_pub`, `deviceId`, `roomToken`, and the device static
+pinned hub public key `HS_pub`, `deviceId`, `roomToken` (internet relay only), `lanToken` (home mailbox only; absent after an old pairing), and the device static
 X25519 key `DS`, generated **non-extractable**.
 
 Deleting `tunnel-key.json` rotates everything and unpairs every phone.
@@ -107,7 +107,13 @@ base for the Relay API, **not a page to open**. When the internet relay is off,
   with two exceptions for plain `http`: loopback (development), and the **LAN
   exception** — `r` and `l` MAY be `http://` (or `https://`) when the host is a
   private IPv4 literal (10/8, 172.16/12, 192.168/16) or a `*.local` name
-  (section 16). Any other `http` URL, and any `l` that fails the same rule, is
+  (section 16). A `.local` name is one or more labels of `a-z 0-9` and inner
+  hyphens (no label starts or ends with a hyphen, none is empty), then `.local`,
+  at most 80 characters in all; `http` only (the https exception applies to the
+  hub's own `--lan-url` setting, not to links), an explicit port 1..65535 other
+  than 80 and 443. The hub's `checkPairingLanUrl` enforces exactly the phone
+  app's rule (`android/www/link.js`), and `test/hub-lan.test.js` checks the two
+  against each other, so the hub never prints a link the app refuses. Any other `http` URL, and any `l` that fails the same rule, is
   rejected. The hub's own `relay` setting (the internet relay) stays https-only;
   the LAN exception exists only for the hub's own mailbox.
 - `P` is one-time and expires after **10 minutes**. At most 4 pairings are
@@ -148,9 +154,13 @@ The hub, on HS1 for a known, unused, unexpired `pid`:
    **2-minute grace** (never past the original expiry) so the phone can collect
    HS2 on the same relay channel;
 4. creates device `id = b64u(16 random bytes)` with the phone's static key from
-   the `s` token, `roomToken = "aftc_" || b64u(32 random bytes)`, state
-   *pending*, and registers `H(roomToken)` with the relay;
-5. replies HS2 with payload `{"t":"paired","ts","deviceId","roomToken","status":"pending"}`.
+   the `s` token, `roomToken = "aftc_" || b64u(32 random bytes)` and a SEPARATE
+   `lanToken = "aftl_" || b64u(32 random bytes)`, state *pending*, and registers
+   `H(roomToken)` with the internet relay and `H(lanToken)` with the hub's own LAN
+   mailbox, each only with its own carrier (section 9, 16.6);
+5. replies HS2 with payload `{"t":"paired","ts","deviceId","roomToken","lanToken","status":"pending"}`.
+   `lanToken` is an additive field of the authenticated, encrypted payload; the
+   handshake itself is unchanged, and a phone that does not know the field ignores it.
 
 No transport session is opened by pairing.
 
@@ -317,12 +327,23 @@ LAN socket, in-process (`server.dispatchTunnel(req, res, {deviceId})`):
 - Phones authenticate with a per-device `roomToken` (random, issued inside the
   encrypted HS2), or `pairToken` while pairing. The hub publishes the allowlist
   of `H(token)` (with expiry for pairing tokens); the relay stores only hashes.
+- **One token per carrier.** `roomToken` is for the internet relay ONLY. The hub's
+  own plain-HTTP LAN mailbox (section 16) uses a different per-device token, the
+  `lanToken` (`aftl_...`, issued in the same encrypted HS2). The allowlists are
+  per carrier: the relay gets only `H(roomToken)`, the LAN mailbox only
+  `H(lanToken)`; a pending pairing's `H(pairToken)` goes to both (one-time, and
+  the handshake still needs the pairing secret). The phone chooses the token by the
+  base URL a request goes to, and never sends one carrier's token to the other
+  (`tunnel-client.js`, with a second guard in the app's `lanfetch.js` and
+  `connector.js`). So a LAN sniffer, or whoever answers at the stored LAN address,
+  learns a token that is worthless on the internet relay, and the relay operator
+  never holds anything that works on the LAN.
 - Deviation from the brief (safer): room tokens are *not* all derived from the
   pairing secret. `P` is one-time and short-lived, and a shared derived token
   could not be revoked per device. Only `pairToken` derives from `P`.
 - The relay sees bearer tokens in transit. They open the mailbox only; every
   frame is still authenticated end to end, so a token thief gets denial of
-  service at most.
+  service at most, and only on the carrier the token belongs to.
 
 ## 10. Revocation and the stolen phone
 
@@ -333,7 +354,8 @@ LAN socket, in-process (`server.dispatchTunnel(req, res, {deviceId})`):
 3. the running hub notices on the very next frame from that device (it checks
    the files' timestamps at every DATA frame; otherwise within ~2 s): closes the device's live sessions
    (RESET), signs out the jar session, drops the jar, and republishes the relay
-   allowlist without `H(roomToken)` (relay access gone, 401).
+   allowlists without `H(roomToken)` (relay) and `H(lanToken)` (LAN mailbox):
+   both carriers answer 401 to the device's tokens.
 
 Also available: revoke the login session from the Devices page (the phone must
 sign in again, but stays paired); `arcflare phone user passwd` (ends every
@@ -351,7 +373,9 @@ the hub only knows as v1 (no silent fallback). The app refuses links with `v≠1
 
 ## 12. Abuse limits (hub side)
 
-Handshakes ≤ 60/min; pairing failures ≤ 5 per pairing; ≤ 4 pending pairings;
+Handshakes ≤ 60/min **per carrier** (internet relay and home mailbox each have
+their own budget) and ≤ 90/min overall, so a flooded carrier leaves the other at
+least 30 a minute; pairing failures ≤ 5 per pairing; ≤ 4 pending pairings;
 ≤ 16 devices; ≤ 4 sessions/device, ≤ 64 total; ≤ 16 requests in flight per
 session; request body ≤ 128 KiB, body chunk ≤ 12 KiB; RESETs for unknown
 sessions ≤ 10/s in total (all channels together); outbound backlog to the relay
@@ -383,7 +407,7 @@ relay poll backoff 1 s → 30 s. Relay-side limits are in the Relay API below.
 | Brute force of tokens / keys | infeasible | 256-bit randomness |
 | Password guessing through the tunnel | locked out | per-device + per-username lockout in AuthStore |
 | Compromise of hub static key later | past sessions safe | ephemeral `ee` (forward secrecy); rekey epochs |
-| DoS (relay down, floods, mailbox full) | tunnel unavailable; LAN unaffected | rate limits, caps, fail-closed; the relay can always deny service |
+| DoS (relay down, floods, mailbox full) | the relay path is unavailable; the home path keeps working | rate limits, caps, fail-closed; the relay can always deny service on its own carrier. Handshake budgets are per carrier (section 12), the in-flight and queue caps are per carrier. Still shared: the CPU and event loop of the one hub process, which a flood on either carrier can load |
 | LAN attacker (Wi-Fi) reads the plain-HTTP mailbox traffic | nothing readable | same Noise tunnel; the mailbox carries only ciphertext and token hashes (section 16) |
 | LAN attacker squats the hub's address / answers as the hub (ARP, rogue DHCP, rogue AP) | handshake fails; the phone never talks to it in clear | `HS_pub` pinned from the QR; DoS only |
 | LAN attacker injects, replays or reorders frames | rejected / session ends | same as the relay rows |
@@ -402,12 +426,15 @@ pattern is happening.
 - A compromised **hub computer** or **unlocked phone with an active session** is
   out of scope.
 - Traffic analysis: padding hides exact sizes only; timing and volume show.
-- The relay can deny service at will; LAN is the fallback. A malicious relay can
-  still make the hub spend bounded CPU and memory (the caps in section 12), but
-  the LAN keeps working: the tunnel never blocks the LAN handler.
-- All handshakes share one global rate limit (60/min). A relay, or anyone with a
-  device token, can use it up and so delay legitimate phones' handshakes. Not
-  fixed: it is denial of service only.
+- The relay can deny service at will; the home path is the fallback. A malicious
+  relay can still make the hub spend bounded CPU and memory (the caps in section
+  12), and the home path keeps working: the tunnel never blocks the LAN handler,
+  and the handshake budget is per carrier (60/min each, 90/min together), so a
+  relay, or anyone who holds a relay token, can use up the relay's budget but not
+  the home mailbox's. What IS still shared is the one hub process: its CPU and its
+  event loop, which a flood on either carrier loads (bounded by the caps above, so
+  slower, not stopped), and the overall 90/min ceiling (a flooded carrier cannot
+  take more than 60 of it).
 - Timing differences (for example how fast a handshake is refused for an unknown
   device versus a known one) are not equalised. They reveal at most what the
   relay already sees (that a device id exists in the room).
@@ -419,10 +446,24 @@ pattern is happening.
   lock are not excluded. A damaged state file stops the tunnel (never silently
   replaced); the LAN keeps working.
 - If the phone's clock is off by more than 10 minutes, handshakes are refused.
-- LAN mode (section 16): metadata and bearer tokens are visible on the Wi-Fi, and a
-  LAN attacker can deny service or squat the hub's address (the handshake then
-  fails). The mailbox's failed-auth lockout is per socket address, so several
-  phones behind one NAT address share it.
+- LAN mode (section 16): metadata and the LAN bearer token are visible on the Wi-Fi.
+  The LAN token opens the LAN mailbox only (it is not valid on the internet relay),
+  so a sniffer can at most deny service on the LAN mailbox (16.5); a LAN attacker
+  can also squat the hub's address (the handshake then fails). The mailbox's
+  failed-auth lockout is per socket address and only answers tokens that were
+  presented and are wrong, so junk from a phone's own address cannot lock that
+  phone out (16.6).
+- A phone paired by a build from before the LAN token existed is relay-only until
+  it is paired again (16.6).
+- **Pairing is phishable by design.** `arcflare://pair` links are opened by the
+  app, and the app's pairing screen can be reached from a web page (the intent
+  filter is BROWSABLE). Anyone who runs their own hub can show a QR or link for it
+  and approve a pairing from their own keyboard: nothing in the protocol can tell a
+  hostile hub from yours except the person comparing the fingerprint with the one
+  printed on their own computer. The app shows the fingerprint, and "Replace the
+  computer ... with ..." when a pairing exists, and requires typing the first 4
+  hex characters of the OLD fingerprint to replace it; that is friction, not a
+  defence against a person who types it without reading. Residual phishing risk.
 - A malicious app build (or a compromised WebView) defeats everything on the
   phone side.
 - `pairing.json` holds `psk` for up to 10 minutes; anyone who can read the hub's
@@ -451,6 +492,7 @@ errors as `{"error": "<sentence>"}`. If no store is configured: 503, as
 |---|---|---|
 | hub token | `^afth_[A-Za-z0-9_-]{43}$` | `H(token) == roomId` (constant-time) |
 | client token | `^aftc_[A-Za-z0-9_-]{43}$` | `H(token)` in the room's allowlist, and that entry's `exp` absent or `> now` |
+| LAN client token (hub-hosted mailbox only, 16.6) | `^aftl_[A-Za-z0-9_-]{43}$` | same check against the LAN mailbox's own allowlist; the website relay never sees one and accepts only `aftc_` |
 | `roomId` | `^[A-Za-z0-9_-]{43}$` (path) | |
 | `ch` (channel) | `^[A-Za-z0-9_-]{22}$` | bound to the first client-token hash that used it |
 | frame `c` | `^[A-Za-z0-9_-]{24,44000}$` | nothing else |
@@ -551,8 +593,11 @@ handshakes, the frames or the transport changes; only the carrier does.
   in the link is the hub's mailbox base URL, never a page. With the internet
   relay off, `r` = the LAN base URL and `rm` is still present.
 - **15**: the Relay API is "also served by the hub itself". Differences for the
-  hub-hosted mailbox: one room only (its own room id; `PUT` for any other room is
-  403, and a hub request for another room is 404); the caller's identity for the
+  hub-hosted mailbox: one room only (its own room id); **the hub side is not served
+  over HTTP at all**: the room `PUT` and the `/hub` endpoints answer 404 on the
+  LAN socket (the hub drives its own mailbox in-process, so a LAN token, or even
+  the hub token, can neither rewrite the allowlist nor read or inject frames);
+  and the hub re-asserts the LAN allowlist on every housekeeping pass (~2 s); the caller's identity for the
   failed-auth lockout is the socket's remote address (never `X-Forwarded-For`);
   extra memory bounds (a byte cap per channel queue, 8 MiB, and for all channel
   queues together, 32 MiB, oldest frames dropped first; bounded lockout and rate
@@ -569,7 +614,8 @@ handshakes, the frames or the transport changes; only the carrier does.
   hop, no token) and feeds the same session handling, the same per-device login
   lockout (`relay:<deviceId>`) and the same revocation (the allowlist is
   republished to the local mailbox on every change, within ~2 s, and on the next
-  frame of a revoked device).
+  frame of a revoked device). The LAN allowlist holds `H(lanToken)` entries, the
+  internet relay's holds `H(roomToken)` entries (section 9).
 
 ### 16.2 Who may reach it
 
@@ -585,7 +631,7 @@ on it, and still run on every other route unchanged. A request that arrived
 
 The hub's tunnel can use the LAN mailbox and the internet relay simultaneously, or
 either alone (the LAN mailbox does not need the internet relay). Both share one
-room id, one set of keys and one allowlist. A session belongs to the mailbox its
+room id and one set of keys; the token allowlists are per carrier (16.6). A session belongs to the mailbox its
 HS1 arrived on: its frames go back on it, and frames for it that arrive from the
 other mailbox are dropped (the rule "DATA must arrive on the channel that carried
 its HS1" extends to the carrier). Outbound queues, caps and shedding are per
@@ -616,9 +662,15 @@ LAN base URL.
 ### 16.5 What it does not protect
 
 - **Metadata** visible to anyone on the LAN who can sniff it: that a hub and
-  phones exist, their addresses, timing, and padded frame sizes; the bearer tokens
-  in the `Authorization` header (plain HTTP). A token thief gets a mailbox seat
-  only (denial of service at most), as in section 9.
+  phones exist, their addresses, timing, and padded frame sizes; the bearer
+  tokens in the `Authorization` header (plain HTTP). That token is the device's
+  **LAN token**, which is valid on the LAN mailbox only. A sniffer of it, or
+  whoever answers at the stored LAN address, can (a) occupy that device's channel
+  slots on the LAN mailbox and send junk frames (denial of service on the LAN
+  mailbox), and nothing else: it cannot read or forge a frame (Noise), it cannot use
+  the internet relay (a different token, never sent to the LAN), and it cannot
+  keep the phone off the relay. The phone's own fallback, the relay, is unaffected.
+  Revoking the device (or pairing again) cuts the token off.
 - **Availability**: a LAN attacker can flood the mailbox (bounded: 429, lockout),
   jam the Wi-Fi, or **squat the hub's address** (ARP/DHCP/rogue AP) and answer in
   its place. The phone then fails the handshake (pinned key) or times out; it
@@ -629,3 +681,38 @@ LAN base URL.
 - Over plain `http` a LAN attacker can see which mailbox calls are made (paths,
   query strings: room id, channel id, `after`/`wait`). Those are random ids, not
   secrets that open anything beyond the mailbox.
+
+### 16.6 The LAN token, per-carrier allowlists, old pairings
+
+- **Why a separate token.** Until this design the internet-relay `roomToken` also
+  worked on the LAN mailbox and was sent on every home-network request over plain
+  HTTP. A sniffer, or anyone answering at the stored LAN address (they receive the
+  request, header included), then held a token valid on the INTERNET relay, from
+  which they could bind the phone's channels there from anywhere and keep the
+  phone off the relay. Now the hub issues a fresh `lanToken` (`aftl_` + 43 chars)
+  in the encrypted pairing reply. It is stored on the hub only as `H(lanToken)`
+  next to the device, published only to the local mailbox; the relay gets only
+  `H(roomToken)`.
+- **Phone rule.** Requests to the stored LAN base carry the `lanToken` and never
+  the `roomToken`; requests to the relay carry the `roomToken` and never the
+  `lanToken`. The token is chosen by the base URL (tunnel-client `carrierToken`);
+  `lanfetch.js` refuses a request carrying the relay token, `connector.js`'s relay
+  fetch refuses one carrying the LAN token; tests assert both directions.
+- **Failed-auth lockout (LAN mailbox).** The bearer token is checked first. A
+  valid token is served whatever else the same address has sent. A request with
+  no token (any web page can make a phone's address send them), or for an unknown
+  path, is a plain 401/404 and counts for nothing. Only a token that was presented
+  and is wrong counts toward the per-address lockout (30 a minute) and is the only
+  request the lockout answers with 429.
+- **Pairings from earlier builds** have no `lanToken`. The hub treats such a
+  device as relay-only: it has no LAN allowlist entry, whatever the phone sends.
+  The app shows "Re-pair to use the home network" instead of failing mysteriously:
+  with a working relay it offers "Continue via the relay"; a LAN-only pairing
+  from an earlier build says it cannot connect until the phone is paired again.
+  There is no upgrade path that issues a LAN token without a new, keyboard-
+  confirmed pairing.
+- **Handshake replies.** A reply (HS2, or the pairing reply) that carries the
+  right session id but fails verification is ignored by the phone, which keeps
+  waiting until its own timeout; one forged frame cannot end the attempt. A bad
+  or refused answer from the HOME address does not end pairing either: the relay
+  is tried next.

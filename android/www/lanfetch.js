@@ -88,6 +88,9 @@
     if (!link().validateLanUrl(lanBase)) throw fail("LAN_REFUSED", "not a home network base URL");
     var maxBytes = (opts && opts.maxBytes) || MAX_BYTES;
     var inflight = 0;
+    // Secrets that must NEVER travel to the home mailbox (the internet-relay token): a request whose Authorization
+    // carries one is refused here, whatever the caller above meant. Defence in depth behind tunnel-client's token choice.
+    var refuse = ((opts && opts.refuse) || []).filter(function (x) { return typeof x === "string" && x.length > 8; });
 
     function lanFetch(url, init) {
       init = init || {};
@@ -103,6 +106,10 @@
         if (inflight >= MAX_INFLIGHT) throw fail("LAN_REFUSED", "refused: too many requests");
       } catch (e) { return Promise.reject(e); }
       if (signal && signal.aborted) return Promise.reject(abortError());
+      var sent = sendHeaders(init);
+      for (var k = 0; k < refuse.length; k++) {
+        if (sent.Authorization && sent.Authorization.indexOf(refuse[k]) !== -1) return Promise.reject(fail("LAN_REFUSED", "refused: the relay token is never sent to the home network"));
+      }
 
       return new Promise(function (resolve, reject) {
         var settled = false, timer, onAbort;
@@ -118,7 +125,7 @@
         if (signal) { onAbort = function () { done(reject, abortError()); }; signal.addEventListener("abort", onAbort, { once: true }); }
 
         var req = {
-          url: u.href, headers: sendHeaders(init), connectTimeout: CONNECT_MS, readTimeout: readMs,
+          url: u.href, headers: sent, connectTimeout: CONNECT_MS, readTimeout: readMs,
           disableRedirects: true, responseType: "text", shouldEncodeUrlParams: false,
         };
         var call;

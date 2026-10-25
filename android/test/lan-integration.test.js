@@ -110,6 +110,10 @@ test("LAN-only pairing, approval, connect, login: the shell's real modules again
       assert.ok(!Object.keys(s.headers).some((k) => /cookie/i.test(k)));
     }
     assert.ok(e.seen.some((s) => s.method === "POST" && s.data && Array.isArray(s.data.frames)), "frames were posted as JSON");
+    // N1: the token the phone sent to the LAN base is the LAN token (after pairing) and never the relay token
+    assert.match(device.lanToken, /^aftl_/);
+    assert.ok(e.seen.every((s) => !JSON.stringify(s).includes(device.roomToken)), "the relay token never went to the home network");
+    assert.ok(e.seen.some((s) => s.headers.Authorization === "Bearer " + device.lanToken), "the LAN token did");
     // nothing readable in what crossed: the posted frames never contain the password or the path
     const wire = JSON.stringify(e.seen.map((s) => s.data || s.url));
     assert.ok(!wire.includes(PASSWORD) && !wire.includes("/api/login"));

@@ -118,7 +118,7 @@ test("save keeps only the listed fields and the validated bases; a secret passed
   };
   await Store.create(root).save({ v: 1, relay: "http://tunnelclient-echo:1", room: "r", hubKey: "h", deviceId: "d", roomToken: "t", label: "l", privateKey: {}, publicKey: "p", secret: "LEAK", ps: "LEAK" },
     { relay: "https://arcflare.net", lan: "http://192.168.1.20:8765" });
-  assert.deepEqual(Object.keys(stored.pairing).sort(), ["deviceId", "hubKey", "label", "lan", "pairedAt", "privateKey", "publicKey", "relay", "room", "roomToken", "v"]);
+  assert.deepEqual(Object.keys(stored.pairing).sort(), ["deviceId", "hubKey", "label", "lan", "lanToken", "pairedAt", "privateKey", "publicKey", "relay", "room", "roomToken", "v"]);
   assert.equal(stored.pairing.relay, "https://arcflare.net");
   assert.equal(stored.pairing.lan, "http://192.168.1.20:8765");
 });
@@ -126,4 +126,27 @@ test("save keeps only the listed fields and the validated bases; a secret passed
 test("with no databases() to re-check against, a database that reports an error is still a failure", async () => {
   const r = await Store.create(fakeRoot({ noDatabases: true, behave: { "arcflare-pairing": "error" } }), { deleteWaitMs: 20 }).wipeAll(native());
   assert.deepEqual(r, { ok: false, failed: ["database arcflare-pairing"] });
+});
+
+test("N8: the one-time marker lives in IndexedDB (never localStorage): false until set, true after, only for its own name", async () => {
+  const kv = {};
+  let lsTouched = false;
+  const root = fakeRoot();
+  root.localStorage = new Proxy({}, { get() { lsTouched = true; throw new Error("localStorage must not be used"); }, set() { lsTouched = true; throw new Error("no"); } });
+  root.indexedDB.open = () => {
+    const req = {};
+    const db = { createObjectStore() {}, close() {}, transaction: () => { const t = {}; t.objectStore = () => ({
+      get: (k) => { const r = { result: kv[k] }; setTimeout(() => t.oncomplete && t.oncomplete(), 0); return r; },
+      put: (v, k) => { kv[k] = v; const r = { result: undefined }; setTimeout(() => t.oncomplete && t.oncomplete(), 0); return r; },
+    }); return t; } };
+    setTimeout(() => { req.result = db; req.onupgradeneeded && req.onupgradeneeded(); req.onsuccess(); }, 0);
+    return req;
+  };
+  const S = Store.create(root);
+  assert.equal(await S.getFlag("cookies-wiped-v1"), false);
+  await S.setFlag("cookies-wiped-v1");
+  assert.equal(await S.getFlag("cookies-wiped-v1"), true);
+  assert.equal(await S.getFlag("other"), false);
+  assert.deepEqual(Object.keys(kv), ["flag:cookies-wiped-v1"]);
+  assert.equal(lsTouched, false);
 });

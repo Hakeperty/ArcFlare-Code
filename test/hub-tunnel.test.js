@@ -420,7 +420,19 @@ test("tampered frames are detected in both directions and end the session", asyn
       if (b[1] === tunnel.T.HS2) nodeCrypto.randomBytes(32).copy(b, 18); // swap in the relay's own ephemeral key
       return [b.toString("base64url")];
     };
-    await assert.rejects(TC.connect(device, env.opts), { code: "HANDSHAKE" });
+    // N6: a bad answer is IGNORED (the client keeps waiting and ends at its own timeout), it does not end the attempt
+    await assert.rejects(TC.connect(device, { ...env.opts, handshakeTimeoutMs: 1500 }), { code: "TIMEOUT" });
+    // ...and because it is ignored, a forged HS2 in front of the real one cannot stop the real one
+    env.relay.hooks.toClient = (ch, c) => {
+      const b = Buffer.from(c, "base64url");
+      if (b[1] !== tunnel.T.HS2) return [c];
+      const forged = Buffer.from(b); nodeCrypto.randomBytes(32).copy(forged, 18);
+      const flipped = Buffer.from(b); flipped[flipped.length - 5] ^= 1;
+      return [forged.toString("base64url"), flipped.toString("base64url"), c];
+    };
+    const ok = await TC.connect(device, env.opts);
+    assert.strictEqual((await ok.request("GET", "/api/status")).status, 200, "the real answer behind two forged ones still opened the session");
+    ok.close();
   } finally { await env.close(); }
 });
 
@@ -491,7 +503,27 @@ test("a pairing link with the wrong hub key fails; so does a forged pairing repl
       if (b[1] === tunnel.T.HS2) b[b.length - 5] ^= 1;
       return [b.toString("base64url")];
     };
-    await assert.rejects(TC.pair({ link: env.link, fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 }), { code: "HANDSHAKE" });
+    // N6: a pairing reply that fails to verify is ignored; the client keeps waiting and times out
+    await assert.rejects(TC.pair({ link: env.link, fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 1500 }), { code: "TIMEOUT" });
+  } finally { await env.close(); }
+
+});
+
+test("N6: forged pairing replies in front of the real one do not stop the pairing", async (t) => {
+  if (!needX(t)) return;
+  const env = await setup();
+  try {
+    env.relay.hooks.toClient = (ch, c) => {
+      const b = Buffer.from(c, "base64url");
+      if (b[1] !== tunnel.T.HS2) return [c];
+      const forged = Buffer.from(b); nodeCrypto.randomBytes(32).copy(forged, 18);
+      const flipped = Buffer.from(b); flipped[flipped.length - 5] ^= 1;
+      return [forged.toString("base64url"), flipped.toString("base64url"), c];
+    };
+    const { device, sas } = await TC.pair({ link: env.link, label: "N6", fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 });
+    assert.match(sas, /^\d{6}$/);
+    assert.strictEqual(env.store.listDevices().find((d) => d.id === device.deviceId).sas, sas);
+    assert.match(device.lanToken, /^aftl_/);
   } finally { await env.close(); }
 });
 

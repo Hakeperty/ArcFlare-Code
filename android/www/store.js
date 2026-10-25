@@ -39,6 +39,10 @@
     });
   }
 
+  /** A one-time marker kept next to the pairing record in IndexedDB (never localStorage). True only if it was set. */
+  function getFlag(name) { return tx("readonly", function (s) { return s.get("flag:" + name); }).then(function (r) { return r === true; }); }
+  function setFlag(name) { return tx("readwrite", function (s) { return s.put(true, "flag:" + name); }); }
+
   /** The stored pairing record, or null. */
   function load() { return tx("readonly", function (s) { return s.get(KEY); }).then(function (r) { return r || null; }); }
 
@@ -50,7 +54,7 @@
   function save(device, bases) {
     var rec = {
       v: device.v, relay: bases.relay, room: device.room, hubKey: device.hubKey,
-      lan: bases.lan || null, deviceId: device.deviceId, roomToken: device.roomToken,
+      lan: bases.lan || null, deviceId: device.deviceId, roomToken: device.roomToken, lanToken: device.lanToken || null,
       label: device.label, privateKey: device.privateKey, publicKey: device.publicKey,
       pairedAt: Date.now(),
     };
@@ -110,7 +114,7 @@
     return failed.length ? { ok: false, failed: failed } : { ok: true, failed: [] };
   }
 
-  return { load: load, save: save, wipeAll: wipeAll, DB_NAME: DB };
+  return { load: load, save: save, getFlag: getFlag, setFlag: setFlag, wipeAll: wipeAll, DB_NAME: DB };
   }
 
   var api = create(globalRoot);

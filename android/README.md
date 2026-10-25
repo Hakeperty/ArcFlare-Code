@@ -18,10 +18,15 @@ navigation rule is compiled and executed with `javac`; everything else is listed
 1. **First run: pairing.** Run `arcflare phone pair` on the computer, scan the QR it prints with the phone's
    normal camera app. The link `arcflare://pair?...` opens ArcFlare through an intent filter (no camera
    permission, no scanner plugin). Or paste the link into the text box.
-   **Any web page or app on the phone can fire an `arcflare://pair` link** (the intent filter is BROWSABLE, so a browser
-   can launch it as well as a camera app; whether dropping BROWSABLE would still let every QR scanner work is untested, so
-   it was left). What makes that safe is not secrecy but the steps below: a confirmation screen, a "Replace" step,
-   a lock on the Pair button, and approval of the new phone **at the computer's keyboard**.
+   **Any web page or app on the phone can fire an `arcflare://pair` link**: the intent filter is BROWSABLE, so a web
+   page can open the app's pairing screen, as well as a camera app. (Whether dropping BROWSABLE would still let every
+   QR scanner work is untested, so it was left.) Be honest about what that means: **someone who runs their own hub can
+   approve their own pairing at their own keyboard**, so the approval at the computer proves nothing about whose
+   computer it is. The only defence is the person comparing the fingerprint on the confirmation screen with the "hub key"
+   their own computer printed, and reading the "Replace ..." wording when a pairing exists. That is a **residual
+   phishing risk**, not a solved one. The steps below only add friction: a confirmation screen, a "Replace" step that
+   asks you to **type the first 4 characters of the OLD fingerprint**, a lock on the Pair button, and approval of the
+   new phone at the computer's keyboard.
 2. **The link is validated first**, by the pure module `www/link.js`, before anything is stored or sent
    (TUNNEL.md 5.1): version exactly 1; `r` is an `https://` relay host name (never an IP literal, no user info, query
    or fragment), or, when the internet relay is off, exactly the same LAN base as `l`; `l` is the hub's LAN mailbox
@@ -228,10 +233,22 @@ debug key and are for testing only.
 - **Never distribute debug APKs.** The device key is non-extractable only against page script. A debug APK is debuggable:
   `adb run-as net.arcflare.app` can read the IndexedDB files (and, on a rooted phone or with a stolen unlocked device, so
   can anyone), and a non-extractable `CryptoKey` in IndexedDB is only as safe as the app's private storage.
-- **The plain-HTTP LAN mailbox leaks metadata and bearer tokens to a sniffer** on the same Wi-Fi: that a hub and phones exist,
-  addresses, timing, padded frame sizes, mailbox paths and ids, and the `Authorization` bearer tokens (a token thief gets a
-  mailbox seat, i.e. denial of service, TUNNEL.md 9). A LAN attacker can also flood, jam, or squat the hub's address; the
-  handshake then fails (DoS only). The mailbox's failed-auth lockout is per socket address, shared by phones behind one NAT.
+- **The plain-HTTP LAN mailbox leaks metadata and its bearer token to a sniffer** on the same Wi-Fi (or to whoever answers at
+  the stored LAN address): that a hub and phones exist, addresses, timing, padded frame sizes, mailbox paths and ids, and the
+  `Authorization` header. That header carries the device's **LAN token**, a separate per-device token that is valid on the
+  hub's LAN mailbox ONLY: it is not valid on the internet relay, and the relay token is never sent to the LAN
+  (TUNNEL.md 9, 16.5, 16.6). A thief of the LAN token can deny service on the LAN mailbox (occupy the device's channels,
+  send junk) and nothing else; the phone's relay path is untouched. A LAN attacker can also flood, jam, or squat the hub's
+  address; the handshake then fails (DoS only). The mailbox's failed-auth lockout is per socket address, shared by phones
+  behind one NAT, and only answers tokens that were presented and are wrong.
+- **Phones paired by an earlier build have no LAN token** and work through the relay only. The app says "Re-pair to use the
+  home network" (and, for a home-network-only pairing, that it cannot connect until the phone is paired again). Pair once
+  more to get a LAN token; there is no silent upgrade.
+- **Cookies from an earlier build.** A phone that ran an earlier build may hold an `arcflare_sid` cookie for the hub's LAN
+  address in Android's native cookie jar, which Capacitor's default Java cookie handler would send in clear. This build
+  clears the native cookie jar ONCE on its first start (a marker in IndexedDB, written only after the clear succeeded),
+  before it talks to the LAN. As a backstop `NavPolicy` refuses any URL containing Capacitor's
+  `/_capacitor_http_interceptor_` path in any spelling.
 - **Capacitor's `CapacitorHttp` and `CapacitorCookies` JavaScript interfaces exist on the bundled origin**
   (`CapacitorHttpAndroidInterface`, `CapacitorCookiesAndroidInterface`, plus the plugins reachable over Capacitor's bridge).
   They cannot be removed without patching Capacitor; `enabled:false` only stops `fetch`/`document.cookie` patching. So the

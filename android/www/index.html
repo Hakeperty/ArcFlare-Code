@@ -81,6 +81,9 @@
             <div id="cf-lan-row"><dt>Home network</dt><dd id="cf-lan" class="mono"></dd></div>
           </dl>
           <p class="hint center">The fingerprint should be the same as the "hub key" line shown on the computer.</p>
+          <label class="field" id="cf-type-row" hidden><span class="lbl">To replace it, type the first 4 characters of the current computer's fingerprint</span>
+            <input id="cf-type" class="mono" type="text" maxlength="8" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="xxxx">
+          </label>
           <p id="cf-notice" class="banner" role="status" hidden></p>
           <div class="btn-row">
             <button id="cf-cancel" type="button" class="btn outline block lg">Cancel</button>

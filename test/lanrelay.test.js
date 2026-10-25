@@ -11,11 +11,11 @@ const b64u = (b) => Buffer.from(b).toString("base64url");
 const H = (t) => crypto.createHash("sha256").update(t, "utf8").digest("base64url");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function boot(limits) {
+async function boot(limits, opts = { serveHub: true }) {
   const hubToken = "afth_" + b64u(crypto.randomBytes(32));
   const room = { hubToken, roomId: H(hubToken) };
   const clock = { off: 0, now: () => Date.now() + clock.off };
-  const mb = createLanRelay({ roomId: room.roomId, now: clock.now, limits });
+  const mb = createLanRelay({ roomId: room.roomId, now: clock.now, limits, serveHub: opts.serveHub });
   const server = http.createServer((req, res) => mb.handle(req, res, req.headers["x-test-ip"] || req.socket.remoteAddress));
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -389,16 +389,20 @@ test("failed-auth lockout keys on the socket address, not on headers", async () 
     assert.ok(st.every((s) => s === 401), st.join());
     let last = await cGet(stranger, chan(), 0, 0, { ip });
     assert.ok(last.status === 429 && Number(last.h.get("retry-after")) >= 1);
-    eq("a valid token from that address is 429 while locked", (await cGet(c, chan(), 0, 0, { ip })).status, 429);
-    eq("hub endpoints locked for it too", (await call("PUT", R(), { token: room.hubToken, json: { v: 1, clients: [c] }, ip })).status, 429);
+    // N3: the lockout answers only tokens that are WRONG; a valid token is checked first and keeps working.
+    eq("a valid token from that address is still served while locked", (await cGet(c, chan(), 0, 0, { ip })).status, 200);
+    eq("a wrong token from that address is 429", (await cGet(mkTok(), chan(), 0, 0, { ip })).status, 429);
+    eq("a valid hub token still works too", (await call("PUT", R(), { token: room.hubToken, json: { v: 1, clients: [c] }, ip })).status, 200);
+    eq("a wrong hub token is 429", (await call("PUT", R(), { token: "afth_" + b64u(crypto.randomBytes(32)), json: { v: 1, clients: [] }, ip })).status, 429);
     eq("another address is unaffected", (await cGet(c, chan(), 0, 0, { ip: "203.0.113.78" })).status, 200);
     // X-Forwarded-For is never read: spoofing it does not change who the caller is
-    const res = await fetch(t.base + R(`/client?ch=${chan()}`), { headers: { authorization: `Bearer ${c.t}`, "x-forwarded-for": "9.9.9.9", "x-test-ip": ip } });
+    const res = await fetch(t.base + R(`/client?ch=${chan()}`), { headers: { authorization: `Bearer ${mkTok().t}`, "x-forwarded-for": "9.9.9.9", "x-test-ip": ip } });
     eq("XFF cannot dodge the lock", res.status, 429);
     await res.text();
     const ip2 = "203.0.113.79";
     for (let i = 0; i < 30; i++) await t.put([], { token: "afth_" + b64u(crypto.randomBytes(32)), ip: ip2 });
-    eq("wrong hub tokens lock the address out", (await t.put([], { ip: ip2 })).status, 429);
+    eq("wrong hub tokens lock the address out (for wrong tokens)", (await t.put([], { token: "afth_" + b64u(crypto.randomBytes(32)), ip: ip2 })).status, 429);
+    eq("the right hub token is not locked out", (await t.put([c], { ip: ip2 })).status, 200);
     // lockout expires with the minute
     t.clock.off += 61_000;
     eq("lock lifts", (await cGet(c, chan(), 0, 0, { ip })).status, 200);
@@ -521,4 +525,38 @@ test("blind and bounded: no raw token stored, timer unref'd, close() releases", 
   // createLanRelay alone must not keep the process alive
   const { execFileSync } = require("node:child_process");
   execFileSync(process.execPath, ["-e", `const m=require(${JSON.stringify(require.resolve("../lib/hub/lanrelay"))}).createLanRelay({roomId:"A".repeat(43)});`], { timeout: 5000 });
+});
+
+test("N4: without serveHub the room PUT and the /hub endpoints answer 404 and change nothing", async () => {
+  const t = await boot(undefined, { serveHub: false });
+  try {
+    const { room, call, eq, R, mkTok, mb } = t;
+    const c = mkTok();
+    mb.local.putRoom([{ h: c.h }]);
+    const before = mb.allowlistSig ? null : mb.local.allowlistSig();
+    eq("PUT with the hub token", (await call("PUT", R(), { token: room.hubToken, json: { v: 1, clients: [] } })).status, 404);
+    eq("hub GET", (await call("GET", R("/hub?after=0&wait=0"), { token: room.hubToken })).status, 404);
+    eq("hub POST", (await call("POST", R("/hub"), { token: room.hubToken, json: { frames: [] } })).status, 404);
+    eq("no token at all", (await call("PUT", R(), { json: { v: 1, clients: [] } })).status, 404);
+    eq("allowlist unchanged", mb.local.allowlistSig(), before);
+    assert.ok(mb.local.allowlistSig().includes(c.h));
+    // the phone side still works
+    eq("client poll", (await t.cGet(c, t.chan(), 0, 0)).status, 200);
+  } finally { await t.close(); }
+});
+
+test("N3: junk from the phone's own address (tokenless, unknown paths) neither locks nor throttles a valid token", async () => {
+  const t = await boot();
+  try {
+    const { eq, put, cGet, call, mkTok, chan } = t;
+    const c = mkTok();
+    await put([c]);
+    const ip = "198.51.100.200";
+    for (let i = 0; i < 80; i++) await call("GET", "/api/tunnel/x", { ip });                    // no token, unknown path
+    for (let i = 0; i < 80; i++) await call("GET", `/api/tunnel/room/${t.room.roomId}/client?ch=${chan()}`, { ip }); // no token, known path
+    for (let i = 0; i < 5; i++) eq("valid token after junk", (await cGet(c, chan(), 0, 0, { ip })).status, 200);
+    // unknown path WITH a token is a plain 404 and counts nothing either
+    for (let i = 0; i < 40; i++) eq("unknown path 404", (await call("GET", "/api/tunnel/x", { ip, token: c.t })).status, 404);
+    eq("still valid", (await cGet(c, chan(), 0, 0, { ip })).status, 200);
+  } finally { await t.close(); }
 });

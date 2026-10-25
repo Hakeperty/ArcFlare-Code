@@ -58,8 +58,16 @@ const REFUSED = [
   "https://localhost/ x", "https://localhost/\tx", "https://localhost/\nx", "https://localhost/\r\nx", "https://localhost\n", " https://localhost/", "https://localhost/ ",
   "https://localhost/\u0000", "https://localhost/\u0001", "https://localhost\u007f/", "https://loc\talhost/", "https://local\nhost/",
   "javascript:alert(1)", "javascript://localhost/%0aalert(1)", "data:text/html,<script>1</script>", "blob:https://localhost/1234", "file:///etc/passwd", "file://localhost/etc/passwd",
+  "https://localhost/_capacitor_http_interceptor_", "https://localhost/_capacitor_http_interceptor_?url=http%3A%2F%2F192.168.1.20%3A8765%2Fapi%2Ftunnel",
+  "https://localhost/_Capacitor_HTTP_Interceptor_?url=x", "https://localhost/%5Fcapacitor_http_interceptor_?url=x", "https://localhost/_capacitor%5Fhttp%5Finterceptor%5F?url=x",
+  "https://localhost/./_capacitor_http_interceptor_", "https://localhost/x/../_capacitor_http_interceptor_?url=x", "https://localhost//_capacitor_http_interceptor_", "https://localhost/_capacitor_http_interceptor_/x", "https://localhost/ui/_capacitor_http_interceptor_", "https://localhost?q=/_capacitor_http_interceptor_",
   "about:blank", "intent://x#Intent;scheme=https;end", "content://x", "market://details?id=x", "arcflare://pair?v=1", "ftp://localhost/", "wss://localhost/", "view-source:https://localhost/",
 ];
+
+test("NavPolicy.java: Capacitor's http interceptor path is refused in every spelling, ordinary paths with similar words stay allowed", opts, () => {
+  const ok = ["https://localhost/capacitor.js", "https://localhost/ui/index.html?via=home", "https://localhost/_capacitor"];
+  assert.deepEqual(judge(ok), ok.map(() => true));
+});
 
 test("NavPolicy.java: the bundled origin is allowed", opts, () => {
   assert.deepEqual(judge(ALLOWED), ALLOWED.map(() => true));
@@ -76,7 +84,7 @@ test("NavPolicy.java is consistent with a WHATWG URL parser: every vector it all
 });
 
 test("NavPolicy.java fuzz: 30000 generated URLs, anything allowed parses (like Chromium) to origin https://localhost with no user info", opts, () => {
-  const frags = ["https://", "http://", "HTTPS://", "localhost", "LocalHost", "evil.example", "192.168.1.20", ":8765", ":443", ":", "@", "\\", "/", "//", "?", "#", "\t", "\n", "\r", " ", ".", "%2e", "%40", "%5c", "\u0000", "\u007f", "​", " ", "x", "..", "user:pw", "[::1]", "0"];
+  const frags = ["https://", "http://", "HTTPS://", "localhost", "LocalHost", "evil.example", "192.168.1.20", ":8765", ":443", ":", "@", "\\", "/", "//", "?", "#", "\t", "\n", "\r", " ", ".", "%2e", "%40", "%5c", "\u0000", "\u007f", "​", " ", "x", "..", "user:pw", "[::1]", "0", "_capacitor_http_interceptor_", "%5F", "_capacitor"];
   let seed = 12345; const rnd = (n) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
   const inputs = [];
   for (let i = 0; i < 30000; i++) {
@@ -92,6 +100,8 @@ test("NavPolicy.java fuzz: 30000 generated URLs, anything allowed parses (like C
     let p; try { p = new URL(s); } catch (e) { assert.fail("allowed but unparsable: " + JSON.stringify(s)); }
     assert.equal(p.origin, "https://localhost", JSON.stringify(s));
     assert.equal(p.username + p.password, "", JSON.stringify(s));
+    // JS mirror of the interceptor rule: nothing allowed may normalise to Capacitor's http-interceptor path
+    assert.ok(!/^\/_capacitor_http_interceptor_/i.test(decodeURIComponent(p.pathname.replace(/%(?![0-9a-f]{2})/gi, "%25"))), "interceptor path allowed: " + JSON.stringify(s));
   });
   assert.ok(allowed > 100, "the corpus must exercise the allowed branch too (" + allowed + ")");
 });

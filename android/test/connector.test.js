@@ -8,7 +8,7 @@ const { A43, hubLink } = require("./helpers.js");
 const LAN = "http://192.168.1.20:8765";
 const RELAY = "https://arcflare.net";
 const rec = (o = {}) => Object.assign({
-  v: 1, relay: RELAY, room: A43, hubKey: A43, lan: LAN, deviceId: A43.slice(0, 22), roomToken: "aftc_" + A43,
+  v: 1, relay: RELAY, room: A43, hubKey: A43, lan: LAN, deviceId: A43.slice(0, 22), roomToken: "aftc_" + A43, lanToken: "aftl_" + A43,
   label: "Android phone", privateKey: { fake: 1 }, publicKey: A43,
 }, o);
 
@@ -53,9 +53,27 @@ test("home fails -> relay is tried next with the plain (browser) fetch and the l
   const r = await C.connectBest(env.deps, rec());
   assert.equal(r.kind, "relay");
   assert.deepEqual(env.connects.map((c) => c.base), [LAN, RELAY]);
-  assert.equal(env.connects[1].opts.fetch, undefined, "the relay uses the page's own fetch");
+  // the relay uses the page's own fetch, wrapped in a guard that refuses the LAN token
+  assert.equal(typeof env.connects[1].opts.fetch, "function");
+  await assert.rejects(env.connects[1].opts.fetch(RELAY + "/x", { headers: { Authorization: "Bearer " + rec().lanToken } }), { code: "TOKEN_MISUSE" });
   assert.equal(env.connects[1].opts.handshakeTimeoutMs, 10000);
   assert.deepEqual(r.attempts, [{ kind: "home", code: "TIMEOUT" }]);
+});
+
+test("N1: the home target gets a LAN fetch that refuses the relay token; an earlier-build record never tries home", async () => {
+  const env = fakeEnv(() => "ok");
+  const lf = [];
+  env.deps.lanFetch = (base, o) => { lf.push(o); return { fetch: () => {} }; };
+  await C.connectBest(env.deps, rec());
+  assert.deepEqual(lf, [{ refuse: [rec().roomToken] }]);
+  const old = rec(); delete old.lanToken;
+  const env2 = fakeEnv((base) => (base === LAN ? "ok" : "ok"));
+  const r = await C.connectBest(env2.deps, old);
+  assert.equal(r.kind, "relay");
+  assert.deepEqual(env2.connects.map((c) => c.base), [RELAY], "the LAN base was never contacted for it");
+  assert.equal(env2.lanFetches.length, 0);
+  const lanOnlyOld = rec({ relay: LAN }); delete lanOnlyOld.lanToken;
+  await assert.rejects(C.connectBest(fakeEnv(() => "ok").deps, lanOnlyOld), { code: "UNREACHABLE" });
 });
 
 test("both fail -> rejects with both attempts and the relay's code", async () => {
@@ -131,7 +149,7 @@ test("pairBest: LAN first with a short cap and the LAN fetch; the link given to 
   assert.equal(typeof env.pairs[0].fetch, "function");
 });
 
-test("pairBest: LAN timeout falls through to the relay; HANDSHAKE and REFUSED do not", async () => {
+test("pairBest: LAN timeout, HANDSHAKE and REFUSED fall through to the relay; the relay's own HANDSHAKE/REFUSED end it", async () => {
   const v = validateLink(hubLink()).value;
   let env = fakeEnv((base) => (base === LAN ? "TIMEOUT" : "ok"));
   assert.equal((await C.pairBest(env.deps, v, "x")).via, "relay");
@@ -139,6 +157,21 @@ test("pairBest: LAN timeout falls through to the relay; HANDSHAKE and REFUSED do
   assert.equal(env.pairs[1].fetch, undefined);
   assert.equal(env.pairs[1].timeoutMs, 30000);
   for (const code of ["HANDSHAKE", "REFUSED"]) {
+    // N6: an impostor at the LAN address (forged answer, or a 401) must not be able to block pairing: the relay is tried
+    env = fakeEnv((base) => (base === LAN ? code : "ok"));
+    assert.equal((await C.pairBest(env.deps, v, "x")).via, "relay", code + " from home falls through");
+    assert.equal(env.pairs.length, 2);
+    // ... but the relay's own verdict is final
+    env = fakeEnv(() => code);
+    await assert.rejects(C.pairBest(env.deps, v, "x"), { code });
+    assert.equal(env.pairs.length, 2, code + " from the relay ends it");
+    // LAN-only link: the single attempt's verdict is final
+    env = fakeEnv(() => code);
+    await assert.rejects(C.pairBest(env.deps, validateLink(hubLink({ relay: LAN, lan: LAN })).value, "x"), { code });
+    assert.equal(env.pairs.length, 1);
+  }
+  // errors that no other target could change still end it at once
+  for (const code of ["BAD_LINK", "BAD_VERSION", "NO_X25519"]) {
     env = fakeEnv((base) => (base === LAN ? code : "ok"));
     await assert.rejects(C.pairBest(env.deps, v, "x"), { code });
     assert.equal(env.pairs.length, 1, code + " ends it");

@@ -12,6 +12,9 @@
 //   relay        the LAN target failed (or is absent) and the relay handshake succeeded: chip "Relay"
 //   unreachable  paired but neither target worked: calm error screen (Retry / Re-pair / Forget)
 //
+// A record without a `lanToken` (paired by an earlier build) has NO home target: the relay token is never sent to the
+// LAN. The shell tells the person to pair again to use the home network (needsHomeRepair).
+//
 // The relay is never consulted when home succeeded (TUNNEL.md section 1).
 // window.ArcFlareMode / CommonJS.
 
@@ -24,6 +27,14 @@
 
   function link() { return root.ArcFlareLink || require("./link.js"); }
 
+  // The per-device token of the hub's home mailbox (the internet-relay token, aftc_, never goes there).
+  var LAN_TOKEN_RE = /^aftl_[A-Za-z0-9_-]{43}$/;
+
+  /** A stored LAN base but no LAN token: paired by a build from before the home network had its own token. */
+  function needsHomeRepair(rec) {
+    return isPairedRecord(rec) && !!rec.lan && !(typeof rec.lanToken === "string" && LAN_TOKEN_RE.test(rec.lanToken));
+  }
+
   /** Does a stored record have everything the tunnel needs? (Shape only; no secrets are read.) */
   function isPairedRecord(rec) {
     var L = link();
@@ -35,6 +46,7 @@
     return lanOk && relayOk && L.isB64u32(rec.room) && L.isB64u32(rec.hubKey) &&
       typeof rec.deviceId === "string" && rec.deviceId.length > 0 &&
       typeof rec.roomToken === "string" && /^aftc_[A-Za-z0-9_-]{43}$/.test(rec.roomToken) &&
+      (rec.lanToken == null || (typeof rec.lanToken === "string" && LAN_TOKEN_RE.test(rec.lanToken))) &&
       !!rec.privateKey && typeof rec.publicKey === "string";
   }
 
@@ -45,7 +57,8 @@
   function targets(rec) {
     if (!isPairedRecord(rec)) return [];
     var out = [];
-    if (rec.lan) out.push({ kind: "home", base: rec.lan });
+    // No LAN token (an older pairing): there is no home target. The relay token is NEVER offered to the LAN base.
+    if (rec.lan && !needsHomeRepair(rec)) out.push({ kind: "home", base: rec.lan });
     if (rec.relay !== rec.lan) out.push({ kind: "relay", base: rec.relay });
     return out;
   }
@@ -66,5 +79,5 @@
     return "unreachable";
   }
 
-  return { decideMode: decideMode, targets: targets, isPairedRecord: isPairedRecord };
+  return { decideMode: decideMode, targets: targets, isPairedRecord: isPairedRecord, needsHomeRepair: needsHomeRepair };
 });

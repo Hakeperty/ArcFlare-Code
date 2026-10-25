@@ -220,3 +220,13 @@ test("checkUrl is exact: only the stored base's own mailbox paths", () => {
   assert.ok(checkUrl(POLL, LAN));
   assert.throws(() => checkUrl(POLL, "http://192.168.1.20:8766"), { code: "LAN_REFUSED" });
 });
+
+test("N1: a request carrying a refused secret (the relay token) is rejected before the native stack, GET and POST", async () => {
+  const relayTok = "aftc_" + "R".repeat(43), lanTok = "aftl_" + "L".repeat(43);
+  const { http, f } = make(undefined, { refuse: [relayTok] });
+  await assert.rejects(f(POLL, { method: "GET", headers: { Authorization: "Bearer " + relayTok } }), { code: "LAN_REFUSED" });
+  await assert.rejects(f(POST, { method: "POST", headers: { authorization: "Bearer " + relayTok, "Content-Type": "application/json" }, body: "{}" }), { code: "LAN_REFUSED" });
+  assert.equal(http.calls.length, 0, "never reached the native stack");
+  assert.equal((await f(POLL, { method: "GET", headers: { Authorization: "Bearer " + lanTok } })).status, 200, "the LAN token is fine");
+  assert.equal(http.calls.length, 1);
+});
