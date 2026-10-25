@@ -82,3 +82,21 @@ Please don't open a public issue for a vulnerability. Use a
 [private security advisory](https://github.com/Hakeperty/ArcFlare-Code/security/advisories/new)
 on GitHub. For everything else, bugs, complaints and ideas, there's
 [arcflare.net/report](https://arcflare.net/report) or `arcflare report`.
+
+## The phone hub and the relay tunnel
+
+`arcflare phone` adds a login-protected hub, an encrypted tunnel to a paired phone,
+and a draft Android app. The record of what was attacked, found, fixed and left open
+is [SECURITY-LOG.md](SECURITY-LOG.md); read its "Not covered" and "Residual risk"
+sections before relying on any of it.
+
+| Who | What they could try | What stands in the way |
+| --- | --- | --- |
+| A stranger on your Wi-Fi | Guess the password, reach the hub from a public address, replay or inject traffic | Login throttling and per-device lockout; the hub only answers private addresses and has a Host allowlist; the app path is Noise-encrypted and pinned to your computer's key, so an impostor at your address only makes the handshake fail |
+| The relay operator or a network attacker | Read or alter traffic, replay old frames | End-to-end encryption between the paired phone and your computer, strict counters, pinned key; the relay sees only ciphertext and metadata (timing, sizes, addresses) and can deny service |
+| Someone with a stolen QR or phone | Pair their own phone, keep using yours | A pairing is one-time, expires in 10 minutes, and must be confirmed with a code at the computer; `arcflare phone devices revoke` cuts a phone off |
+| A malicious web page or app on the phone | Open the pairing screen with a link to the attacker's own hub | Only the user checking the fingerprint and the "Replace" wording, plus a typed part of the old fingerprint; this phishing risk remains |
+
+Not covered: plain-HTTP browser use on a network you do not trust (readable by anyone
+watching); a compromised computer or unlocked phone; the Android native layer, which
+has not been built or run on a device; and anything an approved agent command does.

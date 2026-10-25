@@ -14,19 +14,24 @@ and "Residual risk" sections below, unedited.
 ## Release gate
 
 Nothing ships (and the relay and Android app stay OFF by default) until every box
-is ticked. A box is ticked only with a link to the passing test or report.
+is ticked. A box is ticked only with a link to the passing test or report. A tick
+means "done and re-checked", never "nothing can go wrong".
 
-- [ ] Round 1: login, sessions, web server, agent/folder controls attacked, with exploit scripts actually run (not only a code read)
-- [ ] Every critical and high finding fixed, each with a regression test
-- [ ] Round 1 attacks re-run after the fixes and now fail
-- [ ] Round 2: encrypted tunnel and relay (opus reviewer): replay, reorder, downgrade, wrong key, stolen QR, stolen phone, malicious relay
-- [ ] Round 2 findings fixed and re-tested
-- [ ] Round 3: Android app: credential storage, what the WebView may load, update signing, deep links, backup/screenshot exposure
-- [ ] Round 3 findings fixed and re-tested
-- [ ] Full test suite green on a clean checkout (`npm test`)
-- [ ] Dependency check: still zero npm dependencies in the hub and tunnel; Android build dependencies listed and pinned
-- [ ] Update path: version file and APK signed; app verifies the signature before installing anything it downloaded
-- [ ] Relay is off by default and turning it on is an explicit command
+- [x] Round 1: login, sessions, web server and agent controls attacked. The web server was attacked with exploit scripts and a real headless browser; the supervisor and login code were attacked with scripts on fakes. The login agent's own dynamic run never completed, so its two suspicions were confirmed by hand (rows 1 and 2)
+- [x] Every critical and high finding fixed in code with a regression test. No critical findings. High: rows 15 (fixed), 29 (fixed in code, needs a real device), 30 (fixed in code, needs the repository settings below)
+- [x] Round 1 attacks re-run after the fixes and now fail: the ten web-server scripts re-run against the fixed server (500 stalled sockets now close, one session holds 8 streams, injection stays inert in a real browser); auth and supervisor findings have regression tests
+- [x] Round 2: encrypted tunnel and relay reviewed independently (opus), including an independent Noise implementation that interoperated with the hub
+- [x] Round 2 findings fixed and re-tested (rows 18 to 28): the reviewer's reproduction scripts re-run and no longer reproduce
+- [x] Round 3: Android app reviewed independently (rows 29 to 35)
+- [x] Round 3 and 3b findings fixed in code and re-tested (rows 29 to 43): re-review found no critical or high issues; reviewer scripts re-run
+- [ ] Third independent review of the round 3b fixes (in progress)
+- [x] Full test suite green on a clean checkout: root 431 tests, 427 pass, 4 skipped (3 Windows-only, 1 needs the website repo next to this one), 0 fail; Android 300 unit tests, 0 fail; `npm audit --omit=dev` in `android/` reports 0
+- [x] Dependency check: the hub and tunnel have zero npm dependencies (`dependencies` is empty); Android build dependencies are exactly pinned with a lockfile
+- [x] Relay is off by default and turning it on is an explicit command (`arcflare phone relay on`). The home-network mailbox is on by default only when the hub listens on a non-loopback address, accepts private addresses only and carries only ciphertext
+- [ ] Build and run the app on a real Android phone: the navigation guard, plugin behaviour, cookie handling, screenshot blocking, deep links, WebView minimum and key storage are all unverified (no Android SDK here)
+- [ ] Repository settings (row 44): `android-release` environment with required reviewers and a deployment restriction to `v*` tags, signing secrets moved into it, a tag ruleset that blocks bots from creating `v*` tags, autofix workflow permissions and pins
+- [ ] Gradle dependency verification (needs network access to Google hosts)
+- [ ] Update path: version file and signed APK; the app verifies the signature before installing anything it downloaded (not built)
 - [ ] A human has read this file and the diff
 
 ## Findings

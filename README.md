@@ -871,6 +871,43 @@ The key persists, so a paired phone reconnects to every later session.
 your own deployment (default `https://arcflare.net`). A self-hosted relay keeps
 state in memory under `next start`, or in Redis (Upstash / Vercel KV) on serverless.
 
+## Phone hub (`arcflare phone`)
+
+Start, stop and talk to agents running on your computer from your phone, at home
+with no internet, or from anywhere through an encrypted relay you switch on.
+
+```bash
+arcflare phone user add me          # make an account, here at the keyboard (no sign-up page exists)
+arcflare phone root add ~/projects/app   # agents may only work inside folders you list
+arcflare phone                      # start the hub; open the printed address in a browser on your Wi-Fi
+```
+
+What it does and does not protect:
+
+- **Login.** Passwords are scrypt-hashed, sessions are random tokens (only their hash
+  is stored), every device is its own session you can revoke, and repeated wrong
+  passwords lock out with a growing delay.
+- **Agents.** Every shell or MCP tool call asks your phone first; no answer in five
+  minutes is a no, and auto-approve cannot be switched on from the phone.
+- **Models.** Light, standard and hard tiers (`arcflare phone tier set`); the hard tier
+  is only used when asked for.
+- **The browser page** (`http://<your-ip>:7878`) is plain HTTP: on a Wi-Fi you do not
+  trust, someone watching the traffic can read your password. It only answers private
+  addresses. Use it on your own network, or use the app path below.
+- **From the phone app or from outside the house** the phone and computer run an
+  end-to-end encrypted tunnel (Noise, pinned to your computer's key). Pair once with
+  `arcflare phone pair` (a QR you scan, then you confirm a 6-digit code at the
+  computer). At home it talks to your computer directly over that tunnel and works
+  with no internet; away from home it can use the relay, which carries only
+  ciphertext: `arcflare phone relay on`. Revoke a phone with
+  `arcflare phone devices revoke <id>`.
+- **Status.** The Android app in `android/` is **not released**: it has not been built or
+  run on a real phone, and release is blocked on the checklist in
+  [SECURITY-LOG.md](SECURITY-LOG.md), which lists every finding, fix and open risk.
+
+Nothing here makes running an agent safe: agents run with your privileges, and the
+approval prompt is the last line of defence.
+
 ## Updates
 
 ArcFlare checks for a new version at most every twelve hours, in a detached child
