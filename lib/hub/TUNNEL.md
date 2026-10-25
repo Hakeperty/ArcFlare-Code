@@ -1,7 +1,10 @@
 # ArcFlare hub relay tunnel — protocol v1
 
 Status: normative. Implementations: `lib/hub/tunnel.js` (hub, Node `crypto`),
-`lib/hub/ui/tunnel-client.js` (phone, WebCrypto). Tests: `test/hub-tunnel.test.js`.
+`lib/hub/ui/tunnel-client.js` (phone, WebCrypto), `lib/hub/lanrelay.js` (the
+hub's own mailbox, section 16). Tests: `test/hub-tunnel.test.js`,
+`test/hub-tunnel-robust.test.js`, `test/lanrelay.test.js`, `test/hub-lan.test.js`,
+`test/hub-lan-cli.test.js`.
 MUST / SHOULD / MAY are as in RFC 2119.
 
 ## 1. Purpose and scope
@@ -12,10 +15,11 @@ either) MUST NOT be able to read traffic, learn the password or session cookie,
 inject or replay requests, or impersonate either end. It can only delay, drop or
 refuse to carry frames (denial of service), and it sees metadata (section 13).
 
-- LAN stays the preferred path and needs no internet. The app tries the LAN URL
-  first and uses the tunnel only when the LAN URL is unreachable. The LAN path
-  itself is unchanged by this document (plain HTTP on a trusted Wi-Fi, or
-  `--cert/--key`).
+- The home network uses the SAME tunnel, carried by a mailbox the hub hosts
+  itself on its LAN listener (section 16): no internet needed, pairing included,
+  identity pinned by the hub key, nothing readable on the wire. The app never
+  loads the hub's plain-HTTP page any more (no identity proof, no encryption);
+  the hub's web UI remains for browsers on the computer or LAN.
 - The relay is OFF by default. `arcflare phone relay on [url]` turns it on;
   the hub process (`arcflare phone`) then keeps one long-poll open to the relay.
 - Login happens inside the tunnel with the same accounts as the LAN. The relay
@@ -85,8 +89,13 @@ Deleting `tunnel-key.json` rotates everything and unpairs every phone.
 and prints a QR of:
 
 ```
-arcflare://pair?v=1&r=<urlenc relay>&rm=<roomId>&hk=<b64u HS_pub>&ps=<b64u P>[&l=<urlenc LAN URL>]
+arcflare://pair?v=1&r=<urlenc relay>&rm=<roomId>&hk=<b64u HS_pub>&ps=<b64u P>[&l=<urlenc LAN base URL>]
 ```
+
+`l` is the hub's LAN mailbox base URL (`http://<lan-ip>:<port>`, section 16): a
+base for the Relay API, **not a page to open**. When the internet relay is off,
+`r` is that same LAN base URL, so the phone's pairing record is always complete
+(`r`, `rm`, `hk`); `rm` is always present.
 
 - A custom scheme, deliberately not an `https://arcflare.net/...` URL: no web
   page — in particular none served by the relay — ever loads with `P` in it.
@@ -94,8 +103,13 @@ arcflare://pair?v=1&r=<urlenc relay>&rm=<roomId>&hk=<b64u HS_pub>&ps=<b64u P>[&l
   trust-on-first-use; a relay answering with any other key fails the handshake.
   The CLI also prints a short fingerprint (`SHA-256(HS_pub)` first 10 bytes, hex)
   that the app MAY show.
-- `v` MUST be `1`; the app MUST reject other values and non-`https` relays
-  (loopback `http` allowed for development only).
+- `v` MUST be `1`; the app MUST reject other values and non-`https` relays,
+  with two exceptions for plain `http`: loopback (development), and the **LAN
+  exception** — `r` and `l` MAY be `http://` (or `https://`) when the host is a
+  private IPv4 literal (10/8, 172.16/12, 192.168/16) or a `*.local` name
+  (section 16). Any other `http` URL, and any `l` that fails the same rule, is
+  rejected. The hub's own `relay` setting (the internet relay) stays https-only;
+  the LAN exception exists only for the hub's own mailbox.
 - `P` is one-time and expires after **10 minutes**. At most 4 pairings are
   pending; creating a fifth drops the oldest.
 
@@ -370,6 +384,11 @@ relay poll backoff 1 s → 30 s. Relay-side limits are in the Relay API below.
 | Password guessing through the tunnel | locked out | per-device + per-username lockout in AuthStore |
 | Compromise of hub static key later | past sessions safe | ephemeral `ee` (forward secrecy); rekey epochs |
 | DoS (relay down, floods, mailbox full) | tunnel unavailable; LAN unaffected | rate limits, caps, fail-closed; the relay can always deny service |
+| LAN attacker (Wi-Fi) reads the plain-HTTP mailbox traffic | nothing readable | same Noise tunnel; the mailbox carries only ciphertext and token hashes (section 16) |
+| LAN attacker squats the hub's address / answers as the hub (ARP, rogue DHCP, rogue AP) | handshake fails; the phone never talks to it in clear | `HS_pub` pinned from the QR; DoS only |
+| LAN attacker injects, replays or reorders frames | rejected / session ends | same as the relay rows |
+| LAN attacker floods the mailbox | mailbox answers 429; web UI keeps its own listener budget | in-flight budget, rate limits, failed-auth lockout per socket address (section 16) |
+| LAN attacker learns that a hub, a room and phones exist | yes | metadata (addresses, timing, sizes), as with the relay |
 | Request smuggling via headers | no | header allowlist; hub sets Host, Cookie, User-Agent itself |
 | XSS in the app | can use, not export, `DS`; cannot read the session cookie | non-extractable key; hub-side jar |
 
@@ -400,6 +419,10 @@ pattern is happening.
   lock are not excluded. A damaged state file stops the tunnel (never silently
   replaced); the LAN keeps working.
 - If the phone's clock is off by more than 10 minutes, handshakes are refused.
+- LAN mode (section 16): metadata and bearer tokens are visible on the Wi-Fi, and a
+  LAN attacker can deny service or squat the hub's address (the handshake then
+  fails). The mailbox's failed-auth lockout is per socket address, so several
+  phones behind one NAT address share it.
 - A malicious app build (or a compromised WebView) defeats everything on the
   phone side.
 - `pairing.json` holds `psk` for up to 10 minutes; anyone who can read the hub's
@@ -409,6 +432,11 @@ pattern is happening.
   (in-band REKEY derives from the current key).
 
 ## 15. Relay API (for the website; implement next to `lib/relay.ts`)
+
+This API is implemented twice, with the same behaviour: by the website
+(`lib/tunnelRelay.ts`, Redis or memory) and **also by the hub itself**
+(`lib/hub/lanrelay.js`, memory only, one room: its own), under the same
+`/api/tunnel/room/{roomId}` paths on the hub's LAN listener (section 16).
 
 Everything here is opaque to the relay: it never decodes frame text. Use a
 separate key namespace (`tun:`) from remote control (`rc:`); reuse the
@@ -507,3 +535,97 @@ it through `head < after` and restart from 0.
 200 ok · 400 malformed request · 401 missing/bad/unknown token · 403 channel
 bound to another token · 404 unknown room · 405 wrong method · 409 hub offline ·
 413 body too large · 429 rate or count limit (`Retry-After`) · 503 relay not configured.
+
+## 16. LAN mode: the same tunnel over the home network
+
+The hub hosts a small, in-memory, relay-compatible mailbox (section 15, served by
+`lib/hub/lanrelay.js`) on its own LAN listener. A phone on the same Wi-Fi uses
+the hub's base URL (`http://<lan-ip>:<port>`) as its *relay* base URL and runs
+exactly the protocol of sections 3–12 against it. Nothing about the keys, the
+handshakes, the frames or the transport changes; only the carrier does.
+
+### 16.1 What changes in the spec
+
+- **5.1**: "the relay MUST be https" has a LAN exception: `http://` (or `https://`)
+  to a **private IPv4 literal or a `.local` name** (and loopback, as before). `l`
+  in the link is the hub's mailbox base URL, never a page. With the internet
+  relay off, `r` = the LAN base URL and `rm` is still present.
+- **15**: the Relay API is "also served by the hub itself". Differences for the
+  hub-hosted mailbox: one room only (its own room id; `PUT` for any other room is
+  403, and a hub request for another room is 404); the caller's identity for the
+  failed-auth lockout is the socket's remote address (never `X-Forwarded-For`);
+  extra memory bounds (a byte cap per channel queue, 8 MiB, and for all channel
+  queues together, 32 MiB, oldest frames dropped first; bounded lockout and rate
+  tables); a request budget (48 concurrent requests, 16 per address; over it,
+  429 + `Retry-After`) so a flood against the mailbox cannot starve the web UI;
+  its own body limits and idle-body deadline (8 s) as in section 15; a sweeper
+  timer that does not keep the process alive. Frames and tokens are never parsed,
+  logged or echoed. CORS is exactly as in section 15 (exact origins
+  `https://localhost` and `capacitor://localhost`, never `*`); a preflight that
+  asks for Private Network Access from an allowed origin is answered with
+  `Access-Control-Allow-Private-Network: true`.
+- **13/14**: the LAN rows above.
+- **8**: unchanged. The hub's tunnel polls its own mailbox in-process (no HTTP
+  hop, no token) and feeds the same session handling, the same per-device login
+  lockout (`relay:<deviceId>`) and the same revocation (the allowlist is
+  republished to the local mailbox on every change, within ~2 s, and on the next
+  frame of a revoked device).
+
+### 16.2 Who may reach it
+
+The mailbox is mounted at `/api/tunnel/` in the hub's HTTP server **after** the
+private-address gate (peer must be loopback or private, unless `--allow-remote`)
+and the Host allowlist, and **before** the cookie/CSRF logic. It authenticates by
+bearer token only: it never reads or sets a cookie, so there is no ambient
+credential for CSRF to ride; the Origin/CSRF rules of the session API do not run
+on it, and still run on every other route unchanged. A request that arrived
+*through* the tunnel can never reach it. No token: 401.
+
+### 16.3 Two carriers at once
+
+The hub's tunnel can use the LAN mailbox and the internet relay simultaneously, or
+either alone (the LAN mailbox does not need the internet relay). Both share one
+room id, one set of keys and one allowlist. A session belongs to the mailbox its
+HS1 arrived on: its frames go back on it, and frames for it that arrive from the
+other mailbox are dropped (the rule "DATA must arrive on the channel that carried
+its HS1" extends to the carrier). Outbound queues, caps and shedding are per
+carrier.
+
+Control: `arcflare phone lan on|off|status`. Default: on when the hub is started
+with a non-loopback host (it accepts only private peers and carries ciphertext),
+off with `--local`; an explicit `lan on|off` wins. `arcflare phone pair` prints
+`l` = the LAN base URL whenever the LAN mailbox is on (`--lan-url` overrides the
+address, `--no-lan` omits it), and `r` = the internet relay if it is on, else the
+LAN base URL.
+
+### 16.4 What LAN mode protects
+
+- **Identity**: the hub is identified by its pinned public key from the QR. A
+  device that answers at the hub's address without `HS` cannot complete a
+  handshake; the phone sends it nothing but ciphertext it cannot use.
+- **Confidentiality and integrity**: AES-256-GCM under X25519 keys; passwords,
+  cookies, CSRF tokens, paths and bodies are never on the wire in clear, and the
+  mailbox holds only ciphertext and token hashes. Forward secrecy and rekeying as
+  in section 7.
+- **Replay and reorder**: strict counters, HS1 ephemeral cache and timestamp,
+  channel binding, as for the relay.
+- **Pairing without internet**: the QR is scanned at the computer; the SAS is
+  confirmed at the keyboard; the pairing token reaches the mailbox through the
+  allowlist like any other.
+
+### 16.5 What it does not protect
+
+- **Metadata** visible to anyone on the LAN who can sniff it: that a hub and
+  phones exist, their addresses, timing, and padded frame sizes; the bearer tokens
+  in the `Authorization` header (plain HTTP). A token thief gets a mailbox seat
+  only (denial of service at most), as in section 9.
+- **Availability**: a LAN attacker can flood the mailbox (bounded: 429, lockout),
+  jam the Wi-Fi, or **squat the hub's address** (ARP/DHCP/rogue AP) and answer in
+  its place. The phone then fails the handshake (pinned key) or times out; it
+  does not downgrade, fall back to a page, or send anything in the clear. Denial
+  of service only.
+- **A hostile phone-side page or app build**, and a compromised hub computer, as
+  in section 14.
+- Over plain `http` a LAN attacker can see which mailbox calls are made (paths,
+  query strings: room id, channel id, `after`/`wait`). Those are random ids, not
+  secrets that open anything beyond the mailbox.

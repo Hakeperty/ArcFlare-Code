@@ -305,6 +305,15 @@ function measureLayout(expectDark) {
 /** Full-page screenshot plus the layout rules for one screen. */
 async function screen(P, page, name) {
   await page.waitForTimeout(120);
+  // Measure a settled layout: wait for every animation that has an end (sheet
+  // slide-ins, the button entrance), but not the endless ones (cursor blink,
+  // progress pulse). Capped, so a stuck animation cannot hang the run.
+  await page.evaluate(() => Promise.race([
+    Promise.all(document.getAnimations()
+      .filter((a) => { try { return a.effect.getComputedTiming().iterations !== Infinity; } catch (e) { return false; } })
+      .map((a) => a.finished.catch(() => {}))),
+    new Promise((r) => setTimeout(r, 1500)),
+  ]));
   const issues = await page.evaluate(measureLayout, P.scheme === "dark");
   P.layout.push({ name, issues });
   P.screens.add(name);

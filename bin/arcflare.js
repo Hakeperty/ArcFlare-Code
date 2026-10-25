@@ -534,7 +534,8 @@ const HELP_GROUPS = [
     ["arcflare phone", "[--port N]", "start the hub; scan the QR with your phone"],
     ["arcflare phone tier set", "<tier> <model>", "light / standard / hard model"],
     ["arcflare phone relay on", "", "reach the hub away from home (end-to-end encrypted)"],
-    ["arcflare phone pair", "", "QR to pair a phone for the relay; confirm its code here"],
+    ["arcflare phone lan", "[on|off|status]", "encrypted tunnel over your Wi-Fi, no internet (default on)"],
+    ["arcflare phone pair", "", "QR to pair a phone (LAN and/or relay); confirm its code here"],
     ["arcflare phone devices", "[revoke <id>]", "paired phones; revoke cuts one off"],
   ]],
   ["server", [
