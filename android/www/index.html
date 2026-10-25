@@ -1,0 +1,140 @@
+<!doctype html>
+<!--
+  ArcFlare app shell: pairing, launch-time routing and "forget". It is the page Capacitor loads
+  (https://localhost). It never shows the hub UI itself: it sends the WebView to the hub on the
+  home network, or to the bundled copy of the hub UI (ui/, copied from lib/hub/ui at build time)
+  running over the relay tunnel. Styling and assets come from that copy (ui/style.css, ui/assets).
+  No inline script or style anywhere (the CSP below forbids them).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https:; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0b0b0a" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+  <meta name="referrer" content="no-referrer">
+  <title>ArcFlare</title>
+  <link rel="stylesheet" href="ui/style.css">
+  <link rel="stylesheet" href="shell.css">
+  <script src="vendor/capacitor.js" defer></script>
+  <script src="config.js" defer></script>
+  <script src="link.js" defer></script>
+  <script src="fingerprint.js" defer></script>
+  <script src="mode.js" defer></script>
+  <script src="store.js" defer></script>
+  <script src="ui/tunnel-client.js" defer></script>
+  <script src="native.js" defer></script>
+  <script src="shell.js" defer></script>
+</head>
+<body>
+  <noscript><p class="noscript">ArcFlare needs JavaScript turned on.</p></noscript>
+  <div id="app" class="app">
+    <main class="page">
+
+      <!-- Starting / looking for the computer -->
+      <section id="v-boot" class="view view-login" data-view hidden>
+        <div class="login-card">
+          <div class="login-brand">
+            <span class="mascot mascot-lg" aria-hidden="true"></span>
+            <p class="wordmark wordmark-lg" aria-hidden="true">arcflare<span class="us">_</span></p>
+          </div>
+          <p id="boot-text" class="center muted" role="status">Looking for your computer...</p>
+        </div>
+      </section>
+
+      <!-- First run: pair -->
+      <section id="v-pair" class="view view-login" data-view hidden>
+        <form id="pair-form" class="login-card" autocomplete="off">
+          <div class="login-brand">
+            <span class="mascot mascot-lg" aria-hidden="true"></span>
+            <p class="wordmark wordmark-lg" aria-hidden="true">arcflare<span class="us">_</span></p>
+          </div>
+          <h1 class="title">Pair with your computer</h1>
+          <div class="setup-note">
+            <p>On the computer run:</p>
+            <div class="codebox"><code>arcflare phone pair</code></div>
+            <p class="small">Then scan the QR code it shows with this phone's normal camera app. It opens ArcFlare by itself. No camera permission is needed.</p>
+          </div>
+          <label class="field"><span class="lbl">Or paste the pairing link</span>
+            <input id="pair-link" class="mono" type="text" inputmode="url" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="arcflare://pair?...">
+          </label>
+          <p id="pair-error" class="banner error" role="alert" hidden></p>
+          <button id="pair-go" type="submit" class="btn primary block lg">Continue</button>
+        </form>
+      </section>
+
+      <!-- Confirm before pairing -->
+      <section id="v-confirm" class="view view-login" data-view hidden>
+        <div class="login-card">
+          <h1 class="title">Pair with this computer?</h1>
+          <p class="lead center">Pair with the computer showing fingerprint <strong id="cf-fp-inline" class="mono"></strong>? Only continue if you just scanned this on your own computer.</p>
+          <dl class="facts">
+            <div><dt>Fingerprint</dt><dd id="cf-fp" class="mono big"></dd></div>
+            <div><dt>Relay</dt><dd id="cf-relay" class="mono"></dd></div>
+            <div id="cf-lan-row"><dt>Home network</dt><dd id="cf-lan" class="mono"></dd></div>
+          </dl>
+          <p class="hint center">The fingerprint should be the same as the "hub key" line shown on the computer.</p>
+          <div class="btn-row">
+            <button id="cf-cancel" type="button" class="btn outline block lg">Cancel</button>
+            <button id="cf-pair" type="button" class="btn primary block lg">Pair</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Code to compare -->
+      <section id="v-code" class="view view-login" data-view hidden>
+        <div class="login-card">
+          <h1 class="title" id="code-title">Pairing...</h1>
+          <p id="code-wait" class="center muted" role="status">Contacting your computer through the relay. This can take up to half a minute.</p>
+          <div id="code-box" hidden>
+            <p class="center">Compare this code with the one on your computer.</p>
+            <p id="code-digits" class="code-digits" aria-live="polite"></p>
+            <p class="lead center">If they match, confirm it <strong>on the computer</strong>. If they differ, do not confirm: cancel and start again.</p>
+          </div>
+          <p id="code-error" class="banner error" role="alert" hidden></p>
+          <div class="btn-row stack-btns">
+            <button id="code-done" type="button" class="btn primary block lg" hidden>I confirmed it on the computer</button>
+            <button id="code-cancel" type="button" class="btn outline block lg">Cancel</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Can't reach / settings -->
+      <section id="v-status" class="view view-login" data-view hidden>
+        <div class="login-card">
+          <div class="login-brand">
+            <img class="panda" src="ui/assets/panda-search.png" alt="" width="150" height="131">
+          </div>
+          <h1 class="title" id="st-title">Can't reach your computer</h1>
+          <p id="st-msg" class="lead center"></p>
+          <dl id="st-info" class="facts" hidden>
+            <div><dt>Fingerprint</dt><dd id="st-fp" class="mono"></dd></div>
+            <div><dt>Relay</dt><dd id="st-relay" class="mono"></dd></div>
+            <div id="st-lan-row"><dt>Home network</dt><dd id="st-lan" class="mono"></dd></div>
+          </dl>
+          <div class="btn-row stack-btns">
+            <button id="st-retry" type="button" class="btn primary block lg">Retry</button>
+            <button id="st-repair" type="button" class="btn outline block lg">Re-pair</button>
+            <button id="st-forget" type="button" class="btn danger block lg">Forget this computer</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Forget confirmation -->
+      <section id="v-forget" class="view view-login" data-view hidden>
+        <div class="login-card">
+          <h1 class="title">Forget this computer?</h1>
+          <p class="lead center">This removes the pairing, the key kept on this phone and any sign-in from the app. To use ArcFlare again you pair again. The computer keeps listing this phone until you run <span class="mono">arcflare phone devices revoke</span>.</p>
+          <div class="btn-row">
+            <button id="fg-cancel" type="button" class="btn outline block lg">Cancel</button>
+            <button id="fg-go" type="button" class="btn danger-fill block lg">Forget</button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</body>
+</html>

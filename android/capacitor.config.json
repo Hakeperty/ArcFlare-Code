@@ -1,0 +1,18 @@
+{
+  "appId": "net.arcflare.app",
+  "appName": "ArcFlare",
+  "loggingBehavior": "none",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false,
+    "backgroundColor": "#0b0b0a"
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": false },
+    "CapacitorCookies": { "enabled": false }
+  }
+}

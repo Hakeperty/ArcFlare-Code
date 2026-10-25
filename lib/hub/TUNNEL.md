@@ -145,7 +145,10 @@ No transport session is opened by pairing.
 Both sides compute `SAS = uint32_be(SHA-256("ArcFlare-Tunnel SAS" || h)[0..4]) mod 10^6`
 (6 digits) from the final handshake hash `h`. The phone shows it; the person at
 the computer confirms it in `arcflare phone pair` (or
-`arcflare phone devices approve <id>`). Only then is the device *approved*.
+`arcflare phone devices approve <id>`, which shows the code and, with no terminal
+to confirm on, refuses unless `--yes` is given). Only then is the device
+*approved*. The label the phone chose is reduced to printable characters (no
+control, format or bidi characters, at most 60) before it is stored or shown.
 Pending devices that are not approved within **15 minutes** are deleted.
 Approval is only possible at the keyboard, never over the network. Maximum
 **16** devices.
@@ -173,7 +176,10 @@ Approval is only possible at the keyboard, never over the network. Maximum
   (forward secrecy). Final keys also depend on `se`/`es`, so a stolen `HS` alone
   cannot impersonate a phone, and a stolen `DS` alone cannot impersonate the hub.
 - The hub keeps ≤ 4 sessions per device and ≤ 64 in total (oldest closed first)
-  and accepts ≤ 60 handshakes per minute.
+  and accepts ≤ 60 handshakes per minute. A handshaken connection is only
+  counted, and only evicts the oldest, once its first authenticated DATA frame
+  arrives; a replayed HS1 (the replay cache is in memory, so after a hub restart
+  one inside its 10-minute window is answered) therefore opens nothing.
 
 ## 7. Frames and transport
 
@@ -214,14 +220,14 @@ anyway; it cannot make either side accept a wrong frame.
 
 Plaintext is a UTF-8 JSON object with a string `t`, followed by ASCII spaces up
 to a multiple of 256 bytes (length padding; receivers accept trailing spaces).
-Unknown `t` ends the session.
+Unknown `t` ends the session (on the phone too, even when the `id` is unknown).
 
 Phone → hub:
 
 | `t` | fields | meaning |
 |---|---|---|
 | `req` | `id` (integer, strictly increasing per session), `m` method, `p` path, `h` headers, `end` bool | start a request; `end:true` = no body |
-| `body` | `id`, `d` (b64u, ≤ 12 KiB raw) | next body chunk, in order |
+| `body` | `id`, `d` (b64u, ≤ 12 KiB raw; the hub ends the session on a larger chunk) | next body chunk, in order |
 | `end` | `id` | body complete; the hub dispatches now |
 | `cancel` | `id` | abort (closes an SSE stream) |
 | `ping` / `bye` / `rekey` | — | keepalive / close session / see 7.4 |
@@ -242,7 +248,9 @@ files are not served through the tunnel, the app bundles its UI); headers
 forwarded only from `content-type`, `accept`, `x-csrf-token`, `last-event-id`
 (no CR/LF/NUL, ≤ 4 KiB each); everything else, including `cookie`, `host`,
 `origin`, `x-forwarded-for`, is ignored. Body ≤ 128 KiB (the handler's own
-64 KiB limit then applies); ≤ 16 requests in flight per session. Response
+64 KiB limit then applies); ≤ 16 requests in flight per session. A request the
+hub refuses up front (404, 405, 429) is answered at once and its remaining
+`body`/`end` messages are swallowed; they do not end the session. Response
 headers forwarded: `content-type`, `retry-after`, `cache-control`.
 
 SSE: `GET /api/events` or `/api/agents/<id>/events` with `accept: text/event-stream`;
@@ -308,7 +316,8 @@ LAN socket, in-process (`server.dispatchTunnel(req, res, {deviceId})`):
 
 1. deletes the device from `devices.json` — the hub refuses its handshakes;
 2. ends every login session with `ip = relay:<id>` in `auth.json`;
-3. the running hub notices within ~2 s: closes the device's live sessions
+3. the running hub notices on the very next frame from that device (it checks
+   the files' timestamps at every DATA frame; otherwise within ~2 s): closes the device's live sessions
    (RESET), signs out the jar session, drops the jar, and republishes the relay
    allowlist without `H(roomToken)` (relay access gone, 401).
 
@@ -330,9 +339,16 @@ the hub only knows as v1 (no silent fallback). The app refuses links with `v≠1
 
 Handshakes ≤ 60/min; pairing failures ≤ 5 per pairing; ≤ 4 pending pairings;
 ≤ 16 devices; ≤ 4 sessions/device, ≤ 64 total; ≤ 16 requests in flight per
-session; request body ≤ 128 KiB; outbound backlog to the relay ≤ 8 MiB (beyond
-it all sessions are closed); relay poll backoff 1 s → 30 s. Relay-side limits
-are in the Relay API below.
+session; request body ≤ 128 KiB, body chunk ≤ 12 KiB; RESETs for unknown
+sessions ≤ 10/s in total (all channels together); outbound backlog to the relay
+≤ 8 MiB **and** ≤ 4096 frames, for every frame type (when full with DATA frames
+all sessions are closed and the DATA dropped, once; any other frame that does
+not fit is dropped, the new one, never a re-scan of the queue); a relay reply is
+read as text, at most 3 MB, before it is parsed (larger: treated as a relay
+failure), and at most 256 frames of a reply are processed (the phone applies the
+same two caps); a handshake that has not yet sent an authenticated DATA frame is
+not a session: it counts toward no cap and evicts nothing (≤ 128 such, 2 min);
+relay poll backoff 1 s → 30 s. Relay-side limits are in the Relay API below.
 
 ## 13. Threats
 
@@ -367,7 +383,22 @@ pattern is happening.
 - A compromised **hub computer** or **unlocked phone with an active session** is
   out of scope.
 - Traffic analysis: padding hides exact sizes only; timing and volume show.
-- The relay can deny service at will; LAN is the fallback.
+- The relay can deny service at will; LAN is the fallback. A malicious relay can
+  still make the hub spend bounded CPU and memory (the caps in section 12), but
+  the LAN keeps working: the tunnel never blocks the LAN handler.
+- All handshakes share one global rate limit (60/min). A relay, or anyone with a
+  device token, can use it up and so delay legitimate phones' handshakes. Not
+  fixed: it is denial of service only.
+- Timing differences (for example how fast a handshake is refused for an unknown
+  device versus a known one) are not equalised. They reveal at most what the
+  relay already sees (that a device id exists in the room).
+- Revoking a device ends its sessions and refuses its next frame, but does not
+  interrupt a request handler already running for it: that handler finishes
+  (its output is discarded).
+- `devices.json` and `pairing.json` are updated under a lock file with stale-lock
+  takeover after 10 s; two processes racing to take over the very same stale
+  lock are not excluded. A damaged state file stops the tunnel (never silently
+  replaced); the LAN keeps working.
 - If the phone's clock is off by more than 10 minutes, handshakes are refused.
 - A malicious app build (or a compromised WebView) defeats everything on the
   phone side.
@@ -411,6 +442,8 @@ hub seen. → `200 {"ok":true}`; 400 bad body, 401, 413, 429.
 Marks the hub seen (before and after waiting). Returns frames with
 `seq > after`, ascending, ≤ 256, waiting up to `wait` seconds for the first one:
 `200 {"frames":[{"seq":<int>,"ch":"<ch>","c":"<frame>"}],"head":<latest seq>}`.
+The reply body MUST be ≤ 3 MB (return fewer frames, at least one, rather than
+exceed it): the hub refuses a larger reply unread.
 404 if the room is unknown (the hub then PUTs again and restarts at `after=0`).
 
 **`POST /api/tunnel/room/{roomId}/hub`** — hub sends. Body ≤ 3 MB:
@@ -429,7 +462,7 @@ each as `{seq, ch, c}` to the room's hub queue in order → `200 {"ok":true}`.
 **`GET /api/tunnel/room/{roomId}/client?ch=<ch>&after=<int>&wait=<0..25>`** —
 phone long-poll; same auth and channel binding (binds if new). →
 `200 {"frames":[{"seq":<int>,"c":"<frame>"}],"online":<hub seen < 45 s>,"head":<latest seq of this channel>}`,
-≤ 256 frames. 400, 401, 403, 404, 429.
+≤ 256 frames, body ≤ 3 MB as above (the phone refuses a larger reply). 400, 401, 403, 404, 429.
 
 CORS (the app runs at `https://localhost` / `capacitor://localhost`): the two
 `/client` endpoints MUST answer `OPTIONS` preflights and send

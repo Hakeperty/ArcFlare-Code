@@ -83,6 +83,15 @@ function fakeFactory(log, gate) {
             this.messages.push({ role: "assistant", content: out });
             return { ok: true, content: out };
           }
+          if (text === "rich:") {
+            o.onEvent({ type: "reasoning", text: "The user wants a summary. I will list the files first, then check the build output." });
+            o.onEvent({ type: "content", text: "I looked at `package.json` and the build log.\n\nHere is the failing command:\n\n```bash\nnpm run build -- --config ./configs/production/webpack.config.js --env target=android --progress --profile --json > /tmp/stats.json\n```\n\nIt fails on the second step, so I will check the config." });
+            o.onEvent({ type: "tool", name: "bash", args: { command: "cd /home/user/project && npm run build -- --config ./configs/production/webpack.config.js 2>&1 | tail -n 40" } });
+            o.onEvent({ type: "tool_result", name: "bash", out: "ERROR: exit code 1\nat step 2\nat step 3" });
+            o.onEvent({ type: "content", text: "The build failed with a non-zero exit code." });
+            this.messages.push({ role: "assistant", content: "rich done" });
+            return { ok: true, content: "The build failed with a non-zero exit code." };
+          }
           if (text === "hang") {
             await new Promise((r) => { this._release = r; });
             this.messages.push({ role: "assistant", content: "[interrupted by the user]" });
@@ -184,6 +193,22 @@ const waitTx = (page, text, timeout) => page.waitForFunction(
   (t) => document.getElementById("transcript").textContent.includes(t), text, { timeout: timeout || 10000 });
 const waitStatus = (page, re) => page.locator("#agent-status", { hasText: re }).waitFor({ state: "visible" });
 const card = (page, name) => page.locator("#agent-list li", { hasText: name });
+const tab = (page, label) => page.locator("#bottomnav a", { hasText: label });
+
+/** Open the card's overflow menu (a bottom sheet) and tap one of its actions. */
+async function cardMenu(page, name, action) {
+  await card(page, name).getByRole("button", { name: /more actions/i }).tap();
+  await visible(page, "#sheet-menu");
+  await page.locator("#sheet-menu button", { hasText: new RegExp(`^\\s*${action}\\s*$`) }).tap();
+  await hidden(page, "#sheet-menu");
+}
+
+/** Open the New agent sheet from the floating button. */
+async function openNewSheet(page) {
+  await page.locator("#fab-new").tap();
+  await visible(page, "#sheet-new");
+  await visible(page, "#new-name");
+}
 
 async function fillLogin(page, user, pass) {
   await page.locator("#login-user").fill(user);
@@ -212,7 +237,7 @@ const goHash = (page, hash) => page.evaluate((h) => { location.hash = h; }, hash
 async function openAgentView(P, page, name) {
   await goHash(page, "#/");
   await visible(page, "#view-dashboard");
-  await card(page, name).locator("a", { hasText: "Wake" }).tap();
+  await cardMenu(page, name, "Wake");
   await visible(page, "#view-agent");
 }
 
@@ -240,7 +265,26 @@ function measureLayout(expectDark) {
   const lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
   if (expectDark ? lum > 0.35 : lum < 0.65) issues.push(`body background is ${getComputedStyle(b).backgroundColor}, wrong for ${expectDark ? "dark" : "light"}`);
   const vis = (n) => (n.checkVisibility ? n.checkVisibility() : n.offsetParent !== null);
-  const tapLinks = new Set(["Wake", "Back", "Agents", "Devices"]);
+  const tapLinks = new Set(["", "Open", "Agents", "Devices"]);
+  for (const n of [...document.querySelectorAll("[style]")].filter((x) => x.getAttribute("style").trim()).slice(0, 3)) issues.push(`inline style attribute on <${n.tagName.toLowerCase()}${n.id ? "#" + n.id : ""}>: ${n.getAttribute("style")}`);
+  for (const sel of ["main", ".view", "#transcript", ".sheet", ".bottomnav", ".topbar"]) {
+    for (const n of document.querySelectorAll(sel)) {
+      if (!(n.checkVisibility ? n.checkVisibility() : true)) continue;
+      if (n.scrollWidth > n.clientWidth + 1) issues.push(`${sel} scrolls sideways (${n.scrollWidth} > ${n.clientWidth})`);
+    }
+  }
+  const nav = document.getElementById("bottomnav");
+  if (nav && !nav.hidden) {
+    for (const a of nav.querySelectorAll("a")) {
+      if (a.getBoundingClientRect().height < 55.9) issues.push(`nav tab ${a.textContent.trim()} is ${a.getBoundingClientRect().height}px tall, want 56`);
+    }
+    if (Math.abs(nav.getBoundingClientRect().bottom - window.innerHeight) > 1) issues.push("bottom nav is not at the bottom of the screen");
+  }
+  for (const n of document.querySelectorAll("body *")) {
+    if (!(n.checkVisibility ? n.checkVisibility() : true)) continue;
+    const ff = getComputedStyle(n).fontFamily;
+    if (/Bitcount/i.test(ff) && !n.closest(".wordmark, .pixel-head")) issues.push(`pixel font outside the wordmark/empty headline on <${n.tagName.toLowerCase()}>`);
+  }
   for (const n of document.querySelectorAll("button, input, select, textarea, a[href]")) {
     if (n.tagName === "INPUT" && n.type === "hidden") continue;
     if (!vis(n)) continue;
@@ -264,7 +308,7 @@ async function screen(P, page, name) {
   const issues = await page.evaluate(measureLayout, P.scheme === "dark");
   P.layout.push({ name, issues });
   P.screens.add(name);
-  await page.screenshot({ path: path.join(SHOTS, `${P.id}-${name}.png`), fullPage: true });
+  await page.screenshot({ path: path.join(SHOTS, `${P.id}-${name}.png`), fullPage: false });
 }
 
 function rawRequest(url, headers) {
@@ -284,13 +328,15 @@ flow(1, "unauthenticated load: login; no accounts shows the setup message", asyn
   await page.goto(H.url + "/");
   await visible(page, "#view-login");
   await visible(page, "#login-note");
-  const note = (await textOf(page, "#login-note")).trim();
+  const note = (await textOf(page, "#login-note")).replace(/\s+/g, " ").trim();
   assert.match(note, /computer/i, `setup note should say to use the computer: ${note}`);
   assert.match(note, /arcflare phone user add/, `setup note should name the add-user command: ${note}`);
   P.notes.add(`setup message is: "${note}"`);
   await hidden(page, "#login-fields");
   await hidden(page, "#topbar");
+  await hidden(page, "#bottomnav");
   await hidden(page, "#view-dashboard");
+  assert.ok(await page.locator("#login-note code").isVisible(), "the setup command is shown in code style");
   await screen(P, page, "login-setup");
   P.step("api answers 401 without a session");
   const st = await page.evaluate(() => fetch("/api/agents").then((r) => r.status));
@@ -384,9 +430,20 @@ flow(3, "login lands on dashboard; session survives reload; nothing secret in JS
 flow(4, "create agent: valid folder, folder outside roots rejected, tiers", async (P) => {
   const { page, H } = P;
   await visible(page, "#view-dashboard");
-  P.step("tier selector");
-  const tiers = await page.locator("#new-tier option").evaluateAll((o) => o.map((x) => x.value));
+  P.step("open the New agent sheet from the + button");
+  await hidden(page, "#sheet-new");
+  await openNewSheet(page);
+  assert.strictEqual(await page.evaluate(() => document.getElementById("sheet-new").contains(document.activeElement)), true, "focus moves into the sheet");
+  assert.strictEqual(await page.evaluate(() => document.getElementById("app").hasAttribute("inert")), true, "the app behind the sheet is inert");
+  assert.match(await textOf(page, "#sheet-new"), /Hard is reserved for the toughest tasks/);
+  const tiers = await page.locator("#new-form input[name=tier]").evaluateAll((o) => o.map((x) => x.value));
   assert.deepStrictEqual(tiers, ["light", "standard", "hard"]);
+  assert.strictEqual(await page.locator("#new-form input[name=tier]:checked").getAttribute("value"), "standard");
+  await screen(P, page, "new-sheet");
+  P.step("Esc closes the sheet, the + button reopens it");
+  await page.keyboard.press("Escape");
+  await hidden(page, "#sheet-new");
+  await openNewSheet(page);
   P.step("rejected folders");
   const before = await page.locator("#agent-list li").count();
   const bad = [H.outside, path.join(H.root, "..", "outside"), path.join(H.root, "nope"), "relative/dir"];
@@ -397,14 +454,16 @@ flow(4, "create agent: valid folder, folder outside roots rejected, tiers", asyn
     await visible(page, "#new-error");
     assert.match(await textOf(page, "#new-error"), /folder/i, `error for ${cwd}`);
     assert.ok(!(await textOf(page, "#new-error")).includes(H.dir), "error must not leak server paths");
-    await page.locator("#new-name").fill("bad");   // the form kept its values; retype below clears the error
   }
+  await visible(page, "#sheet-new");
   assert.strictEqual(await page.locator("#agent-list li").count(), before, "nothing was created");
   P.step("valid folder");
   await page.locator("#new-name").fill("alpha");
   await page.locator("#new-cwd").fill(H.proj);
-  await page.locator("#new-tier").selectOption("light");
+  await page.locator("#new-form label.seg", { hasText: /^Light$/ }).tap();
+  assert.strictEqual(await page.locator("#new-form input[name=tier]:checked").getAttribute("value"), "light");
   await page.locator("#new-submit").tap();
+  await hidden(page, "#sheet-new");
   await visible(page, "#agent-list li");
   const c = card(page, "alpha");
   await c.waitFor();
@@ -422,16 +481,58 @@ flow(5, "Start, Wake, streamed text, tool line and tool result", async (P) => {
   await card(page, "alpha").locator("button", { hasText: /^Start$/ }).tap();
   await card(page, "alpha").filter({ hasText: "Ready" }).waitFor();
   P.step("wake");
-  await card(page, "alpha").locator("a", { hasText: "Wake" }).tap();
+  assert.strictEqual(await card(page, "alpha").locator("a", { hasText: /^Open$/ }).count(), 1, "a running agent's primary action is Open");
+  assert.strictEqual(await card(page, "alpha").locator("button", { hasText: /^Start$/ }).count(), 0);
+  await cardMenu(page, "alpha", "Wake");
   await visible(page, "#view-agent");
   assert.strictEqual(await page.evaluate(() => document.activeElement && document.activeElement.id), "compose-text", "Wake focuses the message box");
+  assert.strictEqual(await page.locator("#compose-send").isDisabled(), true, "send is disabled while the box is empty");
   assert.strictEqual((await textOf(page, "#agent-name")).trim(), "alpha");
   await send(page, "hello");
   await waitTx(page, "done");
   const tx = await textOf(page, "#transcript");
-  const order = ["hello", "echo hello", "→ read_file  a.txt", "← read_file: hello", "done"].map((s) => tx.indexOf(s));
-  assert.ok(order.every((i) => i >= 0), `transcript is missing a part: ${JSON.stringify(tx)}`);
+  const iTool = tx.indexOf("read_file a.txt");
+  const order = [tx.indexOf("echo hello"), iTool, tx.indexOf("hello", iTool + 15), tx.lastIndexOf("done")];
+  assert.ok(iTool >= 0 && order.every((i) => i >= 0), `transcript is missing a part: ${JSON.stringify(tx)}`);
   assert.deepStrictEqual(order, [...order].sort((x, y) => x - y), "transcript parts are in order");
+  P.step("tool chip expands to its result");
+  const chip = page.locator("#transcript details.tool").first();
+  assert.strictEqual(await chip.evaluate((d) => d.open), false, "tool chips start collapsed");
+  await chip.locator("summary").tap();
+  assert.strictEqual(await chip.evaluate((d) => d.open), true);
+  assert.match(await chip.textContent(), /hello/);
+  P.step("rich message: thinking chip, code block, error chip");
+  await send(page, "rich:");
+  await waitTx(page, "non-zero exit code");
+  await waitStatus(page, /^Ready$/);
+  const rich = await page.evaluate(() => {
+    const tx = document.getElementById("transcript");
+    const pre = [...tx.querySelectorAll("pre")].pop();
+    const think = tx.querySelector("details:not([class*=tool])") || tx.querySelectorAll("details")[1];
+    const codes = [...tx.querySelectorAll("p code")].map((c) => c.textContent);
+    return {
+      preScrolls: pre.scrollWidth > pre.clientWidth, preText: pre.textContent,
+      thinkOpen: think && think.open, thinkText: think && think.querySelector("summary").textContent.trim(),
+      codes, errChip: !![...tx.querySelectorAll("details")].find((d) => d.open && /exit code 1/.test(d.textContent)),
+      innerHTMLish: tx.querySelectorAll("script, img, [onerror]").length,
+    };
+  });
+  const atBottom = await page.evaluate(() => { const t = document.getElementById("transcript"); return t.scrollHeight - t.scrollTop - t.clientHeight; });
+  assert.ok(atBottom < 4, `the conversation follows new output to the bottom (${atBottom}px short)`);
+  assert.ok(rich.preScrolls, "a long code line scrolls horizontally inside its block");
+  assert.match(rich.preText, /webpack\.config\.js/);
+  assert.strictEqual(rich.thinkText, "Thinking");
+  assert.strictEqual(rich.thinkOpen, false, "reasoning is collapsed under a Thinking chip");
+  assert.ok(rich.codes.includes("package.json"), "inline code renders as code");
+  assert.ok(rich.errChip, "a failed tool call opens its result");
+  await screen(P, page, "agent-rich");
+  const side = await page.evaluate(() => {
+    const u = [...document.querySelectorAll("#transcript .bubble.user")].pop().getBoundingClientRect();
+    const a = [...document.querySelectorAll("#transcript .bubble.agent")].pop().getBoundingClientRect();
+    return { userRight: window.innerWidth - u.right, userLeft: u.left, agentLeft: a.left, agentRight: window.innerWidth - a.right };
+  });
+  assert.ok(side.userRight < side.userLeft, "user bubbles sit on the right");
+  assert.ok(side.agentLeft < side.agentRight, "agent bubbles sit on the left");
   await waitStatus(page, /^Ready$/);
   await screen(P, page, "agent");
 });
@@ -439,14 +540,29 @@ flow(5, "Start, Wake, streamed text, tool line and tool result", async (P) => {
 flow(6, "approvals: full command, Deny, Allow, timeout", async (P) => {
   const { page, H } = P;
   const cmd = "rm -rf ./build && echo \"done\" | tee log.txt # 'x'";
-  P.step("deny");
   await send(page, "ask:" + cmd);
   await visible(page, "#approval");
   assert.strictEqual(await textOf(page, "#approval-detail"), cmd, "the full command is shown");
   assert.match(await textOf(page, "#approval-kind"), /bash/);
+  assert.match(await textOf(page, "#approval-title"), /Allow this command\?/);
+  P.step("modal: focus inside, app inert, Esc and the backdrop do not answer");
+  assert.strictEqual(await page.evaluate(() => document.getElementById("approval").querySelector(".sheet").contains(document.activeElement)), true, "focus is inside the approval sheet");
+  assert.strictEqual(await page.evaluate(() => document.getElementById("app").hasAttribute("inert")), true, "the app behind is inert");
+  const order = await page.evaluate(() => {
+    const d = document.getElementById("approve-deny").getBoundingClientRect();
+    const a = document.getElementById("approve-allow").getBoundingClientRect();
+    return d.left < a.left && Math.abs(d.top - a.top) < 2 && d.height >= 55.9 && a.height >= 55.9;
+  });
+  assert.ok(order, "Deny sits left of Allow, both 56px tall, side by side");
+  await page.keyboard.press("Escape");
+  await page.mouse.click(5, 5);
+  await page.waitForTimeout(350);
+  assert.strictEqual(await page.locator("#approval").isVisible(), true, "Esc or a tap outside must not dismiss (or approve) the sheet");
+  assert.strictEqual(await page.evaluate(() => fetch("/api/agents").then((r) => r.status)), 200);
+  assert.ok(!(await textOf(page, "#transcript")).includes("Allowed"), "nothing was approved");
+  P.step("deny");
   const st = (await textOf(page, "#agent-status")).trim();
-  if (!/needs approval/i.test(st)) P.notes.add(`agent status during an approval reads "${st}", not "Needs approval" (the status event arrives before the approval event)`);
-  assert.match(st, /approval/i, "status shows that an approval is needed");
+  assert.match(st, /needs approval/i, "status shows that an approval is needed");
   // The two answers are the most important buttons on screen: each label must
   // sit on one line (not "ALLO / W") and inside the viewport, even at 320px.
   const fit = await page.evaluate(() => ["approve-deny", "approve-allow"].map((id) => {
@@ -498,18 +614,18 @@ flow(7, "Stop, status change, Start resumes", async (P) => {
   await page.locator("#agent-stop").tap();
   await waitStatus(page, /^Stopped$/);
   P.step("dashboard shows it stopped");
-  await page.locator("#view-agent a", { hasText: "Back" }).tap();
+  await page.locator("#agent-back").tap();
   await visible(page, "#view-dashboard");
   await card(page, "alpha").filter({ hasText: "Stopped" }).waitFor();
   await card(page, "alpha").locator("button", { hasText: /^Start$/ }).tap();
   await card(page, "alpha").filter({ hasText: "Ready" }).waitFor();
   P.step("stop from the dashboard, start again");
-  await card(page, "alpha").locator("button", { hasText: /^Stop$/ }).tap();
+  await cardMenu(page, "alpha", "Stop");
   await card(page, "alpha").filter({ hasText: "Stopped" }).waitFor();
   await card(page, "alpha").locator("button", { hasText: /^Start$/ }).tap();
   await card(page, "alpha").filter({ hasText: "Ready" }).waitFor();
   P.step("resumed conversation");
-  await card(page, "alpha").locator("a", { hasText: "Wake" }).tap();
+  await cardMenu(page, "alpha", "Wake");
   await visible(page, "#view-agent");
   await waitTx(page, "echo hello");               // the history survived the stop
   await send(page, "resumed");
@@ -521,7 +637,7 @@ flow(7, "Stop, status change, Start resumes", async (P) => {
 
 flow(8, "devices: list, second device, Revoke, sign out others, Log out", async (P) => {
   const { page, H } = P;
-  const nav = async (label) => page.locator("#topbar a", { hasText: label }).tap();
+  const nav = async (label) => tab(page, label).tap();
   const refreshDevices = async () => { await nav("Agents"); await visible(page, "#view-dashboard"); await nav("Devices"); await visible(page, "#view-devices"); };
   P.step("this device");
   await nav("Devices");
@@ -555,8 +671,17 @@ flow(8, "devices: list, second device, Revoke, sign out others, Log out", async 
   await page.locator("#session-list li").nth(1).waitFor();
   const dialogsBefore = P.dialogs.length;
   await page.locator("#revoke-others").tap();
+  await visible(page, "#sheet-confirm");
+  await page.locator("#confirm-cancel").tap();
+  await hidden(page, "#sheet-confirm");
+  assert.strictEqual(await page.locator("#session-list li").count(), 2, "cancel keeps the other device signed in");
+  await screen(P, page, "devices-confirm-prep");
+  await page.locator("#revoke-others").tap();
+  await visible(page, "#sheet-confirm");
+  await screen(P, page, "devices-confirm");
+  await page.locator("#confirm-ok").tap();
   await visible(second.page, "#view-login", { timeout: 2500 });
-  assert.ok(P.dialogs.slice(dialogsBefore).some((d) => d.startsWith("confirm:")), "asks before signing others out");
+  assert.deepStrictEqual(P.dialogs.slice(dialogsBefore), [], "the confirmation is an in-page sheet, not a browser dialog");
   await page.locator("#session-list li").nth(1).waitFor({ state: "detached" });
   assert.strictEqual(await page.locator("#session-list li").count(), 1);
   await second.ctx.close();
@@ -579,7 +704,7 @@ flow(9, "stream reconnect: dropped sockets and a server restart lose and repeat 
   const { page, H } = P;
   const ticks = async (tag) => {
     const tx = await textOf(page, "#transcript");
-    return [...tx.matchAll(new RegExp(`→ tick  (${tag}-\\d+)`, "g"))].map((m) => m[1]);
+    return [...tx.matchAll(new RegExp(`tick (${tag}-\\d+)`, "g"))].map((m) => m[1]);
   };
   const want = (tag) => Array.from({ length: 12 }, (_, i) => `${tag}-${i + 1}`);
   await openAgentView(P, page, "alpha");
@@ -620,14 +745,16 @@ flow(10, "hostile text renders as inert text", async (P) => {
   await goHash(page, "#/");
   await visible(page, "#view-dashboard");
   P.step("create with hostile name, folder and task");
+  await openNewSheet(page);
   await page.locator("#new-name").fill(HOST);
   await page.locator("#new-cwd").fill(path.join(H.root, HOST_DIR));
   await page.locator("#new-task").fill(HOST);
   await page.locator("#new-submit").tap();
   await visible(page, "#view-agent");
   await page.waitForFunction((h) => document.getElementById("agent-name").textContent === h, HOST);
-  await page.locator("#view-agent a", { hasText: "Back" }).tap();
+  await page.locator("#agent-back").tap();
   await visible(page, "#view-dashboard");
+  await page.waitForFunction(() => document.querySelectorAll("#agent-list li").length >= 2);
   const c = page.locator("#agent-list li").last();
   await c.waitFor();
   const ct = await c.textContent();
@@ -636,13 +763,16 @@ flow(10, "hostile text renders as inert text", async (P) => {
   P.step("run it: task, tool and tool output");
   await c.locator("button", { hasText: /^Start$/ }).tap();
   await c.filter({ hasText: "Ready" }).waitFor();
-  await c.locator("a", { hasText: "Wake" }).tap();
+  await c.getByRole("button", { name: /more actions/i }).tap();
+  await visible(page, "#sheet-menu");
+  await page.locator("#sheet-menu button", { hasText: /^\s*Wake\s*$/ }).tap();
   await visible(page, "#view-agent");
-  await waitTx(page, "← read_file");
+  await page.locator("#transcript details.tool:not(.pending)").first().waitFor({ state: "attached" });
   const tx = await textOf(page, "#transcript");
-  assert.ok(tx.includes("echo " + HOST), "task echoed as text");
-  assert.ok(tx.includes("→ read_file  " + HOST), "tool line shows hostile detail as text");
-  assert.ok(tx.includes("← read_file: " + HOST), "tool result shows hostile output as text");
+  // markdown-lite turns `id` into inline code, so its backticks are consumed
+  assert.ok(tx.includes("echo " + HOST.replace(/`/g, "")), "task echoed as text (backticks become inline code)");
+  assert.ok(tx.includes("read_file " + HOST), "tool chip shows hostile detail as text");
+  assert.ok(tx.includes(HOST), "tool result shows hostile output as text");
   P.step("hostile approval and message");
   await send(page, "ask:" + HOST);
   await visible(page, "#approval");
@@ -661,7 +791,7 @@ flow(10, "hostile text renders as inert text", async (P) => {
   P.step("nothing ran");
   await page.waitForTimeout(300);
   const probe = await page.evaluate(() => ({
-    x: window.__x, injected: document.querySelectorAll("main img, main script, [onerror]").length,
+    x: window.__x, injected: document.querySelectorAll("main img:not(.panda), main script, [onerror]").length,
   }));
   assert.strictEqual(probe.x, undefined, "window.__x must stay undefined");
   assert.strictEqual(probe.injected, 0, "no injected elements");
@@ -696,22 +826,34 @@ flow(11, "offline guarantee: only same-origin requests; nothing external needed"
   // fall over, and tells the person the hub cannot be reached.
   await ctx.setOffline(true);
   try {
-    await page.locator("#topbar a", { hasText: "Devices" }).tap();
+    await tab(page, "Devices").tap();
     await visible(page, "#view-devices");
     await visible(page, "#dev-error");
     assert.match(await textOf(page, "#dev-error"), /cannot reach|connection/i);
     assert.strictEqual(await page.evaluate(() => fetch("https://example.com/").then(() => "reached", () => "blocked")), "blocked");
-    await page.locator("#topbar a", { hasText: "Agents" }).tap();
+    await tab(page, "Agents").tap();
     await visible(page, "#view-dashboard");
   } finally { await ctx.setOffline(false); }
-  await page.locator("#topbar a", { hasText: "Devices" }).tap();
+  await tab(page, "Devices").tap();
   await page.locator("#session-list li").first().waitFor({ timeout: 15000 });
   await hidden(page, "#dev-error");
   await goHash(page, "#/");
 });
 
 flow(12, "layout: no sideways scroll, 44px targets, 16px inputs, both themes, screenshots", async (P) => {
-  const need = ["login-setup", "login", "login-locked", "dashboard-empty", "dashboard", "agent", "agent-approval", "devices", "hostile-agent", "hostile-dashboard"];
+  const { page } = P;
+  P.step("reduced motion: no sheet animation");
+  await goHash(page, "#/");
+  await visible(page, "#view-dashboard");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.locator("#fab-new").tap();
+  await visible(page, "#sheet-new");
+  const anim = await page.evaluate(() => [".sheet", ".scrim"].map((q) => getComputedStyle(document.querySelector("#sheet-new " + q)).animationName));
+  assert.deepStrictEqual(anim, ["none", "none"], "sheets do not animate under prefers-reduced-motion");
+  await page.keyboard.press("Escape");
+  await hidden(page, "#sheet-new", { timeout: 500 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const need = ["login-setup", "login", "login-locked", "dashboard-empty", "dashboard", "agent", "agent-approval", "devices", "hostile-agent", "hostile-dashboard", "new-sheet", "devices-confirm", "hostile-approval", "agent-rich"];
   const missing = need.filter((s) => !P.screens.has(s));
   const bad = P.layout.filter((l) => l.issues.length).map((l) => `${l.name}: ${l.issues.join("; ")}`);
   const shots = need.filter((s) => !fs.existsSync(path.join(SHOTS, `${P.id}-${s}.png`)));
@@ -720,6 +862,67 @@ flow(12, "layout: no sideways scroll, 44px targets, 16px inputs, both themes, sc
   if (shots.length) problems.push(`screenshots missing: ${shots.join(", ")}`);
   problems.push(...bad);
   assert.strictEqual(problems.length, 0, problems.join(" | "));
+});
+
+flow(13, "transport seam: all API traffic uses window.ArcFlareTransport, read once; chip follows relay", async (P) => {
+  const { H } = P;
+  const second = await newCtx(P);
+  const page = second.page;
+  const seen = [];
+  page.on("request", (r) => { const u = new URL(r.url()); if (u.pathname.startsWith("/api/")) seen.push(u.pathname + u.search); });
+  try {
+    P.step("wrapper installed before the app loads");
+    await second.ctx.addInitScript(() => {
+      const realFetch = window.fetch.bind(window);
+      const RealES = window.EventSource;
+      const calls = { fetch: [], es: [], swapped: 0 };
+      window.__calls = calls;
+      window.ArcFlareTransport = {
+        fetch: (p, i) => { calls.fetch.push(String(p)); return realFetch(p, i); },
+        eventSource: (p) => { calls.es.push(String(p)); return new RealES(p); },
+      };
+    });
+    await page.goto(H.url + "/");
+    await visible(page, "#view-login");
+    P.step("login and open an agent");
+    await login(page);
+    await openAgentView(P, page, "alpha");
+    await page.locator("#agent-status", { hasText: /Ready|Working|Stopped/ }).waitFor({ state: "visible" });
+    const calls = await page.evaluate(() => window.__calls);
+    assert.ok(calls.fetch.length > 0, "the wrapper saw fetch calls");
+    assert.ok(calls.es.some((p) => p === "/api/events"), "dashboard stream opened through the wrapper");
+    assert.ok(calls.es.some((p) => /^\/api\/agents\/[^/]+\/events\?after=\d+$/.test(p)), "agent stream opened through the wrapper");
+    P.step("every request the browser made came from the wrapper");
+    const wrapped = new Set([...calls.fetch, ...calls.es]);
+    assert.ok(seen.length > 0, "the browser made API requests");
+    const stray = seen.filter((u) => !wrapped.has(u));
+    assert.deepStrictEqual(stray, [], "API requests the wrapper never saw (the page used fetch/EventSource directly)");
+    P.step("replacing the transport after load has no effect");
+    await page.evaluate(() => {
+      window.ArcFlareTransport = {
+        fetch: () => { window.__calls.swapped++; return Promise.reject(new Error("swapped")); },
+        eventSource: () => { window.__calls.swapped++; throw new Error("swapped"); },
+      };
+    });
+    await tab(page, "Devices").tap();
+    await visible(page, "#view-devices");
+    await page.locator("#session-list li").first().waitFor();
+    await hidden(page, "#dev-error");
+    const after = await page.evaluate(() => window.__calls);
+    assert.strictEqual(after.swapped, 0, "the replacement transport was never called");
+    assert.ok(after.fetch.includes("/api/sessions"), "the original wrapper served /api/sessions");
+    P.step("connection chip");
+    await tab(page, "Agents").tap();
+    await visible(page, "#view-dashboard");
+    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Home network");
+    await page.evaluate(() => window.arcflareSetConnection("relay"));
+    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Relay");
+    await tab(page, "Devices").tap();
+    await tab(page, "Agents").tap();
+    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Relay", "the chip keeps Relay across screens");
+    await page.evaluate(() => window.arcflareSetConnection("home"));
+    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Home network");
+  } finally { await second.ctx.close().catch(() => {}); }
 });
 
 // -------------------------------------------------------------------- runner --
