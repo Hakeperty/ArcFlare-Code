@@ -1,6 +1,7 @@
 {
   "appId": "net.arcflare.app",
   "appName": "ArcFlare",
+  "loggingBehavior": "none",
   "webDir": "www",
   "android": {
     "allowMixedContent": false,

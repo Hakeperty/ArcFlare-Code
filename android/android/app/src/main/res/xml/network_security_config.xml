@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain http is allowed for every host because the user's LAN hub has a private address that cannot be
+     listed here. What actually limits it: the bundled pages' CSP (connect-src 'self' https:),
+     MainActivity's navigation pin (only the stored LAN origin), and the shell probing only that URL.
+     User-installed CAs are NOT trusted (system CAs only) for https. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

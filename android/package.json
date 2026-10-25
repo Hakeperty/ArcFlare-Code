@@ -6,7 +6,9 @@
   "license": "MIT",
   "scripts": {
     "sync-ui": "node scripts/sync-ui.js",
+    "pretest": "node scripts/sync-ui.js",
     "test": "node --test test/*.test.js",
+    "pretest:e2e": "node scripts/sync-ui.js",
     "test:e2e": "node test/shell.e2e.js",
     "cap:sync": "node scripts/sync-ui.js && cap sync android"
   },

@@ -16,8 +16,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Release signing: only when CI/local env provides a keystore. Nothing secret is in the repo.
+    // ARCFLARE_KEYSTORE (path), ARCFLARE_KEYSTORE_PASSWORD, ARCFLARE_KEY_ALIAS, ARCFLARE_KEY_PASSWORD.
+    def haveSigning = System.getenv("ARCFLARE_KEYSTORE") && System.getenv("ARCFLARE_KEYSTORE_PASSWORD") &&
+        System.getenv("ARCFLARE_KEY_ALIAS") && System.getenv("ARCFLARE_KEY_PASSWORD")
+    if (haveSigning) {
+        signingConfigs {
+            release {
+                storeFile file(System.getenv("ARCFLARE_KEYSTORE"))
+                storePassword System.getenv("ARCFLARE_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ARCFLARE_KEY_ALIAS")
+                keyPassword System.getenv("ARCFLARE_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
+            debuggable false
+            if (haveSigning) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -1,0 +1,109 @@
+# Builds the ArcFlare Android app (android/, a Capacitor wrapper around the phone UI).
+#
+# Action pinning: every action below is pinned to an EXACT release tag, not a commit SHA.
+# I could not look up full commit SHAs from the environment this file was written in and will
+# not write SHAs from memory. Before relying on this for releases, replace each tag with the
+# 40-character commit it points to (for example `git ls-remote https://github.com/actions/checkout v4.2.2`).
+name: android
+
+on:
+  push:
+    branches: [main]
+    paths: ["android/**", "lib/hub/ui/**", ".github/workflows/android.yml"]
+  pull_request:
+    paths: ["android/**", "lib/hub/ui/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: android/package-lock.json
+
+      - uses: actions/setup-java@v4.5.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Installs the Android SDK command-line tools and accepts the licences.
+      - uses: android-actions/setup-android@v3.2.2
+
+      - name: Install dependencies (exact lockfile)
+        working-directory: android
+        run: npm ci
+
+      - name: Tests (plain JavaScript)
+        working-directory: android
+        run: npm test
+
+      - name: Copy the phone UI into the app
+        working-directory: android
+        run: node scripts/sync-ui.js
+
+      - name: Sync Capacitor
+        working-directory: android
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      # Secrets are only given to the steps that need them, never to npm or the test run.
+      # (A secret cannot be tested in `if:` directly, so this step turns "is it set?" into an output.)
+      # Empty on forks and when not configured: then only the debug APK is built.
+      - name: Are signing secrets configured?
+        id: sign
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then echo "signed=true" >> "$GITHUB_OUTPUT"; else echo "signed=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Decode release keystore
+        if: steps.sign.outputs.signed == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/arcflare-release.jks"
+
+      - name: Build signed release APK
+        if: steps.sign.outputs.signed == 'true'
+        working-directory: android/android
+        env:
+          ARCFLARE_KEYSTORE: ${{ runner.temp }}/arcflare-release.jks
+          ARCFLARE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ARCFLARE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ARCFLARE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Remove release keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/arcflare-release.jks"
+
+      - uses: actions/upload-artifact@v4.4.3
+        with:
+          name: arcflare-debug-apk
+          path: android/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4.4.3
+        if: steps.sign.outputs.signed == 'true'
+        with:
+          name: arcflare-release-apk
+          path: android/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
