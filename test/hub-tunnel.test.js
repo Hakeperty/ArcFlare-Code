@@ -191,10 +191,10 @@ async function setup({ limits, createPairing = true } = {}) {
   const logs = [];
   const hub = new HubTunnel({
     store, relay: RELAY, dispatch: server.dispatchTunnel, auth, fetch: relay.fetch,
-    pollWaitSec: 1, limits, log: (m) => logs.push(String(m && m.message || m)),
+    pollWaitSec: 1, minPollMs: 50, limits, log: (m) => logs.push(String(m && m.message || m)),
   });
   await hub.start();
-  const opts = { fetch: relay.fetch, pollWaitSec: 1, handshakeTimeoutMs: 4000 };
+  const opts = { fetch: relay.fetch, pollWaitSec: 1, minPollMs: 50, handshakeTimeoutMs: 4000 };
   return {
     dir, auth, supervisor, server, relay, store, room, hub, link, secret, opts, logs,
     async close() { await hub.stop(); fs.rmSync(dir, { recursive: true, force: true }); },
@@ -202,7 +202,7 @@ async function setup({ limits, createPairing = true } = {}) {
 }
 
 async function pairAndApprove(env, label = "Pixel test") {
-  const { device, sas } = await TC.pair({ link: env.link, label, fetch: env.relay.fetch, pollWaitSec: 1, timeoutMs: 4000 });
+  const { device, sas } = await TC.pair({ link: env.link, label, fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 });
   const rec = env.store.listDevices().find((d) => d.id === device.deviceId);
   assert.ok(rec, "hub recorded the device");
   assert.strictEqual(rec.sas, sas, "both sides show the same confirmation code");
@@ -272,7 +272,7 @@ test("pair, approve, log in and use the real handler through the tunnel; CSRF st
   if (!needX(t)) return;
   const env = await setup();
   try {
-    const { device, sas } = await TC.pair({ link: env.link, label: "Pixel test", fetch: env.relay.fetch, pollWaitSec: 1, timeoutMs: 4000 });
+    const { device, sas } = await TC.pair({ link: env.link, label: "Pixel test", fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 });
     assert.match(sas, /^\d{6}$/);
     assert.strictEqual(env.store.listDevices()[0].sas, sas);
 
@@ -420,7 +420,19 @@ test("tampered frames are detected in both directions and end the session", asyn
       if (b[1] === tunnel.T.HS2) nodeCrypto.randomBytes(32).copy(b, 18); // swap in the relay's own ephemeral key
       return [b.toString("base64url")];
     };
-    await assert.rejects(TC.connect(device, env.opts), { code: "HANDSHAKE" });
+    // N6: a bad answer is IGNORED (the client keeps waiting and ends at its own timeout), it does not end the attempt
+    await assert.rejects(TC.connect(device, { ...env.opts, handshakeTimeoutMs: 1500 }), { code: "TIMEOUT" });
+    // ...and because it is ignored, a forged HS2 in front of the real one cannot stop the real one
+    env.relay.hooks.toClient = (ch, c) => {
+      const b = Buffer.from(c, "base64url");
+      if (b[1] !== tunnel.T.HS2) return [c];
+      const forged = Buffer.from(b); nodeCrypto.randomBytes(32).copy(forged, 18);
+      const flipped = Buffer.from(b); flipped[flipped.length - 5] ^= 1;
+      return [forged.toString("base64url"), flipped.toString("base64url"), c];
+    };
+    const ok = await TC.connect(device, env.opts);
+    assert.strictEqual((await ok.request("GET", "/api/status")).status, 200, "the real answer behind two forged ones still opened the session");
+    ok.close();
   } finally { await env.close(); }
 });
 
@@ -482,7 +494,7 @@ test("a pairing link with the wrong hub key fails; so does a forged pairing repl
   const env = await setup();
   try {
     const wrong = pairingLink({ relay: RELAY, roomId: env.room.roomId, hubPub: I.x25519Generate().pub, secret: env.secret });
-    await assert.rejects(TC.pair({ link: wrong, fetch: env.relay.fetch, pollWaitSec: 1, timeoutMs: 1500 }), { code: "TIMEOUT" });
+    await assert.rejects(TC.pair({ link: wrong, fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 1500 }), { code: "TIMEOUT" });
     assert.strictEqual(env.store.listDevices().length, 0);
 
     // A relay that answers the real link with its own HS2 is caught.
@@ -491,7 +503,27 @@ test("a pairing link with the wrong hub key fails; so does a forged pairing repl
       if (b[1] === tunnel.T.HS2) b[b.length - 5] ^= 1;
       return [b.toString("base64url")];
     };
-    await assert.rejects(TC.pair({ link: env.link, fetch: env.relay.fetch, pollWaitSec: 1, timeoutMs: 4000 }), { code: "HANDSHAKE" });
+    // N6: a pairing reply that fails to verify is ignored; the client keeps waiting and times out
+    await assert.rejects(TC.pair({ link: env.link, fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 1500 }), { code: "TIMEOUT" });
+  } finally { await env.close(); }
+
+});
+
+test("N6: forged pairing replies in front of the real one do not stop the pairing", async (t) => {
+  if (!needX(t)) return;
+  const env = await setup();
+  try {
+    env.relay.hooks.toClient = (ch, c) => {
+      const b = Buffer.from(c, "base64url");
+      if (b[1] !== tunnel.T.HS2) return [c];
+      const forged = Buffer.from(b); nodeCrypto.randomBytes(32).copy(forged, 18);
+      const flipped = Buffer.from(b); flipped[flipped.length - 5] ^= 1;
+      return [forged.toString("base64url"), flipped.toString("base64url"), c];
+    };
+    const { device, sas } = await TC.pair({ link: env.link, label: "N6", fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 });
+    assert.match(sas, /^\d{6}$/);
+    assert.strictEqual(env.store.listDevices().find((d) => d.id === device.deviceId).sas, sas);
+    assert.match(device.lanToken, /^aftl_/);
   } finally { await env.close(); }
 });
 
@@ -501,7 +533,7 @@ test("pairing secrets are one-time and expire", async (t) => {
   try {
     let hs1 = null;
     env.relay.hooks.toHub = (ch, c) => { if (Buffer.from(c, "base64url")[1] === tunnel.T.HS1) hs1 = { ch, c }; return [c]; };
-    await TC.pair({ link: env.link, fetch: env.relay.fetch, pollWaitSec: 1, timeoutMs: 4000 });
+    await TC.pair({ link: env.link, fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 });
     env.relay.hooks.toHub = null;
     assert.strictEqual(env.store.listDevices().length, 1);
     const left = Object.values(env.store.pendingPairings());
@@ -510,7 +542,7 @@ test("pairing secrets are one-time and expire", async (t) => {
     assert.ok(!fs.readFileSync(path.join(env.dir, "pairing.json"), "utf8").includes('"psk"'), "psk erased on use");
 
     // Same link again: the hub does not answer (the relay may still carry it for the grace).
-    await assert.rejects(TC.pair({ link: env.link, fetch: env.relay.fetch, pollWaitSec: 1, timeoutMs: 1500 }), { code: "TIMEOUT" });
+    await assert.rejects(TC.pair({ link: env.link, fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 1500 }), { code: "TIMEOUT" });
     assert.strictEqual(env.store.listDevices().length, 1);
     // The captured handshake replayed verbatim does nothing either.
     const frames = [];
@@ -525,7 +557,7 @@ test("pairing secrets are one-time and expire", async (t) => {
     await new Promise((r) => setTimeout(r, 5));
     await env.hub._syncRoom();
     const link2 = pairingLink({ relay: RELAY, roomId: env.room.roomId, hubPub: env.room.hubPub, secret: s2 });
-    await assert.rejects(TC.pair({ link: link2, fetch: env.relay.fetch, pollWaitSec: 1, timeoutMs: 1500 }), { code: "REFUSED" });
+    await assert.rejects(TC.pair({ link: link2, fetch: env.relay.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 1500 }), { code: "REFUSED" });
     assert.strictEqual(env.store.listDevices().length, 1);
   } finally { await env.close(); }
 });

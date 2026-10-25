@@ -1,5 +1,6 @@
 "use strict";
-// Storage hygiene and native-config lint: things nobody can compile here but everyone can grep.
+// Storage hygiene (real scans of the shell sources) and "native source lint": greps over files nobody can compile here.
+// A grep cannot catch an inverted condition; the navigation RULE itself is tested by running it (navpolicy.test.js).
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -32,11 +33,17 @@ test("shell sources contain no console.* calls, no document.cookie, no history/U
   }
 });
 
-test("only navigation targets are the LAN URL from the record and the bundled page", () => {
+test("shell sources navigate only to the bundled UI (shell.js calls Native.navigate with two literal paths; nothing else navigates)", () => {
   const code = strip(read(path.join(www, "shell.js")));
   const navs = [...code.matchAll(/Native\.navigate\(([^)]*)\)/g)].map((m) => m[1].trim());
-  assert.deepEqual(navs.sort(), ['"ui/index.html"', "rec.lan"].sort());
-  assert.doesNotMatch(strip(read(path.join(www, "native.js"))), /window\.open|location\.href\s*=/);
+  assert.deepEqual(navs.sort(), ['"ui/index.html?via=home"', '"ui/index.html?via=relay"']);
+  for (const f of shellFiles) {
+    const c = strip(read(f));
+    assert.doesNotMatch(c, /window\.open|location\.href\s*=|location\.replace\(|NavGuard|setLan|navigate\(\s*rec\./, path.basename(f));
+  }
+  // location.assign appears exactly once in the whole shell: inside Native.navigate (behaviour covered in native.test.js)
+  const assigns = shellFiles.flatMap((f) => [...strip(read(f)).matchAll(/location\.assign\(/g)].map(() => path.basename(f)));
+  assert.deepEqual(assigns, ["native.js"]);
 });
 
 test("no inline script or style in shell pages (CSP forbids them)", () => {
@@ -54,15 +61,19 @@ test("CSP meta is present on the shell and equals the specified policy", () => {
   assert.equal(require("../scripts/sync-ui.js").CSP, want);
 });
 
-test("the stored record keeps only listed fields and no pairing secret", () => {
-  const code = strip(read(path.join(www, "store.js")));
-  assert.doesNotMatch(code, /\bsecret\b|\.ps\b|\bsas\b/i);
-  const shell = strip(read(path.join(www, "shell.js")));
-  // the pairing secret (value.secret / canonical link) is only ever handed to ArcFlareTunnel.pair
-  for (const m of shell.matchAll(/\.(secret|canonical)\b/g)) {
-    const line = shell.slice(shell.lastIndexOf("\n", m.index) + 1, shell.indexOf("\n", m.index));
-    assert.match(line, /ArcFlareTunnel\.pair|canonical: r\.canonical|pending = /, "unexpected use: " + line.trim());
+test("the pairing secret is only handled by link.js (validation, canonical link) and connector.js (handing it to pair())", () => {
+  for (const f of shellFiles.filter((f) => f.endsWith(".js"))) {
+    const code = strip(read(f));
+    const uses = [...code.matchAll(/\.secret\b|\bps\b\s*[=:]|\bsas\b/gi)].length;
+    const base = path.basename(f);
+    if (["link.js", "connector.js"].includes(base)) continue;
+    if (base === "shell.js") { assert.doesNotMatch(code, /\.secret\b/, "shell.js never reads the secret"); continue; }
+    assert.equal(uses, 0, base + " touches the pairing secret or SAS");
   }
+  const store = strip(read(path.join(www, "store.js")));
+  assert.doesNotMatch(store, /\bsecret\b|\.ps\b|\bsas\b/i);
+  // the device record the shell stores is built from fixed fields only (store.save)
+  assert.match(store, /v: device\.v, relay: bases\.relay/);
 });
 
 test("the copied tunnel client (key owner) does not use Web Storage or console", () => {
@@ -77,7 +88,7 @@ test("bundled UI page: CSP meta, and transport scripts run BEFORE app.js", () =>
   const html = read(path.join(www, "ui", "index.html"));
   assert.match(html, /http-equiv="Content-Security-Policy"/);
   const order = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(order, ["tunnel-client.js", "../store.js", "../transport.js", "../relay-boot.js", "app.js", "../relay-chip.js"]);
+  assert.deepEqual(order, ["tunnel-client.js", "../vendor/capacitor.js", "../link.js", "../mode.js", "../native.js", "../lanfetch.js", "../store.js", "../connector.js", "../transport.js", "../relay-boot.js", "app.js", "../relay-chip.js"]);
 });
 
 // ---------------------------------------------------------------- native lint
@@ -110,16 +121,23 @@ test("backup rule files exclude every domain", () => {
   assert.doesNotMatch(de + bk, /<include/);
 });
 
-test("capacitor config: debugging off, logging off, no navigation allow-list, no http/cookie patching", () => {
+test("capacitor config: debugging off, logging off, no navigation allow-list, no http/cookie patching, WebView >= 133 with an error page", () => {
   const c = JSON.parse(read(path.join(root, "capacitor.config.json")));
   assert.equal(c.android.webContentsDebuggingEnabled, false);
   assert.equal(c.android.allowMixedContent, false);
+  assert.equal(c.android.minWebViewVersion, 133, "Capacitor 8 key android.minWebViewVersion (X25519 needs Chromium 133)");
   assert.equal(c.loggingBehavior, "none");
   assert.equal(c.server.androidScheme, "https");
   assert.equal(c.server.allowNavigation, undefined);
   assert.equal(c.server.url, undefined);
   assert.equal(c.plugins.CapacitorHttp.enabled, false);
   assert.equal(c.plugins.CapacitorCookies.enabled, false);
+  // Without server.errorPath Capacitor only LOGS that the WebView is too old and loads the app anyway.
+  assert.equal(c.server.errorPath, "webview-error.html");
+  const err = read(path.join(www, c.server.errorPath));
+  assert.doesNotMatch(err, /<script/i);
+  assert.match(err, /Content-Security-Policy/);
+  assert.match(err, /133/);
 });
 
 test("gradle: minSdk 26, release not debuggable, signing only from environment", () => {
@@ -130,15 +148,37 @@ test("gradle: minSdk 26, release not debuggable, signing only from environment",
   assert.doesNotMatch(g, /storePassword\s+["'][^"']+["']/);
 });
 
-test("MainActivity: FLAG_SECURE, file access off, navigation pinned; no addJavascriptInterface; no Log calls", () => {
+test("native source lint (greps only, cannot catch an inverted condition): MainActivity and NavPolicy", () => {
   const dir = path.join(native, "java", "net", "arcflare", "app");
-  const java = fs.readdirSync(dir).map((f) => read(path.join(dir, f))).join("\n");
-  assert.match(java, /FLAG_SECURE/);
-  assert.match(java, /setAllowFileAccess\(false\)/);
-  assert.match(java, /setAllowContentAccess\(false\)/);
-  assert.match(java, /shouldOverrideUrlLoading/);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["MainActivity.java", "NavPolicy.java"], "no NavGuard plugin any more");
+  const main = read(path.join(dir, "MainActivity.java"));
+  const java = main + read(path.join(dir, "NavPolicy.java"));
+  assert.match(main, /FLAG_SECURE/);
+  assert.match(main, /setAllowFileAccess\(false\)/);
+  assert.match(main, /setAllowContentAccess\(false\)/);
+  assert.match(main, /setImportantForAutofill\(View\.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS\)/);
+  // both shouldOverrideUrlLoading overloads block exactly what NavPolicy does not allow
+  assert.equal([...main.matchAll(/public boolean shouldOverrideUrlLoading\(/g)].length, 2);
+  assert.equal([...main.matchAll(/return !NavPolicy\.allows\(/g)].length, 2);
+  // main-frame requests (POST, history) are judged before they hit the network; page start/finish re-check
+  assert.match(main, /shouldInterceptRequest[\s\S]*isForMainFrame\(\) && !NavPolicy\.allows\(/);
+  assert.match(main, /onPageStarted[\s\S]*if \(!NavPolicy\.allows\(url\)\)[\s\S]*loadUrl\(NavPolicy\.START\)/);
+  assert.match(main, /onPageFinished[\s\S]*if \(!NavPolicy\.allows\(url\)\)[\s\S]*loadUrl\(NavPolicy\.START\)/);
+  assert.match(main, /bridge\.setWebViewClient\(new GuardedClient\(bridge\)\)/);
+  // there is no way to add an exception, no plugin, no settable state
+  assert.doesNotMatch(java, /registerPlugin|@CapacitorPlugin|@PluginMethod|setLan|lanOrigin|static\s+(volatile\s+)?String\s+\w+\s*=\s*null/);
   assert.doesNotMatch(java, /addJavascriptInterface|@JavascriptInterface|setWebContentsDebuggingEnabled\(true\)|android\.util\.Log|\bLog\.|System\.out|printStackTrace/);
-  assert.doesNotMatch(java, /startActivity|ACTION_VIEW/, "external links must open nothing");
+  assert.doesNotMatch(java, /startActivity|ACTION_VIEW|launchIntent/, "external links must open nothing");
+  assert.equal(read(path.join(native, "res", "layout", "activity_main.xml")).includes('android:importantForAutofill="noExcludeDescendants"'), true);
+});
+
+test("native source lint: cleartext is allowed only in the network security config, and the plain-HTTP page path is gone from the project", () => {
+  const nsc = read(path.join(native, "res", "xml", "network_security_config.xml"));
+  assert.match(nsc, /cleartextTrafficPermitted="true"/);
+  assert.match(nsc, /cannot be narrowed to private addresses/);
+  // no code path loads a hub page: no probe, no LAN navigation, no pin
+  for (const f of shellFiles) assert.doesNotMatch(strip(read(f)), /probeLan|looksLikeHub|\/api\/status|httpGet|setLan|NavGuard/, path.basename(f));
+  assert.doesNotMatch(read(path.join(root, "scripts", "sync-ui.js")), /NavGuard|setLan/);
 });
 
 test("network security config trusts system CAs only", () => {
@@ -161,11 +201,6 @@ test("no keystore, key or local.properties is tracked in the project tree", () =
 });
 
 test("sync-ui transformIndex refuses a page it does not understand", () => {
-  const { transformIndex } = require("../scripts/sync-ui.js");
-  const realExit = process.exit, realErr = process.stderr.write;
-  let exited = false;
-  process.exit = () => { exited = true; throw new Error("exit"); };
-  process.stderr.write = () => true;
-  try { assert.throws(() => transformIndex("<html><head><meta charset=\"utf-8\"></head></html>")); } finally { process.exit = realExit; process.stderr.write = realErr; }
-  assert.equal(exited, true);
+  const { transformIndex, SyncError } = require("../scripts/sync-ui.js");
+  assert.throws(() => transformIndex("<html><head><meta charset=\"utf-8\"></head></html>"), SyncError);
 });

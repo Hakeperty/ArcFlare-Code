@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  Shown by Capacitor (server.errorPath) when the installed Android System WebView is older than
+  android.minWebViewVersion (133, needed for WebCrypto X25519), or when the main page fails to load.
+  No script, no inline style: the CSP forbids both.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>ArcFlare</title>
+  <link rel="stylesheet" href="ui/style.css">
+  <link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <div class="app"><main class="page"><section class="view view-login"><div class="login-card">
+    <h1 class="title">ArcFlare can't start</h1>
+    <p class="lead center">ArcFlare needs Android System WebView 133 or newer (it provides the encryption the secure tunnel uses, and there is no weaker fallback). Update "Android System WebView" and Google Chrome in Google Play, then open ArcFlare again.</p>
+    <p class="hint center">If you see this with an up-to-date WebView, close the app and open it again.</p>
+  </div></section></main></div>
+</body>
+</html>

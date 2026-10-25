@@ -37,13 +37,16 @@ function serve() {
 /** Installed before any page script: fake Capacitor bridge. cfg comes from the test. */
 function fakeBridge(cfg) {
   window.__cfg = cfg;
+  const http = (method) => async (o) => {
+    await window.__rec("http", method + " " + o.url + " | redirects=" + o.disableRedirects + " | ms=" + o.connectTimeout + " | headers=" + Object.keys(o.headers || {}).join(","));
+    return window.__cfg.http(o.url);
+  };
   const plugins = {
-    CapacitorHttp: { get: async (o) => { await window.__rec("http", o.url + " | redirects=" + o.disableRedirects + " | ms=" + o.connectTimeout); return window.__cfg.http(o.url); } },
+    CapacitorHttp: { get: http("GET"), post: http("POST") },
     App: {
       getLaunchUrl: async () => (window.__cfg.launchUrl ? { url: window.__cfg.launchUrl } : {}),
       addListener: async (name, fn) => { window.__appListeners = window.__appListeners || {}; window.__appListeners[name] = fn; return { remove: async () => {} }; },
     },
-    NavGuard: { setLan: async (o) => { await window.__rec("navguard", o.url); } },
     CapacitorCookies: { clearAllCookies: async () => { await window.__rec("cookies", "cleared"); } },
   };
   window.__fireAppUrl = (url) => window.__appListeners.appUrlOpen({ url });
@@ -61,11 +64,14 @@ const FAKE_TUNNEL = `
       var q = new URL(o.link).searchParams;
       var key = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
       return { sas: "042917", device: { v: 1, relay: q.get("r"), room: q.get("rm"), hubKey: q.get("hk"), lan: q.get("l"),
-        deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + q.get("ps"), label: o.label, privateKey: key.privateKey, publicKey: q.get("hk") } };
+        deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + q.get("ps"), lanToken: "aftl_" + q.get("ps"), label: o.label, privateKey: key.privateKey, publicKey: q.get("hk") } };
     },
-    connect: async function (device) {
-      await window.__rec("connect", device.relay);
+    connect: async function (device, opts) {
+      await window.__rec("connect", device.relay + (opts && opts.fetch && device.relay.indexOf("http://") === 0 ? " [lan-fetch]" : " [page-fetch]"));
+      var lan = device.relay.indexOf("http://") === 0;
+      if (lan && opts && opts.fetch) await opts.fetch(device.relay + "/api/tunnel/room/" + device.room + "/client?ch=AAAAAAAAAAAAAAAAAAAAAA&after=0&wait=25", { headers: { Authorization: "Bearer " + device.lanToken } });   // goes through CapacitorHttp; rejects when the LAN is down
       if (cfg().connectError) { var e = new Error("x"); e.code = cfg().connectError; throw e; }
+      if (!lan && cfg().relayError) { var e2 = new Error("x"); e2.code = cfg().relayError; throw e2; }
       var t = {
         onclose: null, close: function () {},
         request: async function (method, path) {
@@ -79,8 +85,6 @@ const FAKE_TUNNEL = `
     },
   };
 })();`;
-
-const HUB_STUB = "<!doctype html><title>the hub</title><p>hub</p>";
 
 test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, async (t) => {
   let srv, browser;
@@ -96,18 +100,19 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     const log = [];
     await page.exposeFunction("__rec", (kind, data) => { log.push([kind, data]); });
     cfg = Object.assign({ http: null, launchUrl: null }, cfg);
-    const httpMode = cfg.httpMode || "down";
+    const homeMode = cfg.homeMode || "down";
     await page.addInitScript(fakeBridge, Object.assign({}, cfg, {}));
     await page.addInitScript((mode) => {
+      // what the native HTTP stack answers for the LAN mailbox
       window.__cfg.http = (url) => {
-        if (mode === "hub") return { status: 200, data: { setup: true } };
-        if (mode === "router") return { status: 200, data: "<html>router login</html>" };
+        if (mode === "up") return { status: 200, headers: { "Content-Type": "application/json", "Set-Cookie": "x=1" }, data: { frames: [], head: 0, online: true } };
         throw new Error("ECONNREFUSED " + url);
       };
-    }, httpMode);
+    }, homeMode);
     await page.route("**/vendor/capacitor.js", (r) => r.fulfill({ contentType: "text/javascript", body: "" }));
     await page.route("**/ui/tunnel-client.js", (r) => r.fulfill({ contentType: "text/javascript", body: FAKE_TUNNEL }));
-    await page.route(LAN + "/**", (r) => r.fulfill({ contentType: "text/html", body: HUB_STUB }));
+    // The WebView must never request the LAN address itself (no plain-http page path): count and refuse any such request.
+    await page.route(LAN + "/**", (r) => { log.push(["direct-lan", r.request().url()]); return r.abort(); });
     page.on("pageerror", (e) => log.push(["pageerror", String(e.message)]));
     return { ctx, page, log };
   }
@@ -117,12 +122,12 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
   const visible = async (page) => page.evaluate(() => [...document.querySelectorAll("[data-view]")].filter((v) => !v.hidden).map((v) => v.id));
 
   /** Put a pairing record into the page's IndexedDB (as a finished pairing would), then reload. */
-  async function seed(page, lan = LAN) {
-    await page.evaluate(async (lan) => {
+  async function seed(page, lan = LAN, relay = "https://arcflare.net") {
+    await page.evaluate(async ([lan, relay]) => {
       const key = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
       const A = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc";
-      await window.ArcFlareStore.save({ v: 1, relay: "https://arcflare.net", room: A, hubKey: A, deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + A, label: "Android phone", privateKey: key.privateKey, publicKey: A }, lan);
-    }, lan);
+      await window.ArcFlareStore.save({ v: 1, relay: "https://arcflare.net", room: A, hubKey: A, deviceId: "AAAAAAAAAAAAAAAAAAAAAA", roomToken: "aftc_" + A, lanToken: "aftl_" + A, label: "Android phone", privateKey: key.privateKey, publicKey: A }, { relay, lan });
+    }, [lan, relay]);
     await page.reload();
   }
 
@@ -172,8 +177,10 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     await ctx.close();
   });
 
-  await t.test("good link -> confirmation (fingerprint + relay host) -> Cancel stores nothing -> Pair shows the code", async () => {
-    const { ctx, page, log } = await open();
+  const unlock = (page) => page.waitForFunction(() => !document.getElementById("cf-pair").disabled, null, { timeout: 5000 });
+
+  await t.test("good link -> confirmation (fingerprint + relay host) -> Cancel stores nothing -> Pair (after the 1.5 s lock) shows the code; stored only after the computer approves", async () => {
+    const { ctx, page, log } = await open({ homeMode: "up" });
     await page.goto(base + "/index.html");
     await page.waitForSelector("#v-pair:not([hidden])");
     await page.fill("#pair-link", GOOD);
@@ -187,35 +194,40 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     const lead = (await page.textContent("#v-confirm .lead")).replace(/\s+/g, " ");
     assert.ok(lead.includes("Pair with the computer showing fingerprint " + fp.split(" ")[0] + "…?"));
     assert.ok(lead.includes("Only continue if you just scanned this on your own computer."));
+    assert.equal(await page.isDisabled("#cf-pair"), true, "Pair is locked right after the screen renders");
     assert.deepEqual(kinds(log, "pair"), [], "nothing is sent before the person presses Pair");
-    // Cancel
     await page.click("#cf-cancel");
     await page.waitForSelector("#v-pair:not([hidden])");
     assert.equal(await storedRecord(page), null);
-    // again, then Pair
+    // the SAME link works again after Cancel
     await page.fill("#pair-link", GOOD);
     await page.click("#pair-go");
     await page.waitForSelector("#v-confirm:not([hidden])");
+    await unlock(page);
     await page.click("#cf-pair");
     await page.waitForSelector("#code-box:not([hidden])");
     assert.equal(await page.textContent("#code-digits"), "042917");
     const text = (await page.textContent("#v-code")).replace(/\s+/g, " ");
     assert.ok(/Compare this code with the one on your computer/.test(text));
     assert.ok(/confirm it on the computer/.test(text));
-    // what pair() received is the validated, canonical link
+    // pair() got a canonical link with r = the LAN base first (the home network is tried first)
     const sent = kinds(log, "pair");
     assert.equal(sent.length, 1);
-    assert.ok(sent[0].startsWith("arcflare://pair?v=1&r="));
-    // record stored: right fields, device key not extractable, no secret, nothing in Web Storage
+    assert.ok(sent[0].startsWith("arcflare://pair?v=1&r=" + enc(LAN)), sent[0].slice(0, 80));
+    assert.equal(await storedRecord(page), null, "NOT stored while the code is shown");
+    await page.click("#code-done");                       // the fake computer has approved: connect works
+    await page.waitForURL(/\/ui\/index\.html\?via=home$/);
+    // record stored now: right fields, device key not extractable, no secret, nothing in Web Storage
     const rec = await storedRecord(page);
     assert.equal(rec.relay, "https://arcflare.net");
     assert.equal(rec.lan, LAN);
     assert.equal(rec.hasKey, true);
     assert.equal(rec.keyExtractable, false);
-    assert.deepEqual(rec.keys, ["deviceId", "hubKey", "label", "lan", "pairedAt", "privateKey", "publicKey", "relay", "room", "roomToken", "v"]);
-    const web = await page.evaluate(() => ({ ls: JSON.stringify(localStorage), ss: JSON.stringify(sessionStorage), ck: document.cookie, url: location.href }));
-    assert.deepEqual(web, { ls: "{}", ss: "{}", ck: "", url: base + "/index.html" });
+    assert.deepEqual(rec.keys, ["deviceId", "hubKey", "label", "lan", "lanToken", "pairedAt", "privateKey", "publicKey", "relay", "room", "roomToken", "v"]);
+    const web = await page.evaluate(() => ({ ls: JSON.stringify(localStorage), ss: JSON.stringify(sessionStorage), ck: document.cookie }));
+    assert.deepEqual(web, { ls: "{}", ss: "{}", ck: "" });
     assert.ok(!JSON.stringify(web).includes(A43));
+    assert.deepEqual(kinds(log, "direct-lan"), []);
     assert.deepEqual(kinds(log, "pageerror"), []);
     await ctx.close();
   });
@@ -226,6 +238,7 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
       await page.goto(base + "/index.html");
       await page.fill("#pair-link", GOOD);
       await page.click("#pair-go");
+      await unlock(page);
       await page.click("#cf-pair");
       await page.waitForSelector("#code-error:not([hidden])");
       assert.match(await page.textContent("#code-error"), re);
@@ -235,12 +248,16 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     }
   });
 
-  await t.test("deep link while the app is open goes to the confirmation screen; a bad one to an error", async () => {
+  await t.test("deep link while the app is open goes to the confirmation screen; a second link is ignored with a notice; a bad one gives an error after Cancel", async () => {
     const { ctx, page } = await open();
     await page.goto(base + "/index.html");
     await page.waitForSelector("#v-pair:not([hidden])");
     await page.evaluate((u) => window.__fireAppUrl(u), GOOD);
     await page.waitForSelector("#v-confirm:not([hidden])");
+    const fpBefore = await page.textContent("#cf-fp");
+    await page.evaluate((u) => window.__fireAppUrl(u), GOOD.replace("hk=" + A43, "hk=" + Buffer.alloc(32, 9).toString("base64url")));
+    await page.waitForSelector("#cf-notice:not([hidden])");
+    assert.equal(await page.textContent("#cf-fp"), fpBefore, "the second link did not change the screen");
     await page.click("#cf-cancel");
     await page.evaluate(() => window.__fireAppUrl("arcflare://pair?v=1&evil=1"));
     await page.waitForSelector("#pair-error:not([hidden])");
@@ -256,75 +273,104 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     await ctx.close();
   });
 
+  await t.test("LAN-only link (internet relay off, r = l): confirm says so, pair() is handed the LAN base", async () => {
+    const lanLink = `arcflare://pair?v=1&r=${enc(LAN)}&rm=${A43}&hk=${A43}&ps=${A43}&l=${enc(LAN)}`;
+    const { ctx, page, log } = await open({ homeMode: "up" });
+    await page.goto(base + "/index.html");
+    await page.fill("#pair-link", lanLink);
+    await page.click("#pair-go");
+    await page.waitForSelector("#v-confirm:not([hidden])");
+    assert.match(await page.textContent("#cf-relay"), /internet relay is off/);
+    await unlock(page);
+    await page.click("#cf-pair");
+    await page.waitForSelector("#code-box:not([hidden])");
+    assert.equal(kinds(log, "pair").length, 1);
+    await ctx.close();
+  });
+
   await t.test("after pairing, 'I confirmed it' is refused while the computer has not confirmed", async () => {
     const { ctx, page } = await open({ connectError: "PENDING" });
     await page.goto(base + "/index.html");
     await page.fill("#pair-link", GOOD);
     await page.click("#pair-go");
+    await unlock(page);
     await page.click("#cf-pair");
     await page.waitForSelector("#code-done:not([hidden])");
     await page.click("#code-done");
     await page.waitForSelector("#code-error:not([hidden])");
     assert.match(await page.textContent("#code-error"), /has not confirmed this phone yet/);
+    assert.equal(await storedRecord(page), null);
     await ctx.close();
   });
 
-  await t.test("paired + LAN answers like a hub -> navigates to exactly the LAN URL; relay never touched", async () => {
-    const { ctx, page, log } = await open({ httpMode: "hub" });
+  await t.test("paired + home mailbox answers -> bundled UI over the tunnel, chip 'Home network', native LAN fetch used, relay NEVER contacted, WebView never touches the LAN address", async () => {
+    const { ctx, page, log } = await open({ homeMode: "up" });
     await page.goto(base + "/index.html");
     await seed(page);
-    await page.waitForURL(LAN + "/");
-    assert.equal(await page.title(), "the hub");
+    await page.waitForURL(base + "/ui/index.html?via=home");
+    await page.waitForFunction(() => document.getElementById("conn-text") && document.getElementById("conn-text").textContent === "Home network");
+    for (let i = 0; i < 50 && !kinds(log, "req").includes("GET /api/me"); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.ok(kinds(log, "req").includes("GET /api/me"), "requests: " + JSON.stringify(kinds(log, "req")));
+    const conns = kinds(log, "connect");
+    assert.ok(conns.length >= 2, "the shell's check and the UI page's own session");
+    assert.ok(conns.every((c) => c === LAN + " [lan-fetch]"), JSON.stringify(conns));
     const http = kinds(log, "http");
-    assert.deepEqual(http, [LAN + "/api/status | redirects=true | ms=2000"]);
-    assert.deepEqual(kinds(log, "connect"), [], "the relay is not used when the LAN answers");
-    assert.deepEqual(kinds(log, "req"), []);
-    assert.equal(kinds(log, "navguard").pop(), LAN, "native navigation pin was set to the exact LAN origin first");
+    assert.ok(http.length >= 2);
+    for (const h of http) {
+      assert.ok(h.startsWith("GET " + LAN + "/api/tunnel/room/"), h);
+      assert.ok(h.includes("redirects=true"), h);
+      assert.ok(h.endsWith("headers=Authorization"), "only Authorization is sent, no cookie: " + h);
+    }
+    assert.deepEqual(kinds(log, "direct-lan"), [], "the WebView never requested the LAN address");
+    assert.deepEqual(kinds(log, "pageerror"), []);
     await ctx.close();
   });
 
-  await t.test("paired + something else answers on the LAN address (router page) -> not trusted, relay is used", async () => {
-    const { ctx, page, log } = await open({ httpMode: "router" });
+  await t.test("paired + home down -> relay handshake -> bundled UI, chip 'Relay'; the page's first connect skips the home attempt", async () => {
+    const { ctx, page, log } = await open({ homeMode: "down" });
     await page.goto(base + "/index.html");
     await seed(page);
-    await page.waitForURL(base + "/ui/index.html");
-    assert.ok(kinds(log, "connect").length >= 1);
-    assert.equal(kinds(log, "navguard").pop(), "", "LAN pin cleared in relay mode");
-    await ctx.close();
-  });
-
-  await t.test("paired + LAN down -> bundled UI in relay mode, transport used, chip says Relay", async () => {
-    const { ctx, page, log } = await open({ httpMode: "down" });
-    await page.goto(base + "/index.html");
-    await seed(page);
-    await page.waitForURL(base + "/ui/index.html");
+    await page.waitForURL(base + "/ui/index.html?via=relay");
     await page.waitForFunction(() => document.getElementById("conn-text") && document.getElementById("conn-text").textContent === "Relay");
     const chip = await page.evaluate(() => ({ kind: document.getElementById("conn-chip").dataset.kind, text: document.getElementById("conn-text").textContent }));
     assert.deepEqual(chip, { kind: "relay", text: "Relay" });
-    // app.js really used window.ArcFlareTransport: its first call went through the (fake) tunnel
     for (let i = 0; i < 50 && !kinds(log, "req").includes("GET /api/me"); i++) await new Promise((r) => setTimeout(r, 50));
-    assert.ok(kinds(log, "req").includes("GET /api/me"), "requests: " + JSON.stringify(kinds(log, "req")));
+    assert.ok(kinds(log, "req").includes("GET /api/me"));
+    const conns = kinds(log, "connect");
+    assert.equal(conns[0], LAN + " [lan-fetch]", "the shell tried home first");
+    assert.equal(conns[1], "https://arcflare.net [page-fetch]");
+    assert.equal(conns[conns.length - 1], "https://arcflare.net [page-fetch]");
+    assert.equal(conns.filter((c) => c.startsWith("http://")).length, 1, "the UI page did not retry the home attempt on its first connect");
     assert.equal(await page.evaluate(() => Object.isFrozen(window.ArcFlareTransport) && typeof window.ArcFlareTransport.fetch + typeof window.ArcFlareTransport.eventSource), "functionfunction");
-    // transport was in place before app.js ran: scripts are in this order in the served page
     const order = await page.evaluate(() => [...document.scripts].map((s) => s.getAttribute("src")));
     assert.ok(order.indexOf("../transport.js") < order.indexOf("app.js") && order.indexOf("../relay-boot.js") < order.indexOf("app.js"));
-    // CSP is on the page
     assert.match(await page.evaluate(() => document.querySelector('meta[http-equiv="Content-Security-Policy"]').content), /connect-src 'self' https:/);
     assert.deepEqual(kinds(log, "pageerror"), []);
     await ctx.close();
   });
 
-  await t.test("paired, no LAN URL stored -> LAN is not probed, relay mode", async () => {
-    const { ctx, page, log } = await open({ httpMode: "hub" });
+  await t.test("paired, no LAN base stored -> the LAN is not tried, relay mode", async () => {
+    const { ctx, page, log } = await open({ homeMode: "up" });
     await page.goto(base + "/index.html");
     await seed(page, null);
-    await page.waitForURL(base + "/ui/index.html");
+    await page.waitForURL(base + "/ui/index.html?via=relay");
     assert.deepEqual(kinds(log, "http"), []);
+    assert.ok(kinds(log, "connect").every((c) => c.startsWith("https://")));
     await ctx.close();
   });
 
-  await t.test("paired, LAN down and relay refused/offline -> calm unreachable screen with Retry, Re-pair, Forget", async () => {
-    const { ctx, page, log } = await open({ httpMode: "down", connectError: "OFFLINE" });
+  await t.test("paired, internet relay off (relay == LAN), home down -> unreachable screen; relay never contacted", async () => {
+    const { ctx, page, log } = await open({ homeMode: "down" });
+    await page.goto(base + "/index.html");
+    await seed(page, LAN, LAN);
+    await page.waitForSelector("#v-status:not([hidden])");
+    assert.deepEqual(kinds(log, "connect"), [LAN + " [lan-fetch]"]);
+    assert.match(await page.textContent("#st-msg"), /did not answer on your home network/);
+    await ctx.close();
+  });
+
+  await t.test("paired, home down and relay offline -> calm unreachable screen with Retry, Re-pair, Forget", async () => {
+    const { ctx, page, log } = await open({ homeMode: "down", relayError: "OFFLINE" });
     await page.goto(base + "/index.html");
     await seed(page);
     await page.waitForSelector("#v-status:not([hidden])");
@@ -334,20 +380,19 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     assert.equal(await page.textContent("#st-repair"), "Re-pair");
     assert.equal(await page.textContent("#st-forget"), "Forget this computer");
     assert.equal(page.url(), base + "/index.html");
-    // Retry: runs the whole decision again (LAN probe + relay check)
-    const before = kinds(log, "http").length;
+    const before = kinds(log, "connect").length;
     await page.click("#st-retry");
+    for (let i = 0; i < 50 && kinds(log, "connect").length <= before; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.ok(kinds(log, "connect").length > before, "Retry runs the whole decision again");
     await page.waitForSelector("#v-status:not([hidden])");
-    assert.ok(kinds(log, "http").length > before);
-    // 320px layout of this screen
     await page.setViewportSize({ width: 320, height: 640 });
-    const fits = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
-    assert.ok(fits);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
+    assert.deepEqual(kinds(log, "direct-lan"), []);
     await ctx.close();
   });
 
   await t.test("pending device (not confirmed on the computer) is explained on the unreachable screen", async () => {
-    const { ctx, page } = await open({ httpMode: "down", connectError: "PENDING" });
+    const { ctx, page } = await open({ homeMode: "up", connectError: "PENDING" });
     await page.goto(base + "/index.html");
     await seed(page);
     await page.waitForSelector("#v-status:not([hidden])");
@@ -355,11 +400,11 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     await ctx.close();
   });
 
-  await t.test("coming back (history Back) from the hub shows settings instead of bouncing forward", async () => {
-    const { ctx, page } = await open({ httpMode: "hub" });
+  await t.test("coming back (history Back) from the bundled UI shows settings instead of bouncing forward", async () => {
+    const { ctx, page } = await open({ homeMode: "up" });
     await page.goto(base + "/index.html");
     await seed(page);
-    await page.waitForURL(LAN + "/");
+    await page.waitForURL(base + "/ui/index.html?via=home");
     await page.goBack();
     await page.waitForSelector("#v-status:not([hidden])");
     assert.equal(await page.textContent("#st-title"), "This computer");
@@ -368,12 +413,27 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     await ctx.close();
   });
 
-  await t.test("Forget wipes IndexedDB, Web Storage, cookies and the navigation pin, then shows pairing", async () => {
-    const { ctx, page, log } = await open({ httpMode: "down", connectError: "OFFLINE" });
+  await t.test("N8: the native cookie jar is cleared once on the first start (flag in IndexedDB, not localStorage), not on later starts", async () => {
+    const { ctx, page, log } = await open({});
+    await page.goto(base + "/index.html");
+    await page.waitForSelector("#v-pair:not([hidden])");
+    assert.deepEqual(kinds(log, "cookies"), ["cleared"], "cleared on the first start");
+    assert.ok((await idb(page)).includes("arcflare-pairing"), "the marker is in IndexedDB");
+    assert.equal(await page.evaluate(() => localStorage.length), 0, "nothing in localStorage");
+    await page.reload();
+    await page.waitForSelector("#v-pair:not([hidden])");
+    await page.reload();
+    await page.waitForSelector("#v-pair:not([hidden])");
+    assert.deepEqual(kinds(log, "cookies"), ["cleared"], "not again on later starts");
+    await ctx.close();
+  });
+
+  await t.test("Forget wipes IndexedDB, Web Storage and cookies, then shows pairing", async () => {
+    const { ctx, page, log } = await open({ homeMode: "down", relayError: "OFFLINE" });
     await page.goto(base + "/index.html");
     await seed(page);
     await page.waitForSelector("#v-status:not([hidden])");
-    await page.evaluate(() => { localStorage.setItem("stray", "1"); sessionStorage.setItem("stray", "1"); document.cookie = "stray=1; path=/"; });
+    await page.evaluate(() => { localStorage.setItem("stray", "1"); sessionStorage.setItem("stray", "1"); });
     assert.ok((await idb(page)).includes("arcflare-pairing"));
     await page.click("#st-forget");
     await page.waitForSelector("#v-forget:not([hidden])");
@@ -383,15 +443,29 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     await page.click("#st-forget");
     await page.click("#fg-go");
     await page.waitForSelector("#v-pair:not([hidden])");
-    assert.deepEqual(await idb(page), [], "no IndexedDB database is left");   // (before anything re-opens the store)
+    assert.deepEqual(await idb(page), [], "no IndexedDB database is left");
     assert.equal(await storedRecord(page), null);
     const web = await page.evaluate(() => ({ ls: localStorage.length, ss: sessionStorage.length }));
     assert.deepEqual(web, { ls: 0, ss: 0 });
-    assert.deepEqual(kinds(log, "cookies"), ["cleared"], "native cookie manager was asked to clear every cookie");
-    assert.equal(kinds(log, "navguard").pop(), "");
-    // and a restart now starts at the pairing screen
+    assert.deepEqual(kinds(log, "cookies"), ["cleared", "cleared"], "the one-time first-start wipe, then Forget: the native cookie manager was asked to clear every cookie");
     await page.reload();
     await page.waitForSelector("#v-pair:not([hidden])");
+    await ctx.close();
+  });
+
+  await t.test("Forget with a failing cookie manager does NOT claim success", async () => {
+    const { ctx, page } = await open({ homeMode: "down", relayError: "OFFLINE" });
+    await page.goto(base + "/index.html");
+    await seed(page);
+    await page.waitForSelector("#v-status:not([hidden])");
+    await page.evaluate(() => { window.Capacitor.Plugins.CapacitorCookies.clearAllCookies = async () => { throw new Error("native failure"); }; });
+    await page.click("#st-forget");
+    await page.click("#fg-go");
+    await page.waitForSelector("#fg-error:not([hidden])");
+    assert.match(await page.textContent("#fg-error"), /cookies/);
+    assert.match(await page.textContent("#fg-error"), /NOT fully forgotten/);
+    assert.equal(await page.isVisible("#v-forget"), true);
+    assert.equal(await page.isVisible("#v-pair"), false);
     await ctx.close();
   });
 

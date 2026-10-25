@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Plain http is allowed for every host because the user's LAN hub has a private address that cannot be
-     listed here. What actually limits it: the bundled pages' CSP (connect-src 'self' https:),
-     MainActivity's navigation pin (only the stored LAN origin), and the shell probing only that URL.
+<!-- Plain http is permitted for EVERY host. This cannot be narrowed to private addresses: a network security config
+     matches host names, not CIDR ranges, and the hub's LAN address is whatever the router handed out.
+     What actually limits it, and what does not:
+       * The WebView can no longer navigate to a cleartext page (MainActivity + NavPolicy: only https://localhost),
+         and the bundled pages' CSP has no http: source, so page script cannot make cleartext requests either.
+       * Cleartext requests come from NATIVE code only: Capacitor's CapacitorHttp plugin, called from
+         www/lanfetch.js, which refuses every URL except <stored LAN base>/api/tunnel/... (a private IPv4 or .local
+         base that link.js accepted). That is a JavaScript-level restriction: anything that could run script in the
+         bundled origin could call CapacitorHttp directly (see README, Residual risks).
+       * What travels in cleartext there is the encrypted tunnel's frames, bearer tokens and mailbox metadata.
      User-installed CAs are NOT trusted (system CAs only) for https. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true">

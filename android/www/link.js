@@ -3,7 +3,14 @@
 // validateLink() first; on any problem it returns { ok:false } and the caller
 // stores and sends nothing.
 //
-//   arcflare://pair?v=1&r=<urlenc relay>&rm=<roomId>&hk=<b64u hub key>&ps=<b64u secret>[&l=<urlenc LAN URL>]
+//   arcflare://pair?v=1&r=<urlenc relay base>&rm=<roomId>&hk=<b64u hub key>&ps=<b64u secret>[&l=<urlenc LAN base>]
+//
+// Two kinds of base URL (TUNNEL.md 5.1, 16):
+//   relay base  https://<public host name>[/path]           the internet relay (never an IP literal)
+//   LAN base    http://<RFC 1918 IPv4 | name.local>:<port>  the hub's own mailbox; a base for the Relay API,
+//                                                            never a page. Port 1..65535 except 80 and 443,
+//                                                            no user info, path, query or fragment.
+// `r` is a relay base, or (internet relay off) the very same LAN base as `l`. `l` is always a LAN base.
 //
 // Works as a classic <script> (window.ArcFlareLink) and under CommonJS.
 
@@ -92,25 +99,31 @@
     return { ok: true, relay: u.origin + u.pathname.replace(/\/+$/, ""), host: u.host };
   }
 
-  /** LAN URL: http(s)://<RFC1918 IPv4 | name.local>:<port>, nothing else. */
+  /**
+   * LAN base: http://<RFC1918 IPv4 literal | name.local>:<port>, nothing else. Plain http only (an https
+   * certificate for an IP or a .local name cannot be validated with the system CAs), so https is refused here.
+   * The port is mandatory, 1..65535, and never 80 or 443 (the hub never listens there; refusing them also keeps
+   * the base unambiguous).
+   */
   function checkLan(raw) {
-    if (raw.length === 0 || raw.length > 100 || BAD_CHARS.test(raw)) return fail("BAD_LAN", "The home network address is not valid.");
-    var m = /^(https?):\/\/([^\/?#@:\[\]]+):(\d{1,5})$/.exec(raw);
+    if (typeof raw !== "string" || raw.length === 0 || raw.length > 100 || BAD_CHARS.test(raw)) return fail("BAD_LAN", "The home network address is not valid.");
+    var m = /^http:\/\/([^\/?#@:\[\]]+):(\d{1,5})$/.exec(raw);
     if (!m) return fail("BAD_LAN", "The home network address must look like http://192.168.1.20:8765.");
-    var host = m[2].toLowerCase(), port = m[3];
+    var host = m[1].toLowerCase(), port = m[2];
     if (port[0] === "0" || Number(port) < 1 || Number(port) > 65535) return fail("BAD_LAN", "The home network port is not valid.");
+    if (Number(port) === 80 || Number(port) === 443) return fail("BAD_LAN", "The home network port must not be 80 or 443.");
     var ip = parseIPv4(host);
     if (ip) {
       if (!isPrivateIPv4(ip)) return fail("BAD_LAN", "The home network address must be a private address (192.168.x.x, 10.x.x.x or 172.16-31.x.x).");
     } else if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.local$/.test(host) || host.length > 80) {
       return fail("BAD_LAN", "The home network address must be a private IP address or a .local name.");
     }
-    return { ok: true, lan: m[1] + "://" + host + ":" + String(Number(port)) };
+    return { ok: true, lan: "http://" + host + ":" + String(Number(port)) };
   }
 
   /**
    * validateLink(text, { dev }) ->
-   *   { ok:true, value:{ relay, relayHost, room, hubKey, secret, lan|null }, canonical }
+   *   { ok:true, value:{ relay, relayHost, relayIsLan, room, hubKey, secret, lan|null }, canonical }
    *   { ok:false, code, error }
    * `dev` allows an http:// relay on loopback; production builds pass false.
    */
@@ -142,9 +155,7 @@
     if (!isB64u32(q.ps)) return fail("BAD_LINK", "The link is damaged (pairing secret).");
     var r = pctDecode(q.r);
     if (r === null) return fail("BAD_RELAY", "The relay address is not valid.");
-    var relay = checkRelay(r, dev);
-    if (!relay.ok) return relay;
-    var lan = null;
+    var lan = null, relay, relayIsLan = false;
     if ("l" in q) {
       var l = pctDecode(q.l);
       if (l === null) return fail("BAD_LAN", "The home network address is not valid.");
@@ -152,10 +163,28 @@
       if (!lr.ok) return lr;
       lan = lr.lan;
     }
-    var value = { relay: relay.relay, relayHost: relay.host, room: q.rm, hubKey: q.hk, secret: q.ps, lan: lan };
-    var canonical = PREFIX + "v=1&r=" + encodeURIComponent(value.relay) + "&rm=" + value.room + "&hk=" + value.hubKey +
-      "&ps=" + value.secret + (lan ? "&l=" + encodeURIComponent(lan) : "");
-    return { ok: true, value: value, canonical: canonical };
+    if (/^http:\/\//i.test(r) && !(dev && /^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(r))) {
+      // The LAN exception: r is the hub's own mailbox (internet relay off). It must be the very same base as l.
+      var rl = checkLan(r);
+      if (!rl.ok) return fail("BAD_RELAY", "The relay must use https://.");
+      if (lan === null || rl.lan !== lan) return fail("BAD_LINK", "The link's relay and home network addresses do not match.");
+      relay = { relay: rl.lan, host: rl.lan.slice("http://".length) };
+      relayIsLan = true;
+    } else {
+      relay = checkRelay(r, dev);
+      if (!relay.ok) return relay;
+    }
+    var value = { relay: relay.relay, relayHost: relay.host, relayIsLan: relayIsLan, room: q.rm, hubKey: q.hk, secret: q.ps, lan: lan };
+    return { ok: true, value: value, canonical: canonicalFor(value, value.relay) };
+  }
+
+  /**
+   * The canonical link text for an accepted value, with `r` set to `base` (the relay base or the LAN base).
+   * The shell hands pair() one of these, never the raw text, so the tunnel client only sees values this file accepted.
+   */
+  function canonicalFor(value, base) {
+    return PREFIX + "v=1&r=" + encodeURIComponent(base) + "&rm=" + value.room + "&hk=" + value.hubKey +
+      "&ps=" + value.secret + (value.lan ? "&l=" + encodeURIComponent(value.lan) : "");
   }
 
   /** True when a stored LAN URL still passes the same rules (checked again before it is ever used). */
@@ -163,5 +192,5 @@
     return typeof url === "string" && checkLan(url).ok;
   }
 
-  return { validateLink: validateLink, validateLanUrl: validateLanUrl, isB64u32: isB64u32, decodeB64u32: decodeB64u32, MAX_LINK: MAX_LINK };
+  return { validateLink: validateLink, canonicalFor: canonicalFor, validateLanUrl: validateLanUrl, isB64u32: isB64u32, decodeB64u32: decodeB64u32, MAX_LINK: MAX_LINK };
 });

@@ -8,10 +8,15 @@
   var api = factory(root);
   if (typeof module === "object" && module && module.exports) module.exports = api;
   else root.ArcFlareStore = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function (root) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (globalRoot) {
   "use strict";
 
   var DB = "arcflare-pairing", STORE = "kv", KEY = "pairing";
+  var DEFAULT_DELETE_WAIT_MS = 3000;
+
+  /** The store for a given global object (tests pass a fake one). */
+  function create(root, o) {
+  var DELETE_WAIT_MS = (o && o.deleteWaitMs) || DEFAULT_DELETE_WAIT_MS;
 
   function openDb() {
     return new Promise(function (resolve, reject) {
@@ -34,47 +39,85 @@
     });
   }
 
+  /** A one-time marker kept next to the pairing record in IndexedDB (never localStorage). True only if it was set. */
+  function getFlag(name) { return tx("readonly", function (s) { return s.get("flag:" + name); }).then(function (r) { return r === true; }); }
+  function setFlag(name) { return tx("readwrite", function (s) { return s.put(true, "flag:" + name); }); }
+
   /** The stored pairing record, or null. */
   function load() { return tx("readonly", function (s) { return s.get(KEY); }).then(function (r) { return r || null; }); }
 
-  /** Keep only the fields the tunnel needs (and nothing else that might come along). */
-  function save(device, lan) {
+  /**
+   * Keep only the fields the tunnel needs (and nothing else that might come along).
+   * `bases` = { relay, lan } as the link validator accepted them (r and l of the pairing link); they, not
+   * whatever the tunnel client echoed back, are what is stored. `relay` is https, or the same base as `lan`.
+   */
+  function save(device, bases) {
     var rec = {
-      v: device.v, relay: device.relay, room: device.room, hubKey: device.hubKey,
-      lan: lan || null, deviceId: device.deviceId, roomToken: device.roomToken,
+      v: device.v, relay: bases.relay, room: device.room, hubKey: device.hubKey,
+      lan: bases.lan || null, deviceId: device.deviceId, roomToken: device.roomToken, lanToken: device.lanToken || null,
       label: device.label, privateKey: device.privateKey, publicKey: device.publicKey,
       pairedAt: Date.now(),
     };
     return tx("readwrite", function (s) { return s.put(rec, KEY); });
   }
 
+  /** Resolves true only when the database is really gone; false on error, or if still blocked after a while. */
   function deleteDb(name) {
     return new Promise(function (resolve) {
-      var req = root.indexedDB.deleteDatabase(name);
-      req.onsuccess = req.onerror = req.onblocked = function () { resolve(); };
+      var req, timer;
+      function end(ok) { clearTimeout(timer); resolve(ok); }
+      try { req = root.indexedDB.deleteDatabase(name); } catch (e) { resolve(false); return; }
+      req.onsuccess = function () { end(true); };
+      req.onerror = function () { end(false); };
+      // "blocked" only means another connection is still open; the delete goes ahead when it closes. Wait, then give up.
+      req.onblocked = function () { timer = setTimeout(function () { resolve(false); }, DELETE_WAIT_MS); };
     });
   }
 
   /**
-   * Forget everything: the pairing database and any other IndexedDB of this origin, the
-   * key inside it, Web Storage, Cache Storage, and (through Capacitor's native cookie
+   * Forget everything this origin holds and REPORT HONESTLY: every step is awaited, a failed step is named, and the
+   * result is { ok:true } only when all of them succeeded and a re-check agrees. Steps: every IndexedDB database
+   * (the pairing record and the key inside it), Web Storage, Cache Storage, and (through Capacitor's native cookie
    * manager, which also removes HttpOnly cookies of every site) all cookies.
-   * `native` = { clearCookies(), setLan(url) } supplied by the shell.
+   * `native` = { clearCookies() } supplied by the shell. Never throws.
    */
   async function wipeAll(native) {
-    var names = [DB];
+    var failed = [], i;
+    var names = [DB], listable = false;
     try {
-      if (root.indexedDB.databases) (await root.indexedDB.databases()).forEach(function (d) { if (d && d.name && names.indexOf(d.name) === -1) names.push(d.name); });
-    } catch (e) { /* keep the known name */ }
-    await Promise.all(names.map(deleteDb));
-    try { root.localStorage.clear(); } catch (e) { /* none */ }
-    try { root.sessionStorage.clear(); } catch (e) { /* none */ }
-    try { if (root.caches) (await root.caches.keys()).forEach(function (k) { root.caches.delete(k); }); } catch (e) { /* none */ }
-    if (native) {
-      try { await native.setLan(null); } catch (e) { /* guard already empty on a fresh start */ }
-      try { await native.clearCookies(); } catch (e) { /* not native */ }
+      if (root.indexedDB && root.indexedDB.databases) {
+        listable = true;
+        (await root.indexedDB.databases()).forEach(function (d) { if (d && d.name && names.indexOf(d.name) === -1) names.push(d.name); });
+      }
+    } catch (e) { listable = false; /* keep the known name; verification below is skipped */ }
+    var results = await Promise.all(names.map(deleteDb));
+    for (i = 0; i < names.length; i++) if (!results[i]) failed.push("database " + names[i]);
+    if (listable && !failed.length) {
+      try {
+        var left = (await root.indexedDB.databases()).filter(function (d) { return d && d.name; });
+        if (left.length) failed.push("database " + left[0].name + " is still there");
+      } catch (e) { failed.push("could not re-check the databases"); }
     }
+    try { root.localStorage.clear(); } catch (e) { failed.push("local storage"); }
+    try { root.sessionStorage.clear(); } catch (e) { failed.push("session storage"); }
+    try {
+      if (root.caches) {
+        var keys = await root.caches.keys();
+        await Promise.all(keys.map(function (k) { return root.caches.delete(k); }));
+        if ((await root.caches.keys()).length) failed.push("cache storage is not empty");
+      }
+    } catch (e) { failed.push("cache storage"); }
+    try {
+      if (!native || typeof native.clearCookies !== "function") throw new Error("no cookie manager");
+      await native.clearCookies();
+    } catch (e) { failed.push("cookies"); }
+    return failed.length ? { ok: false, failed: failed } : { ok: true, failed: [] };
   }
 
-  return { load: load, save: save, wipeAll: wipeAll, DB_NAME: DB };
+  return { load: load, save: save, getFlag: getFlag, setFlag: setFlag, wipeAll: wipeAll, DB_NAME: DB };
+  }
+
+  var api = create(globalRoot);
+  api.create = create;
+  return api;
 });

@@ -1,22 +1,32 @@
 # Builds the ArcFlare Android app (android/, a Capacitor wrapper around the phone UI).
 #
-# Action pinning: every action below is pinned to an EXACT release tag, not a commit SHA.
-# I could not look up full commit SHAs from the environment this file was written in and will
-# not write SHAs from memory. Before relying on this for releases, replace each tag with the
-# 40-character commit it points to (for example `git ls-remote https://github.com/actions/checkout v4.2.2`).
+# Trust model: the release signing key must never be reachable from code nobody reviewed.
+#   - job `build`   : runs for push, pull_request and workflow_dispatch. NO secrets, read-only token. Builds debug
+#                     and an UNSIGNED release; uploads only *.apk.
+#   - job `release` : the ONLY job that references secrets. Runs only for a pushed tag v*, behind the protected
+#                     environment `android-release` (required reviewers are configured in the repository settings).
+#                     Signs, uploads the signed APK, deletes the keystore.
+# Never add a privileged trigger that checks out pull-request code to this workflow.
+#
+# Every action is pinned to a full commit SHA (the tag is in the comment). All of these tags are lightweight
+# tags, so the SHA below is the commit the tag points to (checked with `git ls-remote --tags`).
 name: android
 
 on:
   push:
     branches: [main]
-    paths: ["android/**", "lib/hub/ui/**", ".github/workflows/android.yml"]
+    # Tags are not path-filtered (a tag push must always run the release).
+    tags: ["v*"]
   pull_request:
     paths: ["android/**", "lib/hub/ui/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 
 concurrency:
   group: android-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -25,27 +35,30 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v4.1.0
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: android/package-lock.json
 
-      - uses: actions/setup-java@v4.5.0
+      - uses: actions/setup-java@8df1039502a15bceb9433410b1a100fbe190c53b # v4.5.0
         with:
           distribution: temurin
           java-version: "21"
 
       # Installs the Android SDK command-line tools and accepts the licences.
-      - uses: android-actions/setup-android@v3.2.2
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
 
-      - name: Install dependencies (exact lockfile)
+      # Checks gradle-wrapper.jar against Gradle's published checksums BEFORE anything runs ./gradlew.
+      - uses: gradle/actions/wrapper-validation@0bdd871935719febd78681f197cd39af5b6e16a6 # v4.2.2
+
+      - name: Install dependencies (exact lockfile, no lifecycle scripts)
         working-directory: android
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Tests (plain JavaScript)
         working-directory: android
@@ -57,53 +70,94 @@ jobs:
 
       - name: Sync Capacitor
         working-directory: android
-        run: npx cap sync android
+        run: npx --no-install cap sync android
 
-      - name: Build debug APK
+      - name: Build debug APK and unsigned release APK
         working-directory: android/android
-        run: ./gradlew --no-daemon assembleDebug
+        run: ./gradlew --no-daemon assembleDebug assembleRelease
 
-      # Secrets are only given to the steps that need them, never to npm or the test run.
-      # (A secret cannot be tested in `if:` directly, so this step turns "is it set?" into an output.)
-      # Empty on forks and when not configured: then only the debug APK is built.
-      - name: Are signing secrets configured?
-        id: sign
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          if [ -n "$KEYSTORE_B64" ]; then echo "signed=true" >> "$GITHUB_OUTPUT"; else echo "signed=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: arcflare-debug-apk
+          path: android/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
 
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: arcflare-unsigned-release-apk
+          path: android/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+  release:
+    # Tags only. Never pull_request, workflow_dispatch or a branch push.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Protected environment: required reviewers approve before this job starts, and the signing secrets are
+    # stored as secrets of THIS environment only (not as repository secrets).
+    environment: android-release
+    permissions:
+      contents: read
+    steps:
+      # The exact commit of the tag that triggered this run.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      # No dependency cache anywhere in this job: nothing restored from an earlier run goes into a signing build.
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-java@8df1039502a15bceb9433410b1a100fbe190c53b # v4.5.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+
+      - uses: gradle/actions/wrapper-validation@0bdd871935719febd78681f197cd39af5b6e16a6 # v4.2.2
+
+      - name: Install dependencies (exact lockfile, no lifecycle scripts)
+        working-directory: android
+        run: npm ci --ignore-scripts
+
+      - name: Copy the phone UI into the app
+        working-directory: android
+        run: node scripts/sync-ui.js
+
+      - name: Sync Capacitor
+        working-directory: android
+        run: npx --no-install cap sync android
+
+      # Decoded last, right before the signing build, so no earlier step can see the file. Never echoed.
       - name: Decode release keystore
-        if: steps.sign.outputs.signed == 'true'
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
+          set +x
+          if [ -z "$KEYSTORE_B64" ]; then echo "ANDROID_KEYSTORE_BASE64 is not set in the android-release environment" >&2; exit 1; fi
           umask 077
           printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/arcflare-release.jks"
 
       - name: Build signed release APK
-        if: steps.sign.outputs.signed == 'true'
         working-directory: android/android
         env:
           ARCFLARE_KEYSTORE: ${{ runner.temp }}/arcflare-release.jks
           ARCFLARE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ARCFLARE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ARCFLARE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon assembleRelease
+        run: ./gradlew --no-daemon --no-build-cache assembleRelease
 
       - name: Remove release keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/arcflare-release.jks"
 
-      - uses: actions/upload-artifact@v4.4.3
-        with:
-          name: arcflare-debug-apk
-          path: android/android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-
-      - uses: actions/upload-artifact@v4.4.3
-        if: steps.sign.outputs.signed == 'true'
+      # app-release.apk exists only when signing was configured (an unsigned build is app-release-unsigned.apk).
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: arcflare-release-apk
-          path: android/android/app/build/outputs/apk/release/*.apk
+          path: android/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error

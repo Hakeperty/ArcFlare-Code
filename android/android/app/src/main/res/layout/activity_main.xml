@@ -6,7 +6,9 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <!-- BridgeActivity inflates Capacitor's own layout, not this one; MainActivity sets the same autofill flag in code. -->
     <WebView
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:importantForAutofill="noExcludeDescendants" />
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

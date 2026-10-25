@@ -361,3 +361,70 @@ test("info: the phone's relay URL check is as strict as the hub's", () => {
   }
   assert.ok(TC.parsePairingLink(`arcflare://pair?v=1&r=${encodeURIComponent("https://relay.test")}&rm=${k()}&hk=${k()}&ps=${k()}`));
 });
+
+// ------------------------------------------------------------------ L4 ----
+
+test("L4: a relay that answers every poll at once with no frames cannot make the phone spin (about 1 poll per second)", async (t) => {
+  if (!needX(t)) return;
+  const b = () => I.b64u(nodeCrypto.randomBytes(32));
+  const kp = await globalThis.crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]);
+  const device = {
+    v: 1, relay: "https://relay.test", room: b(), hubKey: b(), deviceId: I.b64u(nodeCrypto.randomBytes(16)),
+    roomToken: "aftc_" + b(), privateKey: kp.privateKey, publicKey: b(),
+  };
+  const calls = { get: 0, post: 0 };
+  const lying = async (url, init) => {
+    if (init.method === "GET") { calls.get++; return new Response(JSON.stringify({ frames: [], head: 0, online: true })); }
+    calls.post++;
+    return new Response('{"ok":true}');
+  };
+  const t0 = Date.now();
+  await assert.rejects(TC.connect(device, { fetch: lying, handshakeTimeoutMs: 2500 }), { code: "TIMEOUT" });
+  const secs = (Date.now() - t0) / 1000;
+  assert.ok(calls.get >= 1, "it did poll");
+  assert.ok(calls.get <= Math.ceil(secs) + 1, `${calls.get} polls in ${secs.toFixed(1)} s is a spin`);
+  // and the floor is configurable (so tests and slow links can lower it) but defaults to 1 s
+  const calls2 = { get: 0 };
+  const quick = async (url, init) => { if (init.method === "GET") calls2.get++; return new Response(init.method === "GET" ? '{"frames":[],"head":0,"online":true}' : '{"ok":true}'); };
+  await assert.rejects(TC.connect(device, { fetch: quick, handshakeTimeoutMs: 600, minPollMs: 20 }), { code: "TIMEOUT" });
+  assert.ok(calls2.get > 5, "the floor is configurable; the default (1 s) is the protection");
+});
+
+// ------------------------------------------------- round 3c: file-stamp races ----
+// The hub notices changes to devices.json / pairing.json by their stamp. The stamp must be taken BEFORE the file
+// is read: a write by the CLI that lands between the read and a later stat would otherwise be recorded as already
+// seen, and a revoke (or a new pairing code) would be missed until some other change.
+
+test("3c F2: a CLI revoke that lands between the hub's read and its stat is still noticed next pass", async (t) => {
+  if (!needX(t)) return;
+  const env = await H.setup();
+  try {
+    const A = await H.pairAndApprove(env);
+    const cli = new TunnelStore({ dir: env.store.dir });
+    const orig = env.store.devices.bind(env.store);
+    let armed = true;
+    env.store.devices = function () { const v = orig(); if (armed) { armed = false; cli.revoke(A.deviceId); } return v; };
+    env.hub._reload(true);                  // the unlucky read: the revoke lands right after it
+    env.store.devices = orig;
+    env.hub._reload(false);                 // the next ordinary pass
+    assert.ok(!cli.devices()[A.deviceId], "the CLI revoke is on disk");
+    assert.ok(!env.hub._devices[A.deviceId], "and the hub no longer has the device in memory");
+  } finally { await env.close(); }
+});
+
+test("3c F1: a pairing the CLI writes between the hub's read and its stat reaches the allowlists", async (t) => {
+  if (!needX(t)) return;
+  const env = await H.setup();
+  try {
+    const cli = new TunnelStore({ dir: env.store.dir });
+    env.hub._pendCache = null;
+    const orig = env.store.pendingPairings.bind(env.store);
+    let armed = true, fresh = null;
+    env.store.pendingPairings = function () { const v = orig(); if (armed) { armed = false; fresh = cli.createPairing(); } return v; };
+    const before = Object.keys(env.hub._pendingPairings()).length;   // reads the old file; the CLI writes right after
+    env.store.pendingPairings = orig;
+    const after = Object.keys(env.hub._pendingPairings()).length;    // the next pass must read again
+    assert.ok(fresh, "the CLI wrote a pairing");
+    assert.strictEqual(after, before + 1, "the new pairing is seen on the next pass, not hidden behind the cache");
+  } finally { await env.close(); }
+});

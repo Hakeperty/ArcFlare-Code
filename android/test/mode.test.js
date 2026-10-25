@@ -1,80 +1,97 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { decideMode, probeLan, looksLikeHub, isPairedRecord } = require("../www/mode.js");
+const { decideMode, targets, isPairedRecord, needsHomeRepair } = require("../www/mode.js");
 const { A43 } = require("./helpers.js");
 
+const LAN = "http://192.168.1.20:8765";
 const rec = (o = {}) => Object.assign({
-  v: 1, relay: "https://arcflare.net", room: A43, hubKey: A43, lan: "http://192.168.1.20:8765",
-  deviceId: A43.slice(0, 22), roomToken: "aftc_" + A43, label: "Android phone", privateKey: { fake: "CryptoKey" }, publicKey: A43,
+  v: 1, relay: "https://arcflare.net", room: A43, hubKey: A43, lan: LAN,
+  deviceId: A43.slice(0, 22), roomToken: "aftc_" + A43, lanToken: "aftl_" + A43, label: "Android phone", privateKey: { fake: "CryptoKey" }, publicKey: A43,
 }, o);
+const lanOnly = (o = {}) => rec(Object.assign({ relay: LAN }, o));
+const OK = { ok: true }, NO = { ok: false };
 
-test("no record, or a damaged one -> unpaired", () => {
-  assert.equal(decideMode({ record: null, probe: { ok: true } }), "unpaired");
+test("N1: a record without a lanToken (earlier build) has no home target and needs a re-pair; a relay token is not a lanToken", () => {
+  const old = (o = {}) => { const r = rec(o); delete r.lanToken; return r; };
+  assert.deepEqual(targets(old()).map((t) => t.kind), ["relay"], "the relay token is never offered to the LAN base");
+  assert.deepEqual(targets(rec()).map((t) => t.kind), ["home", "relay"]);
+  assert.equal(needsHomeRepair(old()), true);
+  assert.equal(needsHomeRepair(rec()), false);
+  assert.equal(needsHomeRepair(old({ lan: null })), false, "no LAN base, nothing to repair");
+  assert.equal(needsHomeRepair(null), false);
+  assert.deepEqual(targets(old({ relay: LAN })), [], "LAN-only record from an earlier build: nothing to connect to");
+  assert.equal(decideMode({ record: old(), home: OK, relay: NO }), "unreachable", "a home result means nothing without a LAN token");
+  assert.equal(decideMode({ record: old(), home: NO, relay: OK }), "relay");
+  assert.equal(isPairedRecord(old()), true, "still a valid (relay) pairing");
+  assert.equal(isPairedRecord(rec({ lanToken: "aftc_" + A43 })), false, "the relay token kind cannot be a LAN token");
+  assert.equal(isPairedRecord(rec({ lanToken: "aftl_short" })), false);
+  assert.equal(isPairedRecord(rec({ lanToken: null })), true);
+});
+
+test("no record, or a damaged one -> unpaired (whatever the handshakes said)", () => {
+  assert.equal(decideMode({ record: null, home: OK, relay: OK }), "unpaired");
   assert.equal(decideMode({ record: undefined }), "unpaired");
   assert.equal(decideMode({ record: {} }), "unpaired");
-  assert.equal(decideMode({ record: rec({ roomToken: "nope" }), probe: { ok: true } }), "unpaired");
+  assert.equal(decideMode({}), "unpaired");
+  assert.equal(decideMode({ record: rec({ roomToken: "nope" }), home: OK }), "unpaired");
   assert.equal(decideMode({ record: rec({ hubKey: "short" }) }), "unpaired");
   assert.equal(decideMode({ record: rec({ privateKey: null }) }), "unpaired");
   assert.equal(decideMode({ record: rec({ relay: "http://arcflare.net" }) }), "unpaired");
-  assert.equal(decideMode({ record: rec({ lan: "http://8.8.8.8:80" }) }), "unpaired");
+  assert.equal(decideMode({ record: rec({ lan: "http://8.8.8.8:8765" }) }), "unpaired");
+  assert.equal(decideMode({ record: rec({ lan: "http://192.168.1.20:80" }) }), "unpaired", "port 80 is not a LAN base");
+  assert.equal(decideMode({ record: rec({ relay: "http://192.168.1.99:8765" }) }), "unpaired", "an http relay must equal the LAN base");
+  assert.equal(decideMode({ record: rec({ relay: LAN, lan: null }) }), "unpaired", "an http relay without a LAN base");
 });
 
-test("LAN answered -> home, even though a relay pairing exists (LAN is always preferred)", () => {
-  assert.equal(decideMode({ record: rec(), probe: { ok: true } }), "home");
+test("home handshake ok -> home, even though a relay target exists and would also work", () => {
+  assert.equal(decideMode({ record: rec(), home: OK }), "home");
+  assert.equal(decideMode({ record: rec(), home: OK, relay: OK }), "home");
+  assert.equal(decideMode({ record: rec(), home: OK, relay: NO }), "home");
 });
 
-test("LAN down -> relay; no LAN stored -> relay", () => {
-  assert.equal(decideMode({ record: rec(), probe: { ok: false } }), "relay");
-  assert.equal(decideMode({ record: rec(), probe: null }), "relay");
-  assert.equal(decideMode({ record: rec({ lan: null }), probe: { ok: true } }), "relay", "a probe result means nothing without a stored LAN URL");
+test("home failed -> relay when the relay handshake worked", () => {
+  assert.equal(decideMode({ record: rec(), home: NO, relay: OK }), "relay");
+  assert.equal(decideMode({ record: rec(), home: null, relay: OK }), "relay", "home not tried is not home");
 });
 
-test("relay unusable (old WebView) and LAN down -> unreachable; LAN still wins", () => {
-  assert.equal(decideMode({ record: rec(), probe: { ok: false }, relayUsable: false }), "unreachable");
-  assert.equal(decideMode({ record: rec(), probe: { ok: true }, relayUsable: false }), "home");
+test("home failed and relay failed or not tried -> unreachable", () => {
+  assert.equal(decideMode({ record: rec(), home: NO, relay: NO }), "unreachable");
+  assert.equal(decideMode({ record: rec(), home: NO }), "unreachable");
+  assert.equal(decideMode({ record: rec() }), "unreachable");
 });
 
-test("isPairedRecord accepts a loopback http relay (dev builds) and a missing lan", () => {
+test("no LAN base stored: only the relay target; a home result means nothing", () => {
+  assert.deepEqual(targets(rec({ lan: null })).map((t) => t.kind), ["relay"]);
+  assert.equal(decideMode({ record: rec({ lan: null }), home: OK }), "unreachable");
+  assert.equal(decideMode({ record: rec({ lan: null }), home: OK, relay: OK }), "relay");
+});
+
+test("internet relay off (relay == lan): one target; a relay result cannot make a second one", () => {
+  assert.deepEqual(targets(lanOnly()), [{ kind: "home", base: LAN }]);
+  assert.equal(decideMode({ record: lanOnly(), home: OK }), "home");
+  assert.equal(decideMode({ record: lanOnly(), home: NO, relay: OK }), "unreachable");
+  assert.equal(decideMode({ record: lanOnly(), home: NO }), "unreachable");
+});
+
+test("targets: home first, then relay, each with its own base", () => {
+  assert.deepEqual(targets(rec()), [{ kind: "home", base: LAN }, { kind: "relay", base: "https://arcflare.net" }]);
+  assert.deepEqual(targets(null), []);
+  assert.deepEqual(targets(rec({ roomToken: "x" })), []);
+});
+
+test("a loose result object does not count: only ok === true", () => {
+  assert.equal(decideMode({ record: rec(), home: { ok: "yes" }, relay: { ok: 1 } }), "unreachable");
+  assert.equal(decideMode({ record: rec(), home: {}, relay: { ok: true } }), "relay");
+});
+
+test("isPairedRecord accepts a loopback http relay (dev builds), a missing lan, and relay == lan", () => {
   assert.equal(isPairedRecord(rec({ relay: "http://localhost:3000" })), true);
   assert.equal(isPairedRecord(rec({ lan: null })), true);
+  assert.equal(isPairedRecord(lanOnly()), true);
 });
 
-test("looksLikeHub: only a JSON object with boolean setup", () => {
-  assert.equal(looksLikeHub({ status: 200, data: { setup: true } }), true);
-  assert.equal(looksLikeHub({ status: 200, data: { setup: false } }), true);
-  assert.equal(looksLikeHub({ status: 200, data: '{"setup":true}' }), true);
-  assert.equal(looksLikeHub({ status: 200, data: { setup: "yes" } }), false);
-  assert.equal(looksLikeHub({ status: 200, data: { ok: true } }), false);
-  assert.equal(looksLikeHub({ status: 200, data: "<html>router login</html>" }), false);
-  assert.equal(looksLikeHub({ status: 200, data: [{ setup: true }] }), false);
-  assert.equal(looksLikeHub({ status: 200, data: null }), false);
-  assert.equal(looksLikeHub({ status: 302, data: { setup: true } }), false);
-  assert.equal(looksLikeHub({ status: 404, data: { setup: true } }), false);
-  assert.equal(looksLikeHub(null), false);
-});
-
-test("probeLan asks the exact URL and accepts a hub", async () => {
-  let asked;
-  const r = await probeLan(async (o) => { asked = o; return { status: 200, data: { setup: true } }; }, "http://192.168.1.20:8765", 2000);
-  assert.deepEqual(r, { ok: true });
-  assert.deepEqual(asked, { url: "http://192.168.1.20:8765/api/status", timeoutMs: 2000 });
-});
-
-test("probeLan rejects look-alikes, errors and bad URLs without throwing", async () => {
-  const lan = "http://192.168.1.20:8765";
-  assert.equal((await probeLan(async () => ({ status: 200, data: "<html>" }), lan)).ok, false);
-  assert.equal((await probeLan(async () => ({ status: 200, data: { setup: 1 } }), lan)).ok, false);
-  assert.equal((await probeLan(async () => { throw new Error("ECONNREFUSED"); }, lan)).ok, false);
-  let called = false;
-  assert.equal((await probeLan(async () => { called = true; return { status: 200, data: { setup: true } }; }, "http://8.8.8.8:80")).ok, false);
-  assert.equal(called, false, "a public address is never probed");
-  assert.equal((await probeLan(async () => ({}), null)).ok, false);
-});
-
-test("probeLan enforces its own deadline even if the native call hangs", async () => {
-  const t0 = Date.now();
-  const r = await probeLan(() => new Promise(() => {}), "http://192.168.1.20:8765", 150);
-  assert.equal(r.ok, false);
-  assert.ok(Date.now() - t0 < 1000);
+test("mode.js stays pure: no network, no DOM, no storage", () => {
+  const src = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "www", "mode.js"), "utf8").replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(src, /\bfetch\b|XMLHttpRequest|document\.|indexedDB|localStorage|Capacitor|setTimeout/);
 });
