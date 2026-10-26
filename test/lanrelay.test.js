@@ -510,6 +510,34 @@ test("a stalled body is dropped by the idle deadline", async () => {
   } finally { await t.close(); }
 });
 
+test("an oversized body is read before the 413 (no connection reset on Windows), and dropped past drainMax", async () => {
+  const t = await boot({ drainMax: 20000 });
+  try {
+    const net = require("node:net");
+    const port = Number(new URL(t.base).port);
+    const head = (len) => `PUT /api/tunnel/room/${t.room.roomId} HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer ${t.room.hubToken}\r\nContent-Type: application/json\r\nContent-Length: ${len}\r\n\r\n`;
+    const exchange = (len, bodyAfterMs) => new Promise((resolve) => {
+      let buf = "", early = null;
+      const s = net.connect(port, "127.0.0.1", () => {
+        s.write(head(len));
+        setTimeout(() => { early = buf; if (!s.destroyed) s.write("x".repeat(len)); }, bodyAfterMs);
+      });
+      s.on("data", (d) => { buf += d; });
+      s.on("error", () => {});
+      s.on("close", () => resolve({ early, buf }));
+      setTimeout(() => { s.destroy(); }, 3000);
+    });
+    // 9000 > the 8 KB PUT limit, within drainMax: the hub must wait for the body, then answer 413.
+    const drained = await exchange(9000, 300);
+    assert.strictEqual(drained.early, "", "no answer before the body was sent");
+    assert.match(drained.buf, /^HTTP\/1\.1 413 /);
+    // Far past drainMax: answered and closed at once, before any body was sent.
+    const refused = await exchange(8192 + 20000 + 1, 300);
+    assert.strictEqual(refused.early, null, "closed before the body was sent");
+    assert.match(refused.buf, /^HTTP\/1\.1 413 /);
+  } finally { await t.close(); }
+});
+
 test("blind and bounded: no raw token stored, timer unref'd, close() releases", async () => {
   const t = await boot();
   try {

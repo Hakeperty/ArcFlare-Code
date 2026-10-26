@@ -63,6 +63,18 @@ async function hubProcess(home, extra) {
   return { port, child, out: () => out, async stop() { child.kill("SIGINT"); await new Promise((r) => child.once("exit", r)); } };
 }
 
+test("--password-stdin: a BOM and a CRLF from a Windows PowerShell pipe are not part of the password", async () => {
+  const { AuthStore } = require("../lib/hub/auth");
+  const home = mkHome();
+  try {
+    // Windows PowerShell 5.1 puts a UTF-8 BOM in front of text piped to a native program, and ends it with CRLF.
+    assert.strictEqual(run(home, ["phone", "user", "add", "bob", "--password-stdin"], "﻿correct-horse-battery\r\n").status, 0);
+    const auth = new AuthStore({ dir: path.join(home, "hub") });
+    const r = await auth.login({ username: "bob", password: "correct-horse-battery", ip: "10.0.0.9" });
+    assert.strictEqual(r.ok, true, "the password as typed signs in (got " + r.code + ")");
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
 test("the hub process: LAN mailbox on by default, off with --local", async () => {
   const home = mkHome();
   try {

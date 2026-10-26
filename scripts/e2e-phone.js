@@ -51,7 +51,11 @@ const PASS = "correct horse battery staple";
 const LONG_APPROVAL_MS = 10 * 60 * 1000;
 // Markup, a script tag, backticks, a right-to-left override, zero-width chars.
 const HOST = "<img src=x onerror=window.__x=1>\"><script>`id`\u202eevil\u200b\u200d";
-const HOST_DIR = "h<img src=x onerror=window.__x=1>\"><script>`x`\u202e\u200b";
+// Windows forbids < > " in file names, so there the folder carries entity text that
+// must be shown literally (an innerHTML sink would decode it), quotes and ampersands.
+const HOST_DIR = process.platform === "win32"
+  ? "h&lt;img src=x onerror=window.__x=1&gt;'&amp;`x`\u202e\u200b"
+  : "h<img src=x onerror=window.__x=1>\"><script>`x`\u202e\u200b";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------ the fake model --

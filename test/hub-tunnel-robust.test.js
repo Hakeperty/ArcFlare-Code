@@ -208,6 +208,23 @@ test("L5: the hub and the CLI cannot lose each other's devices.json updates", as
   assert.strictEqual(Object.keys(devs).length, 1 + 240, "no update lost");
 });
 
+test("L5: a lock file whose delete is still pending (Windows EPERM) is waited for, not fatal", { skip: process.platform !== "win32" && "Windows-only error code" }, () => {
+  const dir = tmp();
+  const store = new TunnelStore({ dir });
+  const real = fs.openSync;
+  let thrown = 0;
+  fs.openSync = (p, flags, ...rest) => {
+    if (String(p).endsWith(".lock") && flags === "wx" && thrown < 2) {
+      thrown++;
+      throw Object.assign(new Error("EPERM: operation not permitted, open"), { code: "EPERM" });
+    }
+    return real(p, flags, ...rest);
+  };
+  try { store.addDevice({ id: "a", pub: "x", approved: true, pairedAt: Date.now() }); } finally { fs.openSync = real; }
+  assert.strictEqual(thrown, 2);
+  assert.deepStrictEqual(Object.keys(store.devices()), ["a"]);
+});
+
 test("L5: a stale lock from a dead process is taken over", () => {
   const dir = tmp();
   const store = new TunnelStore({ dir });

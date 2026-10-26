@@ -275,6 +275,15 @@ test("start fails cleanly when the backend fails; cwd is rechecked at start", as
   assert.strictEqual((await sup.start(id)).status, "idle");   // error is restartable
   await sup.stop(id);
 
+  // A model server that will not come up is the most common start failure (its port is taken, for
+  // instance by Ollama): say so in fixed words instead of the generic line, still without raw text.
+  const down = new Supervisor({ dir, roots: [ROOT], makeAgent: fakeFactory(), backend: async () => { throw Object.assign(new Error("llama-server did not come up /secret/path"), { code: "SERVER_DOWN" }); } });
+  const dn = down.create({ name: "down", cwd: PROJ });
+  await assert.rejects(() => down.start(dn.id), { code: "SERVER_DOWN" });
+  const downErr = down.history(dn.id).find((e) => e.type === "error");
+  assert.match(downErr.text, /model server did not start/i);
+  assert.ok(!/secret/.test(downErr.text), "no raw error text leaks");
+
   const doomed = path.join(ROOT, "doomed");
   fs.mkdirSync(doomed);
   const d = sup.create({ name: "d", cwd: doomed });
