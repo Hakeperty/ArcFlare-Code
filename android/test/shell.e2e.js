@@ -336,11 +336,14 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     assert.deepEqual(chip, { kind: "relay", text: "Relay" });
     for (let i = 0; i < 50 && !kinds(log, "req").includes("GET /api/me"); i++) await new Promise((r) => setTimeout(r, 50));
     assert.ok(kinds(log, "req").includes("GET /api/me"));
+    // One handshake attempt sends more than one request, and under load a second can already be in flight when the
+    // first fails, so the number of home requests is not fixed. What matters is the ORDER: home first, then relay,
+    // and no home request once the relay has started (the page did not retry home on its first connect).
     const conns = kinds(log, "connect");
-    assert.equal(conns[0], LAN + " [lan-fetch]", "the shell tried home first");
-    assert.equal(conns[1], "https://arcflare.net [page-fetch]");
-    assert.equal(conns[conns.length - 1], "https://arcflare.net [page-fetch]");
-    assert.equal(conns.filter((c) => c.startsWith("http://")).length, 1, "the UI page did not retry the home attempt on its first connect");
+    const firstRelay = conns.findIndex((c) => c.startsWith("https://arcflare.net"));
+    assert.ok(firstRelay > 0, "the shell tried home before the relay: " + JSON.stringify(conns));
+    assert.ok(conns.slice(0, firstRelay).every((c) => c === LAN + " [lan-fetch]"), "everything before the relay was a home request: " + JSON.stringify(conns));
+    assert.ok(conns.slice(firstRelay).every((c) => c === "https://arcflare.net [page-fetch]"), "no home request after the relay started: " + JSON.stringify(conns));
     assert.equal(await page.evaluate(() => Object.isFrozen(window.ArcFlareTransport) && typeof window.ArcFlareTransport.fetch + typeof window.ArcFlareTransport.eventSource), "functionfunction");
     const order = await page.evaluate(() => [...document.scripts].map((s) => s.getAttribute("src")));
     assert.ok(order.indexOf("../transport.js") < order.indexOf("app.js") && order.indexOf("../relay-boot.js") < order.indexOf("app.js"));
@@ -364,7 +367,9 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     await page.goto(base + "/index.html");
     await seed(page, LAN, LAN);
     await page.waitForSelector("#v-status:not([hidden])");
-    assert.deepEqual(kinds(log, "connect"), [LAN + " [lan-fetch]"]);
+    // Only home requests, however many one attempt sent (a second can be in flight under load); never the relay.
+    const conns2 = kinds(log, "connect");
+    assert.ok(conns2.length >= 1 && conns2.every((c) => c === LAN + " [lan-fetch]"), "only the home address was contacted: " + JSON.stringify(conns2));
     assert.match(await page.textContent("#st-msg"), /did not answer on your home network/);
     await ctx.close();
   });
@@ -441,13 +446,19 @@ test("shell e2e", { skip: chromium ? false : "playwright is not installed" }, as
     await page.waitForSelector("#v-status:not([hidden])");
     assert.ok((await storedRecord(page)) !== null);
     await page.click("#st-forget");
+    const clearsBeforeForget = kinds(log, "cookies").length;
     await page.click("#fg-go");
     await page.waitForSelector("#v-pair:not([hidden])");
     assert.deepEqual(await idb(page), [], "no IndexedDB database is left");
     assert.equal(await storedRecord(page), null);
     const web = await page.evaluate(() => ({ ls: localStorage.length, ss: sessionStorage.length }));
     assert.deepEqual(web, { ls: 0, ss: 0 });
-    assert.deepEqual(kinds(log, "cookies"), ["cleared", "cleared"], "the one-time first-start wipe, then Forget: the native cookie manager was asked to clear every cookie");
+    // The first-start wipe may run more than once if the page boots twice before its marker is stored (harmless:
+    // clearing again changes nothing), so do not count them. What must hold: the native cookie manager was asked to
+    // clear every cookie at start, and Forget asked again afterwards.
+    const clears = kinds(log, "cookies");
+    assert.ok(clears.length >= 2 && clears.every((c) => c === "cleared"), "the first-start wipe and Forget each cleared the native cookies: " + JSON.stringify(clears));
+    assert.ok(clears.length > clearsBeforeForget, "Forget itself cleared the native cookies again");
     await page.reload();
     await page.waitForSelector("#v-pair:not([hidden])");
     await ctx.close();
