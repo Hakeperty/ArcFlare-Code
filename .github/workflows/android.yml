@@ -52,6 +52,11 @@ jobs:
 
       # Installs the Android SDK command-line tools and accepts the licences.
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          # The action's default asks for the old `tools` package, which the current SDK manager no longer has
+          # ("Failed to find package 'tools'"). Ask only for what the app needs (compileSdk 36); AGP fetches the
+          # build tools it wants, with the licences this action accepts.
+          packages: "platform-tools platforms;android-36"
 
       # Checks gradle-wrapper.jar against Gradle's published checksums BEFORE anything runs ./gradlew.
       - uses: gradle/actions/wrapper-validation@0bdd871935719febd78681f197cd39af5b6e16a6 # v4.2.2
@@ -117,6 +122,11 @@ jobs:
           java-version: "21"
 
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          # The action's default asks for the old `tools` package, which the current SDK manager no longer has
+          # ("Failed to find package 'tools'"). Ask only for what the app needs (compileSdk 36); AGP fetches the
+          # build tools it wants, with the licences this action accepts.
+          packages: "platform-tools platforms;android-36"
 
       - uses: gradle/actions/wrapper-validation@0bdd871935719febd78681f197cd39af5b6e16a6 # v4.2.2
 
