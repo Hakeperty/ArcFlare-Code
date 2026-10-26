@@ -93,12 +93,14 @@ function cloneFixture() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "af-upd-git-"));
   const bare = path.join(base, "up.git"), pusher = path.join(base, "pusher"), user = path.join(base, "user");
   gitIn(base, "init", "-q", "--bare", "-b", "main", bare);
-  gitIn(base, "clone", "-q", bare, pusher);
+  // core.autocrlf=false: a machine with autocrlf=true (Git for Windows' default) would check
+  // the fixtures out with CRLF and the byte comparisons below would fail for a reason unrelated to update.
+  gitIn(base, "clone", "-q", "-c", "core.autocrlf=false", bare, pusher);
   for (const d of [pusher]) { gitIn(d, "config", "user.email", "t@t"); gitIn(d, "config", "user.name", "t"); }
   fs.writeFileSync(path.join(pusher, "README.md"), "line one\n");
   fs.writeFileSync(path.join(pusher, "package.json"), JSON.stringify({ name: "arcflare", version: "1.0.0" }));
   gitIn(pusher, "add", "."); gitIn(pusher, "commit", "-qm", "init"); gitIn(pusher, "push", "-q", "origin", "HEAD:main");
-  gitIn(base, "clone", "-q", bare, user);
+  gitIn(base, "clone", "-q", "-c", "core.autocrlf=false", bare, user);
   gitIn(user, "config", "user.email", "t@t"); gitIn(user, "config", "user.name", "t");
   const push = (file, text) => {
     fs.writeFileSync(path.join(pusher, file), text);

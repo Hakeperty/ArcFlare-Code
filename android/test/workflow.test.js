@@ -5,7 +5,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const text = fs.readFileSync(path.join(__dirname, "..", "..", ".github", "workflows", "android.yml"), "utf8");
+// A Windows checkout (core.autocrlf=true) has CRLF line ends; the job regexes below match "\n".
+const text = fs.readFileSync(path.join(__dirname, "..", "..", ".github", "workflows", "android.yml"), "utf8").replace(/\r\n/g, "\n");
 const code = text.replace(/^\s*#.*$/gm, "");
 
 /** The text of a top-level job (two-space indented key under `jobs:`), up to the next job. */

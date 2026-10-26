@@ -162,6 +162,28 @@ test("Host allowlist: 421 for foreign hosts, ok for localhost/IP/.local/allowedH
   assert.strictEqual((await get("my-box.local")).status, 200);
   assert.strictEqual((await get("hub.example.org")).status, 200);
   assert.strictEqual((await get("local")).status, 421);
+  // A public IP literal is not "your own network": refused unless remote access is on or it is listed.
+  assert.strictEqual((await get("8.8.8.8:8080")).status, 421);
+  assert.strictEqual((await get("[2001:4860:4860::8888]:8080")).status, 421);
+  assert.strictEqual((await get("10.1.2.3:8080")).status, 200);
+  assert.strictEqual((await get("172.20.0.4")).status, 200);
+  await s.close();
+  const remote = await start({ config: { allowRemote: true } });
+  assert.strictEqual((await req(remote.port, { path: "/api/status", headers: { Host: "8.8.8.8:8080" } })).status, 200);
+  await remote.close();
+  const listed = await start({ config: { allowedHosts: ["203.0.113.9"] } });
+  assert.strictEqual((await req(listed.port, { path: "/api/status", headers: { Host: "203.0.113.9:8080" } })).status, 200);
+  await listed.close();
+});
+
+test("a model server that will not start is a 503 with fixed wording, not a bare 500", async () => {
+  const s = await start();
+  s.supervisor.start = async () => { throw Object.assign(new Error("llama-server did not come up /home/u/secret"), { code: "SERVER_DOWN" }); };
+  const a = await login(s);
+  const r = await jsonPost(s, a, "/api/agents/a1/start", {});
+  assert.strictEqual(r.status, 503);
+  assert.match(r.text, /model server/i);
+  assert.ok(!/secret/.test(r.text), "no raw error text");
   await s.close();
 });
 
