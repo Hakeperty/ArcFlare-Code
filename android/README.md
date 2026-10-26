@@ -304,7 +304,9 @@ The adapter (`www/transport.js`) is built on `Tunnel.request()` / `Tunnel.eventS
 
 ## Unverified on a real device
 
-Nothing below was compiled or executed against Android. Check each on a real phone (Android 8+ with WebView 133+):
+**Update, first real build.** The project was built on GitHub Actions (JDK 21, Android SDK platform 36, Gradle 8.14.3; run 40326189709 at commit f666f86). The whole thing compiled, including `MainActivity.java` and `NavPolicy.java`, and `scripts/inspect-apk.js` (the SDK's `aapt2`) then read the MERGED manifest of the built debug and unsigned release APKs and every check passed: package `net.arcflare.app`, minSdk 26, targetSdk 36, `allowBackup=false`, both backup-rule files and the network security config referenced, the release build not debuggable, only the INTERNET permission, only `MainActivity` exported (plus nothing else), exactly one link `arcflare://pair`, no web links, no file provider. That settles items 1 (the build), 2, 3 (`debuggable`), 4, and the *compile* half of 6 below. The CI step keeps checking it on every build. **Still never run on Android:** everything that needs a running phone (the guard callbacks, plugin behaviour, cookies, key storage, FLAG_SECURE, deep links, `minWebViewVersion` and the error page, whether the backup rule files are accepted by the parsers).
+
+Nothing below was executed on Android. Check each on a real phone (Android 8+ with WebView 133+):
 
 1. **The whole Gradle/AGP build.** The project is the unmodified `npx cap add android` output (Capacitor 8.5.3, AGP 8.13,
    Gradle 8.14.3 wrapper, compileSdk/targetSdk 36 = the Capacitor default) plus the changes below.
