@@ -79,3 +79,64 @@ test("an offline source that is not ArcFlare is refused before anything runs", a
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), "af-upd-empty-"));
   assert.match((await upd.apply({ from: empty, log: quiet, root: NOT_GIT })).message, /not an ArcFlare folder/);
 });
+
+// Issue #10: `arcflare update` refused to merge because the user had edited
+// README.md. A real repository stands in for GitHub through git's own
+// url.insteadOf, so the whole fetch/stash/merge path runs.
+const { spawnSync } = require("child_process");
+function gitIn(cwd, ...args) {
+  const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+  assert.strictEqual(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+  return r.stdout;
+}
+function cloneFixture() {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "af-upd-git-"));
+  const bare = path.join(base, "up.git"), pusher = path.join(base, "pusher"), user = path.join(base, "user");
+  gitIn(base, "init", "-q", "--bare", "-b", "main", bare);
+  gitIn(base, "clone", "-q", bare, pusher);
+  for (const d of [pusher]) { gitIn(d, "config", "user.email", "t@t"); gitIn(d, "config", "user.name", "t"); }
+  fs.writeFileSync(path.join(pusher, "README.md"), "line one\n");
+  fs.writeFileSync(path.join(pusher, "package.json"), JSON.stringify({ name: "arcflare", version: "1.0.0" }));
+  gitIn(pusher, "add", "."); gitIn(pusher, "commit", "-qm", "init"); gitIn(pusher, "push", "-q", "origin", "HEAD:main");
+  gitIn(base, "clone", "-q", bare, user);
+  gitIn(user, "config", "user.email", "t@t"); gitIn(user, "config", "user.name", "t");
+  const push = (file, text) => {
+    fs.writeFileSync(path.join(pusher, file), text);
+    gitIn(pusher, "add", "."); gitIn(pusher, "commit", "-qm", "up " + file); gitIn(pusher, "push", "-q", "origin", "HEAD:main");
+  };
+  return { bare, user, push };
+}
+async function applyWith(fx) {
+  const saved = [process.env.GIT_CONFIG_COUNT, process.env.GIT_CONFIG_KEY_0, process.env.GIT_CONFIG_VALUE_0];
+  process.env.GIT_CONFIG_COUNT = "1";
+  process.env.GIT_CONFIG_KEY_0 = `url.${fx.bare}.insteadOf`;
+  process.env.GIT_CONFIG_VALUE_0 = "https://github.com/Hakeperty/ArcFlare-Code.git";
+  try { return await upd.apply({ yes: true, root: fx.user, log() {} }); }
+  finally {
+    ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"].forEach((k, i) => {
+      if (saved[i] === undefined) delete process.env[k]; else process.env[k] = saved[i];
+    });
+  }
+}
+
+test("update keeps your local edits and still fast-forwards (issue #10)", async () => {
+  const fx = cloneFixture();
+  fs.writeFileSync(path.join(fx.user, "README.md"), "line one\nmy note\n");
+  fx.push("other.txt", "new\n");
+  const r = await applyWith(fx);
+  assert.strictEqual(r.ok, true, r.message);
+  assert.ok(fs.existsSync(path.join(fx.user, "other.txt")));
+  assert.strictEqual(fs.readFileSync(path.join(fx.user, "README.md"), "utf8"), "line one\nmy note\n");
+  assert.strictEqual(gitIn(fx.user, "stash", "list").trim(), "");
+});
+
+test("update succeeds even when your edit collides with the new version, and keeps your edit in the stash", async () => {
+  const fx = cloneFixture();
+  fs.writeFileSync(path.join(fx.user, "README.md"), "my version\n");
+  fx.push("README.md", "their version\n");
+  const r = await applyWith(fx);
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(fs.readFileSync(path.join(fx.user, "README.md"), "utf8"), "their version\n");
+  assert.match(gitIn(fx.user, "stash", "list"), /arcflare-update/);
+  assert.strictEqual(gitIn(fx.user, "status", "--porcelain", "--untracked-files=no").trim(), "");
+});

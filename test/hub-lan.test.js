@@ -470,3 +470,18 @@ test("3c F6: the browser-side client applies the same .local rule as the hub and
     assert.strictEqual(tunnel.isLanHost(bad), false, `and so does the hub: ${bad.slice(0, 20)}`);
   }
 });
+
+test("pairing picks the real Wi-Fi address, not a virtual adapter or link-local one", () => {
+  const { rankLanAddresses } = require("../lib/hub/cli");
+  const nic = (address) => [{ family: "IPv4", internal: false, address }];
+  const ranked = rankLanAddresses({
+    "vEthernet (WSL)": nic("172.28.64.1"),
+    "VirtualBox Host-Only Network": nic("192.168.56.1"),
+    "Ethernet 2": nic("169.254.10.5"),
+    "Wi-Fi": nic("192.168.1.23"),
+    lo: [{ family: "IPv4", internal: true, address: "127.0.0.1" }],
+  }).map((r) => r.address);
+  assert.strictEqual(ranked[0], "192.168.1.23");
+  assert.ok(!ranked.includes("169.254.10.5"));
+  assert.ok(!ranked.includes("127.0.0.1"));
+});

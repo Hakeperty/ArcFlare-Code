@@ -1076,6 +1076,7 @@ async function updateCommand(cfg, argv) {
       console.log(`    ${c.dim("on a connected machine:")}  arcflare update --pack`);
       console.log(`    ${c.dim("here:")}                    arcflare update --from <file.tgz | folder>`);
     }
+    await offerFailureReport("update", r.message);
     process.exitCode = 1;
     return;
   }
@@ -1111,6 +1112,22 @@ async function reportCommand(argv) {
   const r = await rep.send(v.payload);
   spin.stop(rep.outcome(r, c));
   if (!r.ok && !r.issue) process.exitCode = 1;
+}
+
+/**
+ * After a failure that is probably our bug: offer to send it. Never silent —
+ * it asks first (and only on a terminal), and the text is scrubbed of the
+ * home folder and user name before it goes anywhere.
+ */
+async function offerFailureReport(what, error) {
+  if (!process.stdin.isTTY || process.env.ARCFLARE_NO_REPORT_PROMPT) return;
+  const rep = require("../lib/report");
+  const v = rep.failureReport({ what, error, version: VERSION });
+  if (v.error) return;
+  console.log(`\n  ${c.dim("This may be a bug in ArcFlare. It would send:")}\n    ${c.dim(v.payload.body.split("\n").join("\n    "))}`);
+  if (!/^y(es)?$/i.test(await ui.ask("Send this as a bug report? [y/N]", "n"))) return;
+  const r = await rep.send(v.payload);
+  console.log(`  ${rep.outcome(r, c)}`);
 }
 
 /** `/report <what happened>` in a session: one line, sent as a CLI bug. */
