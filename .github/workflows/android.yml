@@ -81,6 +81,14 @@ jobs:
         working-directory: android/android
         run: ./gradlew --no-daemon assembleDebug assembleRelease
 
+      # The merged manifest is what ships. Fail the build if it is not what the README claims (backup off, only the
+      # INTERNET permission, one exported launcher, one arcflare://pair link, release not debuggable).
+      - name: Inspect the built APKs
+        working-directory: android
+        run: |
+          node scripts/inspect-apk.js android/app/build/outputs/apk/debug/app-debug.apk --debug
+          node scripts/inspect-apk.js android/app/build/outputs/apk/release/app-release-unsigned.apk --release
+
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: arcflare-debug-apk
@@ -164,6 +172,10 @@ jobs:
       - name: Remove release keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/arcflare-release.jks"
+
+      - name: Inspect the signed APK
+        working-directory: android
+        run: node scripts/inspect-apk.js android/app/build/outputs/apk/release/app-release.apk --release
 
       # app-release.apk exists only when signing was configured (an unsigned build is app-release-unsigned.apk).
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
