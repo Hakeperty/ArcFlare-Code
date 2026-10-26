@@ -37,10 +37,15 @@ function parseXmlTree(text) {
       // attribute of the innermost element opened at depth-1
       while (stack.length > 1 && stack[stack.length - 1].depth >= depth) stack.pop();
       const a = /^([^=(]+?)(?:\(0x[0-9a-fA-F]+\))?=(.*)$/.exec(body);
-      if (a) stack[stack.length - 1].node.attrs[a[1].trim()] = cleanValue(a[2]);
+      if (a) stack[stack.length - 1].node.attrs[shortName(a[1].trim())] = cleanValue(a[2]);
     }
   }
   return root;
+}
+
+/** aapt2 prints attribute names with the full namespace (`http://schemas.android.com/apk/res/android:allowBackup`); older tools print `android:allowBackup`. Both become `android:allowBackup`. */
+function shortName(n) {
+  return n.replace(/^https?:\/\/schemas\.android\.com\/apk\/res\/android:/, "android:");
 }
 
 /** `"x" (Raw: "x")` -> x, `(type 0x12)0xffffffff` -> true, `(type 0x12)0x0` -> false, `true` -> true. */
@@ -168,6 +173,8 @@ function main(argv) {
   console.log(`\n${path.basename(apk)} (${mode})`);
   for (const r of rows) { console.log(`  ${r.ok ? "PASS" : "FAIL"}  ${r.what}${r.detail ? "  [" + r.detail + "]" : ""}`); if (!r.ok) bad++; }
   console.log(bad ? `\n${bad} check(s) failed: the built app does not match what it claims.` : "\nall manifest checks passed");
+  // The manifest is not secret. When something fails, show exactly what was read so a format surprise is visible.
+  if (bad) console.log("\n--- raw manifest dump (aapt2 xmltree) ---\n" + dump.split("\n").slice(0, 400).join("\n"));
   return bad ? 1 : 0;
 }
 

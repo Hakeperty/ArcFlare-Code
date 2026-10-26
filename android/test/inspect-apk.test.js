@@ -51,6 +51,10 @@ const GOOD = `N: android=http://schemas.android.com/apk/res/android (line=2)
         A: android:exported(0x01010010)=(type 0x12)0xffffffff
 `;
 
+// aapt2 (build-tools 34+) prints attribute names with the full namespace URL; the first CI run showed it.
+const NS = "http://schemas.android.com/apk/res/android:";
+const GOOD_NS = GOOD.replace(/A: android:/g, "A: " + NS);
+
 const sum = (text) => summarize(parseXmlTree(text));
 const rows = (text, mode = "release") => check(sum(text), { mode });
 const failed = (text, mode) => rows(text, mode).filter((r) => !r.ok).map((r) => r.what);
@@ -104,4 +108,12 @@ test("a debuggable release build fails; a debuggable debug build is fine", () =>
 
 test("garbage in is an error, not a silent pass", () => {
   assert.throws(() => sum("nothing useful here"), /no <manifest>/);
+});
+
+test("the real aapt2 format (attribute names with the full namespace URL) reads the same as the short form", () => {
+  assert.notStrictEqual(GOOD_NS, GOOD, "the variant really uses the long names");
+  assert.deepStrictEqual(sum(GOOD_NS), sum(GOOD));
+  assert.deepStrictEqual(failed(GOOD_NS, "release"), []);
+  const bad = GOOD_NS.replace(NS + "allowBackup(0x01010280)=(type 0x12)0x0", NS + "allowBackup(0x01010280)=true");
+  assert.ok(failed(bad, "release").some((w) => w.includes("cloud and device backup is off")), "and a defect is still caught in the long form");
 });
