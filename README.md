@@ -46,18 +46,39 @@ The model is mapped once, by the engine that owns it. ArcFlare just supervises.
 ## Install
 
 ```bash
+curl -fsSL https://arcflare.net/install.sh | sh      # macOS / Linux
+irm https://arcflare.net/install.ps1 | iex           # Windows (PowerShell)
+```
+
+The installer needs no root or admin. If Node.js 18+ isn't there, it puts a
+private copy of the current Node LTS in `~/.arcflare/node` (checked against
+nodejs.org's SHA-256 list) and adds it to your PATH. From a clone instead:
+
+```bash
 git clone https://github.com/Hakeperty/ArcFlare-Code.git
 cd ArcFlare-Code
 npm link          # no install step — there are no dependencies
 ```
 
-Requires Node 18+ and a llama.cpp build. ArcFlare looks for `llama-server` on
-`PATH`, then in `~/llamacpp/{vulkan,cuda,rocm}` and the usual places. If it
-lives somewhere else:
+ArcFlare runs models with llama.cpp. If you don't have it, get the right
+prebuilt build for your machine in one step (Metal on macOS; Vulkan or CPU on
+Linux; CUDA for NVIDIA or Vulkan on Windows):
+
+```bash
+arcflare engine install            # or --vulkan / --cuda / --cpu / --rocm
+```
+
+If you already have one, ArcFlare looks for `llama-server` on `PATH`, then in
+`~/llamacpp/{vulkan,cuda,rocm}` and the usual places. If it lives somewhere else:
 
 ```bash
 arcflare set-engine /path/to/llama-server
 ```
+
+`arcflare pull` downloads models itself, so it works before llama.cpp is
+installed. Downloads resume if interrupted, are checked against Hugging Face's
+SHA-256, and land in llama.cpp's cache layout, where `arcflare ls` and
+`llama-server` find them.
 
 Check everything at once:
 
@@ -89,7 +110,7 @@ arcflare doctor
 | --- | --- |
 | `arcflare` | The menu: harness → model → context |
 | `arcflare ls` | List discovered GGUF models |
-| `arcflare pull <repo>[:Q]` | Download a GGUF from Hugging Face |
+| `arcflare pull <repo>[:Q]` | Download a GGUF from Hugging Face (resumable, checksummed; no llama.cpp needed) |
 | `arcflare run <model>` | Start the server and chat |
 | `arcflare agent [model]` | Coding agent: tools, MCP, skills |
 | `arcflare agent --continue` / `--resume [id]` | Pick up the latest saved session, or choose one |
@@ -118,6 +139,7 @@ arcflare doctor
 | `arcflare report` | Send a bug, complaint or idea to [arcflare.net/report](https://arcflare.net/report) (`--title`, `--body`, `--kind`); `/report` in a session |
 | `arcflare mcp logout <server\|--all>` | Delete stored OAuth tokens for hosted MCP servers |
 | `arcflare doctor` | Check engine, GPU and harnesses |
+| `arcflare engine install` | Download llama.cpp for this machine (`--vulkan`, `--cuda`, `--cpu`, `--rocm`) |
 | `arcflare set-engine <path>` | Remember where `llama-server` lives |
 
 `arcflare <model>` is shorthand for `arcflare run <model>`.
@@ -144,6 +166,19 @@ decoding stays off without ever saying so. A draft is matched to any model of
 the same family in any search root. Vision projectors are deliberately *not*:
 an `mmproj` is repo-local, and pairing one with another model's weights would
 be a real mistake rather than a missed optimisation.
+
+Ollama's models are listed too, under the names `ollama list` gives them. They
+are read from Ollama's store (`$OLLAMA_MODELS`, `~/.ollama/models`, or any
+search root above that holds `manifests/`), straight from its blobs, with the
+vision projector attached — nothing is copied. A blob Ollama imported from a
+GGUF that is already on disk is listed once, under its filename. Not every
+Ollama model runs on stock llama.cpp: ones Ollama converted itself can carry
+metadata only its own engine reads (`rope.dimension_sections has wrong array
+length` is the usual sign), and that shows up as a load error.
+
+ArcFlare defaults to Ollama's port, 11434. To run both, set `"port"` in
+`~/.arcflare/config.json` to something else; if Ollama is holding the port,
+ArcFlare says so rather than waiting for a server that cannot start.
 
 ```
 ❯ arcflare ls
@@ -452,8 +487,25 @@ model declares nothing.
 
 **Tools.** `read_file`, `write_file`, `edit_file`, `list_dir`, `glob`, `grep`,
 `bash`, plus `skill_load`, `tool_search` and `mcp_call`. Edits fail loudly on an
-ambiguous or missing match rather than guessing. Shell commands go through an
-approval prompt and a refusal list for unrecoverable ones.
+ambiguous or missing match rather than guessing. Shell commands go through a
+refusal list for unrecoverable ones.
+
+**Approvals.** Before a shell command, a file change or an MCP call, the agent
+shows you all of it: the whole command (wrapped, not cut off), or a coloured
+diff of what the edit or write will change, or the MCP tool and its arguments.
+Then you choose:
+
+| Choice | What happens |
+|---|---|
+| Yes | run it |
+| Yes, and allow … for the rest of this session | per kind: shell commands and file changes are allowed separately |
+| Edit the command first | shell only: change the command in place, then run that; the model is told what actually ran |
+| Skip it | don't run it; the model is told you skipped it (with your reason, if you give one) and carries on |
+| No | decline, as before |
+
+Without a terminal (piped, scripted), shell and MCP calls follow `--ask`/`--yolo`
+and file changes go ahead. A turn typed on your phone over `/rc` is still a
+yes-or-no there.
 
 **Auto mode.** The menu asks once, after the model and the context, whether
 tools may run without stopping to ask - and remembers the answer, so the next
@@ -960,7 +1012,7 @@ want real isolation.
 npm test
 ```
 
-278 tests covering the places where being wrong is silent and expensive: the KV
+291 tests covering the places where being wrong is silent and expensive: the KV
 cache maths, model id parsing, and the harness config writers - including that
 they preserve unrelated settings, back files up, and refuse to overwrite a
 config they cannot parse. The machine server adds its own: the JSON-RPC
