@@ -27,8 +27,14 @@ const {
   CONFIG, PRESET, DEFAULT_PORT, MEMORY_PROFILES, DEFAULT_PROFILE,
   DEFAULT_UBATCH, MIN_UBATCH, UBATCH_SIZES, ubatchFor, loadConfig, saveConfig,
   deviceMemory, freeDeviceBytes, planningBudget, servedIdFor, presetIdFor,
-  writePresetFor, warmup,
+  writePresetFor, warmup, usesLmStudio, portFor,
 } = serve;
+const lmstudio = require("../lib/lmstudio");
+
+/** What the running engine is called, for messages. */
+function engineName(cfg) {
+  return usesLmStudio(cfg) ? "LM Studio" : "llama-server";
+}
 
 
 
@@ -167,14 +173,15 @@ async function ensureServer(cfg, opts = {}) {
       ...opts,
       onProgress: (p) => {
         if (p.stage !== "server-starting") return;
-        const text = `starting llama-server… ${Math.round(p.ms / 1000)}s`;
+        const text = `starting ${engineName(cfg)}… ${Math.round(p.ms / 1000)}s`;
         if (!spin) spin = ui.spinner(text); else spin.update(text);
       },
     });
-    if (spin) spin.stop(`${c.green(ui.sym.ok)} llama-server ready on ${c.accent("127.0.0.1:" + r.port)}`);
+    if (spin) spin.stop(`${c.green(ui.sym.ok)} ${engineName(cfg)} ready on ${c.accent("127.0.0.1:" + r.port)}`);
     return r;
   } catch (e) {
     if (spin) spin.stop(c.red("✗ server did not come up"));
+    if (e.code === "NO_LMSTUDIO") die(e.message);
     if (e.code === "NO_ENGINE") {
       if (await offerEngineInstall()) return ensureServer(loadConfig(), opts);
       die("llama.cpp isn't installed.\n" +
@@ -480,7 +487,7 @@ async function prepareModel(cfg, model, ctx, cacheType) {
     },
   }).catch((e) => {
     if (spin) spin.stop(c.red("✗ " + e.message));
-    if (e.code === "NO_ENGINE") die(e.message);
+    if (e.code === "NO_ENGINE" || e.code === "NO_LMSTUDIO") die(e.message);
     if (e.log) console.log(c.dim(e.log));
     process.exit(1);
   });
@@ -548,6 +555,8 @@ const HELP_GROUPS = [
     ["arcflare batch", "[size]", "physical batch (prefill speed vs VRAM)"],
     ["arcflare engine install", "", "download llama.cpp for this machine"],
     ["arcflare set-engine", "<path>", "remember where llama-server lives"],
+    ["arcflare engine lmstudio", "", "run models in LM Studio (llamacpp: back)"],
+    ["arcflare engine runtime", "", "pick LM Studio's runtime, e.g. Vulkan"],
   ]],
   ["maintain", [
     ["arcflare doctor", "", "check engine, GPU and harnesses"],
@@ -1469,6 +1478,13 @@ async function main() {
 
     case "ps":
     case "status": {
+      if (usesLmStudio(cfg)) {
+        const port = portFor(cfg);
+        if (!(await lmstudio.health(port))) { console.log(`  ${c.dim("LM Studio's server is not running")}`); return; }
+        console.log(`  ${c.green("●")} LM Studio on ${c.accent("127.0.0.1:" + port)}`);
+        for (const s of await lmstudio.listLoaded(port)) console.log(`    ${c.dim(ui.sym.dot)} ${s}`);
+        return;
+      }
       const port = cfg.port || DEFAULT_PORT;
       const st = await engine.status(port);
       if (!st.running) { console.log(`  ${c.dim("not running")}`); return; }
@@ -1480,12 +1496,17 @@ async function main() {
     }
 
     case "stop":
+      if (usesLmStudio(cfg)) {
+        console.log(lmstudio.stop(cfg) ? `  ${c.green(ui.sym.ok)} unloaded ${c.dim("(LM Studio's server keeps running)")}`
+          : `  ${c.dim("nothing to stop")}`);
+        return;
+      }
       console.log(engine.stop() ? `  ${c.green(ui.sym.ok)} stopped` : `  ${c.dim("nothing to stop")}`);
       return;
 
     case "serve": {
       const i = argv.indexOf("--port");
-      const port = i >= 0 ? Number(argv[i + 1]) : cfg.port || DEFAULT_PORT;
+      const port = i >= 0 ? Number(argv[i + 1]) : portFor(cfg);
       await ensureServer(cfg, { port, restart: argv.includes("--restart") });
       console.log(`  ${c.dim("OpenAI endpoint:")} http://127.0.0.1:${port}/v1`);
       return;
@@ -1904,8 +1925,15 @@ async function main() {
       const all = models.discover({ meta: true });
       console.log(ui.banner(c.dim("doctor")));
 
+      const lms = lmstudio.findLms(cfg.lmsPath);
+      const lmsUp = lms ? await lmstudio.health(portFor({ ...cfg, engine: "lmstudio" })) : false;
+      const lmsRt = lms && usesLmStudio(cfg) ? lmstudio.runtime(cfg) : null;
       block("engine", [
-        [!!exe, "llama-server", c.dim(exe || "not installed: arcflare engine install")],
+        [true, "engine", usesLmStudio(cfg) ? `LM Studio ${c.dim("· arcflare engine llamacpp to switch")}`
+          : `llama.cpp ${c.dim("· arcflare engine lmstudio to switch")}`],
+        [usesLmStudio(cfg) ? !!lms : (lms ? true : null), "LM Studio",
+          c.dim(lms ? lms + (lmsUp ? " · server up" : "") + (lmsRt ? " · " + lmsRt : "") : "not found")],
+        [usesLmStudio(cfg) ? (exe ? true : null) : !!exe, "llama-server", c.dim(exe || "not installed: arcflare engine install")],
         ...surveyed.map((b) => [
           b.ok ? true : null,
           `backend ${b.kind}`,
@@ -1941,8 +1969,8 @@ async function main() {
       }
       block("tools", toolRows);
 
-      const st = await engine.status(cfg.port || DEFAULT_PORT);
-      block("server", [[st.running ? true : null, `port ${cfg.port || DEFAULT_PORT}`, st.running ? c.green("running") : c.dim("stopped")]]);
+      const up = usesLmStudio(cfg) ? lmsUp : (await engine.status(cfg.port || DEFAULT_PORT)).running;
+      block("server", [[up ? true : null, `port ${portFor(cfg)}`, up ? c.green("running") : c.dim("stopped")]]);
 
       console.log(problems
         ? `  ${c.red(ui.sym.fail)} ${problems} ${problems === 1 ? "problem" : "problems"} ${c.dim("above")}\n`
@@ -1952,10 +1980,59 @@ async function main() {
 
     case "engine": {
       if (argv[1] === "install") { await engineInstall(argv.slice(2)); return; }
+      if (argv[1] === "lmstudio" || argv[1] === "lm-studio") {
+        const li = argv.indexOf("--lms");
+        const lmsPath = li >= 0 ? argv[li + 1] : cfg.lmsPath;
+        const pi = argv.indexOf("--port");
+        const lmstudioPort = pi >= 0 ? Number(argv[pi + 1]) : cfg.lmstudioPort;
+        if (pi >= 0 && !(lmstudioPort > 0 && lmstudioPort < 65536)) die(`not a port: "${argv[pi + 1]}"`);
+        const lms = lmstudio.findLms(lmsPath);
+        if (li >= 0 && !lms) die(`no lms at ${lmsPath}`);
+        saveConfig({ ...cfg, engine: "lmstudio", lmsPath: lmsPath || undefined,
+          lmstudioPort: lmstudioPort || undefined });
+        console.log(`  ${c.green(ui.sym.ok)} engine set to ${c.accent("LM Studio")} ` +
+          c.dim(`port ${lmstudioPort || lmstudio.DEFAULT_PORT}`));
+        if (lms) {
+          console.log(`  ${c.dim("lms: " + lms)}`);
+          const rt = lmstudio.runtime({ lmsPath });
+          if (rt) console.log(`  ${c.dim("runtime:")} ${rt}`);
+          console.log(`  ${c.dim("pick the runtime (Vulkan recommended on AMD):")} ${c.accent("arcflare engine runtime")}`);
+        } else {
+          console.log(`  ${c.red("!")} ${c.dim("lms not found. Install LM Studio (https://lmstudio.ai) and open it once,")}`);
+          console.log(`    ${c.dim("or point at it: arcflare engine lmstudio --lms <path-to-lms>")}`);
+        }
+        return;
+      }
+      if (argv[1] === "llamacpp" || argv[1] === "llama.cpp" || argv[1] === "llama-server") {
+        if (usesLmStudio(cfg)) lmstudio.stop(cfg);
+        saveConfig({ ...cfg, engine: undefined });
+        console.log(`  ${c.green(ui.sym.ok)} engine set to ${c.accent("llama.cpp")} ${c.dim("(ArcFlare's own llama-server)")}`);
+        return;
+      }
+      if (argv[1] === "runtime") {
+        // LM Studio picks its runtime interactively, so hand over the terminal.
+        const lms = lmstudio.findLms(cfg.lmsPath);
+        if (!lms) die("LM Studio's lms command was not found");
+        const sub = argv[2] || "select";
+        const r = require("child_process").spawnSync(lms, ["runtime", sub, ...argv.slice(3)], { stdio: "inherit" });
+        process.exitCode = r.status || 0;
+        return;
+      }
+      if (usesLmStudio(cfg)) {
+        const lms = lmstudio.findLms(cfg.lmsPath);
+        console.log(`  ${lms ? c.green(ui.sym.ok) : c.red(ui.sym.fail)} engine ${c.accent("LM Studio")} ` +
+          c.dim(lms || "lms not found"));
+        const rt = lms && lmstudio.runtime(cfg);
+        if (rt) console.log(`  ${c.dim("runtime:")} ${rt}`);
+        console.log(c.dim("  arcflare engine runtime    pick LM Studio's runtime (Vulkan, ROCm, CUDA, CPU)"));
+        console.log(c.dim("  arcflare engine llamacpp   switch back to ArcFlare's own llama-server"));
+        return;
+      }
       const exe = engine.findServer(cfg.llamaServer, cfg.backend);
       if (exe) console.log(`  ${c.green(ui.sym.ok)} llama-server ${c.dim(exe)}`);
       else console.log(`  ${c.red(ui.sym.fail)} llama.cpp isn't installed: ${c.accent("arcflare engine install")}`);
       console.log(c.dim("  arcflare engine install [--vulkan|--cuda|--cpu|--rocm]   download llama.cpp for this machine"));
+      console.log(c.dim("  arcflare engine lmstudio [--lms <path>] [--port N]     run models in LM Studio instead"));
       return;
     }
 

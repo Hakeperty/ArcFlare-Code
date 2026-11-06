@@ -119,6 +119,8 @@ arcflare doctor
 | `arcflare mcp logout <server\|--all>` | Delete stored OAuth tokens for hosted MCP servers |
 | `arcflare doctor` | Check engine, GPU and harnesses |
 | `arcflare set-engine <path>` | Remember where `llama-server` lives |
+| `arcflare engine lmstudio` | Run models in LM Studio instead (`--lms <path>`, `--port N`); `arcflare engine llamacpp` switches back |
+| `arcflare engine runtime` | Pick LM Studio's runtime (Vulkan, ROCm, CUDA, CPU) |
 
 `arcflare <model>` is shorthand for `arcflare run <model>`.
 
@@ -210,6 +212,39 @@ Probing runs with the working directory set to each build's own folder. On
 Windows the DLL search path includes the current directory, so probing a ROCm
 build from inside a Vulkan build's folder silently loads the Vulkan backend and
 reports a device the ROCm build cannot use.
+
+### LM Studio as the engine
+
+ArcFlare normally runs its own `llama-server`. It can hand the model to
+[LM Studio](https://lmstudio.ai) instead, which ships and updates its own
+llama.cpp runtimes. On an AMD APU like Strix Halo (Radeon 8060S, 40 RDNA 3.5
+CUs), LM Studio's Vulkan runtime is the simplest way to put the whole model on
+the GPU:
+
+```
+arcflare engine lmstudio        # use LM Studio from now on
+arcflare engine runtime         # choose the Vulkan runtime (LM Studio's own picker)
+arcflare use opencode           # the menu, agent, run, fit: all unchanged
+arcflare engine llamacpp        # back to ArcFlare's own llama-server
+```
+
+What changes is how a model gets loaded. ArcFlare still picks the model and
+the context. It starts LM Studio's server with `lms server start` (port 1234
+by default) and loads the model with `lms load --gpu max --context-length N`,
+under ArcFlare's own model id, so the harnesses see the same names they always
+have. If a context size does not fit, ArcFlare halves it and tries again, the
+same as it does on its own engine.
+
+Your models stay where they are. A model ArcFlare finds outside LM Studio's
+folder is imported as a **hard link** (a symbolic link if the two folders are
+on different drives) under `arcflare/<model>`, so it takes no extra disk. It
+is never moved. If neither kind of link can be made, ArcFlare stops and says
+so rather than copying gigabytes. Models you download in LM Studio show up in
+`arcflare ls` as well.
+
+`arcflare stop` unloads the model. LM Studio's server keeps running, because
+other apps may be using it. KV cache type, batch size and the memory profile
+are llama-server settings and do nothing here: LM Studio manages its own.
 
 ## Memory
 
@@ -1026,6 +1061,7 @@ lib/gguf.js       GGUF metadata reader + KV cache maths
 lib/fit.js        what fits, and what measurably runs best
 lib/models.js     model discovery
 lib/engine.js     llama-server supervision
+lib/lmstudio.js   LM Studio as the engine (lms CLI, import by link)
 lib/harness.js    harness detection, config wiring, launch
 lib/agent/        the agent: loop, tools, MCP client, skills, context,
                   project notes, undo checkpoints, saved sessions
