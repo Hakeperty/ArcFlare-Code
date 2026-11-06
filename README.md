@@ -246,6 +246,22 @@ so rather than copying gigabytes. Models you download in LM Studio show up in
 other apps may be using it. KV cache type, batch size and the memory profile
 are llama-server settings and do nothing here: LM Studio manages its own.
 
+Measured on a Radeon 8060S with GLM-4.7-Flash Q4_K_M at 198K context,
+generation runs the same on both engines: 55.3 tok/s through LM Studio's
+Vulkan runtime, 55.0 through llama-server's. Two differences are worth
+knowing about:
+
+- **Sampling defaults.** When a request doesn't set a repeat penalty, LM
+  Studio applies 1.1. llama-server applies 1.0. With LM Studio's default, a
+  thinking model gave different answers at temperature 0, thought for twice as
+  long, and once answered a probe in Chinese: 1 of 5 probes passed, against
+  5 of 5 with the penalty at 1. ArcFlare's agent and `fit` now send
+  `repeat_penalty: 1` explicitly, which changes nothing on llama-server. Other
+  harnesses send whatever they send, so for Codex or OpenCode on LM Studio,
+  set the model's repeat penalty to 1 in LM Studio's own model settings.
+- **Prefill speed.** LM Studio reports no token timings and has no
+  `/tokenize`, so `fit` shows prefill as `—` there.
+
 ## Memory
 
 llama-server's stock defaults assume RAM to spare - an 8192 MiB host prompt
