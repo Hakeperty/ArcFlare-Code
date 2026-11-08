@@ -857,6 +857,7 @@ async function genCommand(cfg, argv) {
         torch: flag(argv, "--torch"),
         torchFrom: flag(argv, "--torch-from"),
         texture: argv.includes("--texture"),
+        licensedTerritory: argv.includes("--licensed-territory"),
       });
     } catch (e) {
       die(e.message);

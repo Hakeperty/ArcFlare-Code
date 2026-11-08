@@ -868,3 +868,22 @@ test("local_generate: runs the prompt on the local model server and returns the 
     assert.strictEqual((await bearerReq(s, "POST", "/api/local/generate", token, { prompt: "" })).status, 400);
   } finally { await s.close(); llama.close(); }
 });
+
+test("readJson: a body over 64 KB is read when the caller allows more, and refused when it does not", async () => {
+  const { readJson } = require("../lib/hub/server");
+  const body = JSON.stringify({ prompt: "x".repeat(100000) });
+  const run = (max) => new Promise((resolve) => {
+    const srv = http.createServer((q, r) => {
+      readJson(q, 2000, max).then((v) => { r.end(String(v.prompt.length)); }, (e) => { r.statusCode = e.status || 500; r.end("err"); });
+    });
+    srv.listen(0, "127.0.0.1", () => {
+      const rq = http.request({ host: "127.0.0.1", port: srv.address().port, method: "POST", path: "/", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } }, (res) => {
+        let t = ""; res.on("data", (d) => { t += d; }); res.on("end", () => { srv.close(); resolve([res.statusCode, t]); });
+      });
+      rq.on("error", () => { srv.close(); resolve(["error", ""]); });
+      rq.end(body);
+    });
+  });
+  assert.deepStrictEqual(await run(2 * 1024 * 1024), [200, "100000"]);
+  assert.strictEqual((await run(undefined))[0], 413);
+});
