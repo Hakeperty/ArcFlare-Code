@@ -166,6 +166,7 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.match(up, /if \(written != expectedSize\) \{ abandon\(\);/);
   assert.doesNotMatch(up, /FileProvider|getExternal|ACTION_VIEW|ACTION_INSTALL_PACKAGE|setDataAndType/);
   assert.match(main, /registerPlugin\(AppUpdaterPlugin\.class\)/);
+  assert.ok(!up.includes("call.getLong("), "getLong is null for an Integer-parsed JSON number: every update would fail");
   const java = main + read(path.join(dir, "NavPolicy.java"));
   assert.match(main, /FLAG_SECURE/);
   assert.match(main, /setAllowFileAccess\(false\)/);

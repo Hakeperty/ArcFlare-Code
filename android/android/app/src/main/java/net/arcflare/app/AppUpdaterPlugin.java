@@ -84,9 +84,11 @@ public class AppUpdaterPlugin extends Plugin {
     @PluginMethod
     public synchronized void begin(PluginCall call) {
         abandon();
-        Long size = call.getLong("size");
+        // Not call.getLong(): it returns null unless the JSON number was parsed as a Long, and an APK size
+        // (a few MB) parses as an Integer. optLong accepts any JSON number; -1 when absent or not a number.
+        long size = call.getData().optLong("size", -1);
         String sha = call.getString("sha256");
-        if (size == null || size < 1024 || size > MAX_SIZE) { call.reject("bad size"); return; }
+        if (size < 1024 || size > MAX_SIZE) { call.reject("bad size"); return; }
         if (sha == null || !sha.matches("^[0-9a-f]{64}$")) { call.reject("bad sha256"); return; }
         try {
             PackageInstaller pi = getContext().getPackageManager().getPackageInstaller();
