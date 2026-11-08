@@ -632,3 +632,17 @@ test("file tools refuse paths outside the allowed roots, including ../ and absol
   assert.match(await free("read_file", { path: "../secret.txt" }), /TOP-SECRET/);
   fs.rmSync(base, { recursive: true, force: true });
 });
+
+test("a dangling symlink inside the roots cannot be written through", async (t) => {
+  const tools = require("../lib/agent/tools");
+  const base = tmpdir("dangle");
+  const proj = path.join(base, "proj");
+  fs.mkdirSync(proj);
+  const target = path.join(base, "created-outside.txt");
+  try { fs.symlinkSync(target, path.join(proj, "out.md")); }
+  catch { fs.rmSync(base, { recursive: true, force: true }); t.skip("no symlink rights on this account"); return; }
+  const run = tools.makeExecutor({ cwd: proj, roots: [proj] });
+  assert.match(await run("write_file", { path: "out.md", content: "pwned" }), /^ERROR: .*outside/);
+  assert.ok(!fs.existsSync(target), "the link target was not created");
+  fs.rmSync(base, { recursive: true, force: true });
+});

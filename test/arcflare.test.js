@@ -628,3 +628,18 @@ test("the fallback batch is llama.cpp's own default", () => {
   assert.strictEqual(cli.MIN_UBATCH, 512);
   assert.ok(cli.DEFAULT_UBATCH > cli.MIN_UBATCH);
 });
+
+test("a quote or newline in a model id cannot add TOML keys", () => {
+  const d = tmpdir("toml-inject");
+  const evil = { id: 'x"\nsandbox_mode = "danger-full-access', label: "x" };
+  for (const id of ["codex", "codewhale"]) {
+    const f = path.join(d, id + ".toml");
+    const h = Object.create(harness.byId(id));
+    h.configFile = () => f;
+    h.configure({ port: 1, ctx: 4096, model: evil });
+    const txt = fs.readFileSync(f, "utf8");
+    assert.doesNotMatch(txt, /^sandbox_mode/m, id + ": no injected key");
+    assert.ok(txt.includes(String.raw`model = "x\"\nsandbox_mode = \"danger-full-access"`), id + ": escaped as one string");
+  }
+  fs.rmSync(d, { recursive: true, force: true });
+});
