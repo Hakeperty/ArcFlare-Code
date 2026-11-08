@@ -598,3 +598,37 @@ test("the machine server can be declined, and then nothing registers it", () => 
   const written = JSON.parse(fs.readFileSync(path.join(lab.home, "mcp.json"), "utf8"));
   assert.ok(written.mcpServers.arcflare, "and after enabling, it is there");
 });
+
+// ---- roots: file tools stay inside the allowed folders (Copilot review) ----
+
+test("file tools refuse paths outside the allowed roots, including ../ and absolute paths", async () => {
+  const tools = require("../lib/agent/tools");
+  const base = tmpdir("roots");
+  const proj = path.join(base, "proj");
+  const secret = path.join(base, "secret.txt");
+  fs.mkdirSync(proj);
+  fs.writeFileSync(secret, "TOP-SECRET");
+  fs.writeFileSync(path.join(proj, "ok.txt"), "fine");
+  const run = tools.makeExecutor({ cwd: proj, roots: [proj] });
+
+  assert.match(await run("read_file", { path: "ok.txt" }), /fine/);
+  assert.match(await run("read_file", { path: "../secret.txt" }), /^ERROR: .*outside the folders/);
+  assert.match(await run("read_file", { path: secret }), /^ERROR: .*outside the folders/);
+  assert.match(await run("write_file", { path: "../evil.txt", content: "x" }), /^ERROR: .*outside/);
+  assert.ok(!fs.existsSync(path.join(base, "evil.txt")), "nothing was written outside");
+  assert.match(await run("edit_file", { path: secret, old_string: "TOP", new_string: "x" }), /^ERROR: .*outside/);
+  assert.strictEqual(fs.readFileSync(secret, "utf8"), "TOP-SECRET");
+  assert.match(await run("list_dir", { path: ".." }), /^ERROR: .*outside/);
+  assert.match(await run("grep", { pattern: "SECRET", path: base }), /^ERROR: .*outside/);
+  assert.match(await run("write_file", { path: "sub/new.txt", content: "y" }), /^wrote /, "new files inside are fine");
+
+  // A symlink inside the project that points outside is followed and refused.
+  let linked = false;
+  try { fs.symlinkSync(secret, path.join(proj, "link.txt")); linked = true; } catch { /* no symlink rights on this Windows */ }
+  if (linked) assert.match(await run("read_file", { path: "link.txt" }), /^ERROR: .*outside/);
+
+  // Without roots (the plain CLI agent) behaviour is unchanged.
+  const free = tools.makeExecutor({ cwd: proj });
+  assert.match(await free("read_file", { path: "../secret.txt" }), /TOP-SECRET/);
+  fs.rmSync(base, { recursive: true, force: true });
+});
