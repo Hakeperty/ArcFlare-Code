@@ -347,6 +347,11 @@ def tts_qwen3(spec, device):
     if spec.get("ref"):
         wavs, sr = model.generate_voice_clone(text=spec["text"], language=lang,
                                               ref_audio=spec["ref"], ref_text=spec.get("refText") or "")
+    elif "VoiceDesign" in spec["hf"]:
+        # The VoiceDesign model has no preset speakers: the description is the voice.
+        wavs, sr = model.generate_voice_design(text=spec["text"], language=lang, instruct=spec["instruct"])
+        sf.write(spec["out"], to_numpy(wavs[0]), sr)
+        return finish_audio(spec["out"], device=device, voice="designed")
     else:
         speakers = list(model.get_supported_speakers() or [])
         speaker = spec.get("voice") or (speakers[0] if speakers else None)
@@ -436,7 +441,70 @@ def tts_outetts(spec, device):
     finish_audio(spec["out"], device=device, cloned=bool(spec.get("ref")))
 
 
+def tts_omnivoice(spec, device):
+    # k2-fsa/OmniVoice: one model for cloning (ref_audio), voice design (instruct) and an automatic voice.
+    import torch
+    import soundfile as sf
+    from omnivoice import OmniVoice
+
+    stage("load-model", repo=spec["hf"])
+    gpu = device.startswith("cuda")
+    dmap = "cuda:0" if gpu else device
+
+    def load():
+        return OmniVoice.from_pretrained(spec["hf"], device_map=dmap,
+                                         dtype=torch.float16 if gpu else torch.float32)
+
+    model = cached(("omnivoice", spec["hf"], device), load)
+    kw = {"text": spec["text"]}
+    if spec.get("ref"):
+        kw["ref_audio"] = spec["ref"]
+        # Without a transcript OmniVoice transcribes the clip itself (Whisper).
+        if spec.get("refText"):
+            kw["ref_text"] = spec["refText"]
+    if spec.get("instruct"):
+        kw["instruct"] = spec["instruct"]
+    if spec.get("speed") and float(spec["speed"]) != 1:
+        kw["speed"] = float(spec["speed"])
+    mode = "clone" if spec.get("ref") else "design" if spec.get("instruct") else "auto"
+    stage("synthesize", mode=mode)
+    audio = model.generate(**kw)
+    sf.write(spec["out"], to_numpy(audio[0]), 24000)
+    finish_audio(spec["out"], device=device, voice=mode, cloned=bool(spec.get("ref")))
+
+
+def tts_kitten(spec, device):
+    # KittenML/kitten-tts-2: 115 voices, in-context cloning from 5-30 s (no transcript), emotion tags.
+    import soundfile as sf
+    from kittenml import KittenTTS
+
+    stage("load-model", repo=spec["hf"])
+    model = cached(("kitten", spec["hf"]), lambda: KittenTTS(spec["hf"]))
+    text = spec["text"]
+    kw = {}
+    if spec.get("instruct"):
+        # One leading [emotion] tag sets the delivery for the whole line.
+        text = "[" + spec["instruct"].strip().lower() + "] " + text
+        kw["preset"] = "expressive"
+    if spec.get("ref"):
+        kw["reference"] = spec["ref"]
+    else:
+        kw["voice"] = spec.get("voice") or "Bruno"
+        voices = list(getattr(model, "available_voices", []) or [])
+        if voices and kw["voice"] not in voices:
+            raise ValueError(f"no voice {kw['voice']!r}; this model has: {', '.join(voices[:40])}, ...")
+    lang = (spec.get("lang") or "en").lower()
+    if lang not in ("en", "english"):
+        kw["normalize"] = False  # the text normaliser is English-tuned
+    stage("synthesize", voice=kw.get("voice") or "cloned")
+    audio = model.generate(text, **kw)
+    sf.write(spec["out"], to_numpy(audio), model.sample_rate)
+    finish_audio(spec["out"], device=device, voice=kw.get("voice") or "cloned", cloned=bool(spec.get("ref")))
+
+
 TTS = {
+    "kitten": tts_kitten,
+    "omnivoice": tts_omnivoice,
     "qwen3-tts": tts_qwen3,
     "kokoro": tts_kokoro,
     "chatterbox": tts_chatterbox,

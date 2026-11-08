@@ -527,8 +527,10 @@ const HELP_GROUPS = [
   ["generate", [
     ["arcflare gen", "", "the 3D and speech models"],
     ["arcflare gen 3d", "<image>", "image to mesh (.glb); --prompt \"...\" for text"],
-    ["arcflare gen tts", "\"text\"", "text to speech (.wav): Qwen3-TTS, Kokoro, ..."],
-    ["arcflare gen setup", "[model]", "install a generator (--torch cuda|cpu)"],
+    ["arcflare say", "\"text\"", "speak it: --like clip.wav copies a voice, --describe \"...\" makes one, --as <saved>, --play"],
+    ["arcflare voice", "[save|list|rm]", "saved voices: arcflare voice save narrator --like clip.wav"],
+    ["arcflare gen tts", "\"text\"", "the same, with every option: -m model, --voice, --lang, --speed"],
+    ["arcflare gen setup", "[model]", "install a generator (picks the right torch; --torch cuda|cpu to choose)"],
   ]],
   ["remote control", [
     ["arcflare rc", "", "QR code, key and relay (/rc inside a session)"],
@@ -830,6 +832,87 @@ function positionals(argv) {
   return out;
 }
 
+/** `arcflare voice [list | save <name> --like clip.wav | --describe "..." | rm <name>]`: the saved-voice library. */
+function voiceCommand(argv) {
+  const voices = require("../lib/gen/voices");
+  const sub = argv[0] || "list";
+  try {
+    if (sub === "list" || sub === "ls") {
+      const all = voices.list();
+      if (!all.length) {
+        console.log(`
+  ${c.dim("No saved voices yet.")}`);
+        console.log(`  arcflare voice save narrator --like clip.wav     ${c.dim("copy a voice from 3-10 s of clear speech")}`);
+        console.log(`  arcflare voice save guide --describe "a calm, warm female voice"   ${c.dim("make one from words")}
+`);
+        return;
+      }
+      console.log("");
+      const w = Math.max(...all.map((v) => v.name.length));
+      for (const v of all) {
+        const what = v.clipPath ? `copied from ${path.basename(v.clipPath)}` : `"${v.describe}"`;
+        console.log(`  ${c.accent(v.name.padEnd(w))}  ${c.dim(what + (v.model ? ` · ${v.model}` : ""))}`);
+      }
+      console.log(`
+  ${c.dim('use one: arcflare say "Hello there." --as ' + all[0].name)}
+`);
+      return;
+    }
+    if (sub === "save" || sub === "add") {
+      const name = positionals(argv.slice(1))[0];
+      const v = voices.save(name, {
+        like: flag(argv, "--like") || flag(argv, "--ref"),
+        refText: flag(argv, "--ref-text"),
+        describe: flag(argv, "--describe") || flag(argv, "--instruct"),
+        model: flag(argv, "--model") || flag(argv, "-m"),
+        overwrite: argv.includes("--force"),
+      });
+      console.log(`  ${c.green(ui.sym.ok)} saved voice ${c.accent(v.name)} ${c.dim(`— arcflare say "Hello there." --as ${v.name}`)}`);
+      return;
+    }
+    if (sub === "rm" || sub === "remove" || sub === "delete") {
+      voices.remove(argv[1]);
+      console.log(`  ${c.green(ui.sym.ok)} removed voice ${c.accent(String(argv[1]).toLowerCase())}`);
+      return;
+    }
+    die("usage: arcflare voice [list | save <name> --like clip.wav | save <name> --describe \"...\" | rm <name>]");
+  } catch (e) {
+    die(e.message);
+  }
+}
+
+/** gen setup, choosing the torch build automatically unless --torch / --torch-from say otherwise. */
+async function setupWithTorch(cfg, m, argv) {
+  const gen = require("../lib/gen");
+  let torch = flag(argv, "--torch"), torchFrom = flag(argv, "--torch-from");
+  if (!torch && !torchFrom) {
+    const pick = gen.autoTorch(cfg);
+    torch = pick.torch;
+    torchFrom = pick.torchFrom;
+    console.log(`  ${c.dim(pick.why)}`);
+  }
+  return gen.setup(cfg, m, {
+    torch, torchFrom,
+    texture: argv.includes("--texture"),
+    licensedTerritory: argv.includes("--licensed-territory"),
+  });
+}
+
+/** Play a .wav where the user is: the OS's own player, waiting until it ends. Best effort. */
+function playAudio(file) {
+  const { spawnSync } = require("child_process");
+  const tries = process.platform === "win32"
+    ? [["powershell", ["-NoProfile", "-Command", `(New-Object Media.SoundPlayer ${JSON.stringify(file).replace(/"/g, "'")}).PlaySync()`]]]
+    : process.platform === "darwin" ? [["afplay", [file]]]
+    : [["paplay", [file]], ["aplay", ["-q", file]], ["ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", file]]];
+  for (const [cmd, args] of tries) {
+    const r = spawnSync(cmd, args, { stdio: "ignore", windowsHide: true });
+    if (r.status === 0) return true;
+  }
+  console.log(`  ${c.dim("could not play it here; open the file instead")}`);
+  return false;
+}
+
 async function genCommand(cfg, argv) {
   const gen = require("../lib/gen");
   const sub = argv[1];
@@ -854,12 +937,7 @@ async function genCommand(cfg, argv) {
     console.log(`\n  ${c.bold("Setting up")} ${c.accent(m.label)}\n`);
     let r;
     try {
-      r = await gen.setup(cfg, m, {
-        torch: flag(argv, "--torch"),
-        torchFrom: flag(argv, "--torch-from"),
-        texture: argv.includes("--texture"),
-        licensedTerritory: argv.includes("--licensed-territory"),
-      });
+      r = await setupWithTorch(cfg, m, argv);
     } catch (e) {
       die(e.message);
     }
@@ -940,10 +1018,34 @@ async function genCommand(cfg, argv) {
       if (!fs.existsSync(file)) die(`no such file: ${file}`);
       text = fs.readFileSync(file, "utf8");
     }
-    const model = flag(rest, "--model") || flag(rest, "-m") || cfg.ttsModel || gen.DEFAULT_TTS;
-    const m = gen.byId(model, "tts");
+    // Plain words for the two things people want: copy a voice (--like clip.wav) or describe one (--describe "...").
+    // --as <name>: a saved voice (arcflare voice save) fills in the rest; flags given here still win.
+    let saved = {};
+    if (flag(rest, "--as")) {
+      try { saved = require("../lib/gen/voices").toSpeak(require("../lib/gen/voices").get(flag(rest, "--as"))); } catch (e) { die(e.message); }
+    }
+    const ref = flag(rest, "--like") || flag(rest, "--ref") || saved.ref;
+    const describe = flag(rest, "--describe") || flag(rest, "--instruct") || saved.instruct;
+    const named = flag(rest, "--model") || flag(rest, "-m") || saved.model;
+    const m = named ? gen.byId(named, "tts") : gen.pickSpeechModel(cfg, { ref, describe });
     if (!m || gen.kindOf(m) !== "tts") {
-      die(`unknown speech model "${model}". Known: ${gen.MODELS.filter((x) => gen.kindOf(x) === "tts").map((x) => x.id).join(", ")}`);
+      die(`unknown speech model "${named}". Known: ${gen.MODELS.filter((x) => gen.kindOf(x) === "tts").map((x) => x.id).join(", ")}`);
+    }
+    if (!named && m.id !== (cfg.ttsModel || gen.DEFAULT_TTS)) {
+      console.log(`  ${c.dim(`using ${m.label} — it ${ref && describe ? "clones and restyles a voice" : ref ? "copies a voice from a clip" : "designs a voice from a description"}`)}`);
+    }
+    if (m.nonCommercial) console.log(`  ${c.red("!")} ${c.dim(`${m.label}'s weights are licensed for non-commercial use only (${m.license})`)}`);
+    // First use: install it now instead of failing with "run setup first".
+    if (!gen.installed(m) || !gen.findPython(cfg, m)) {
+      if (rest.includes("--no-install")) die(`${m.label} is not installed — run \`arcflare gen setup ${m.id}\``);
+      console.log(`\n  ${c.bold("First use of")} ${c.accent(m.label)} ${c.dim(`— installing it once (~${m.vram} GB of VRAM when running)`)}`);
+      try {
+        const r = await setupWithTorch(cfg, m, rest);
+        if (!r.check || !r.check.ok) die(`${m.label} installed, but its check failed: ${((r.check && r.check.problems) || []).join("; ") || "see above"}`);
+      } catch (e) {
+        die(e.message);
+      }
+      console.log(`  ${c.green(ui.sym.ok)} installed\n`);
     }
     if (!gen.weightsPresent(m)) {
       console.log(`  ${c.dim(`${m.label} weights are not downloaded yet — the first run fetches them from ${m.hf}`)}`);
@@ -956,11 +1058,11 @@ async function genCommand(cfg, argv) {
         model: m.id, text,
         out: flag(rest, "--out") || flag(rest, "-o"),
         voice: flag(rest, "--voice"),
-        ref: flag(rest, "--ref"),
-        refText: flag(rest, "--ref-text"),
+        ref,
+        refText: flag(rest, "--ref-text") || saved.refText,
         lang: flag(rest, "--lang"),
         speed: flag(rest, "--speed"),
-        instruct: flag(rest, "--instruct"),
+        instruct: describe,
         seed: flag(rest, "--seed"),
         device: flag(rest, "--device"),
         onEvent: (ev) => {
@@ -977,6 +1079,7 @@ async function genCommand(cfg, argv) {
     spin.stop(`${c.green(ui.sym.ok)} ${r.file}`);
     console.log(`  ${c.dim(`${r.seconds}s of audio · ${(r.sample_rate / 1000).toFixed(1)} kHz · ` +
       `${ui.fmtBytes(r.bytes)} · made in ${(r.ms / 1000).toFixed(1)}s · ${r.device || ""}`)}`);
+    if (rest.includes("--play")) playAudio(r.file);
     return;
   }
 
@@ -1917,6 +2020,12 @@ async function main() {
     case "gen":
     case "generate":
       return genCommand(cfg, argv);
+    // `arcflare say "hi"` is `arcflare gen tts "hi"`: the short way to the most common request.
+    case "say":
+      return genCommand(cfg, ["gen", "tts", ...argv.slice(1)]);
+    case "voice":
+    case "voices":
+      return voiceCommand(argv.slice(1));
 
     case "update":
     case "upgrade":

@@ -130,6 +130,17 @@ test("speech requests a model cannot serve are refused before anything starts", 
   await assert.rejects(gen.speak({}, { model: "kokoro", text: "x".repeat(6000) }), /characters/);
 });
 
+test("voice design and OmniVoice: what they need is checked up front, and the licence is on the record", async () => {
+  await assert.rejects(gen.speak({}, { model: "qwen3-tts-design", text: "hi" }), /--instruct/);
+  await assert.rejects(gen.speak({}, { model: "kokoro", text: "hi", instruct: "calm" }), /omnivoice/);
+  await assert.rejects(gen.speak({}, { model: "omnivoice", text: "hi", instruct: "x".repeat(1001) }), /1000/);
+  const ov = gen.byId("omnivoice", "tts");
+  assert.ok(ov.cloning && ov.instruct && ov.nonCommercial, "OmniVoice clones, designs, and is non-commercial");
+  assert.match(ov.note, /NON-COMMERCIAL/);
+  assert.ok(!ov.needsRefText, "OmniVoice transcribes the reference clip itself");
+  assert.strictEqual(gen.byId("qwen3-tts-design", "tts").license, "Apache-2.0");
+});
+
 test("speech output defaults to the working directory, named after the text", () => {
   const out = gen.defaultSpeechOut(gen.byId("kokoro"), "Hello, World!", "/work");
   assert.strictEqual(out, path.join("/work", "hello-world-kokoro.wav"));
@@ -141,4 +152,36 @@ test("a speech worker that writes nothing fails, whatever it reports", async () 
   // the same rule speak applies.
   const r = await gen.runWorker(process.execPath, { out: path.join(os.tmpdir(), "af-nothing.wav") }, { worker });
   assert.ok(!fs.existsSync(r.file), "nothing was written");
+});
+
+test("autoTorch: borrows a GPU torch it finds, else picks the wheel for the hardware", () => {
+  const none = { probe: () => null, has: () => false, exists: (p) => p === "/dev/kfd" ? false : true };
+  // An ArcFlare env with a working GPU torch is borrowed (AMD on Windows has no official wheel).
+  const gpu = gen.autoTorch({ genPython: "/py/rocm" }, { ...none, probe: (p) => p === "/py/rocm" ? { version: "2.10+rocm", gpu: true } : null });
+  assert.strictEqual(gpu.torchFrom, "/py/rocm");
+  assert.match(gpu.why, /2\.10\+rocm/);
+  // A CPU-only torch is not worth borrowing.
+  assert.strictEqual(gen.autoTorch({ genPython: "/py/cpu" }, { ...none, probe: () => ({ version: "2.8", gpu: false }) }).torchFrom, undefined);
+  assert.strictEqual(gen.autoTorch({}, { ...none, has: (c) => c === "nvidia-smi" }).torch, "cuda");
+  assert.strictEqual(gen.autoTorch({}, { ...none, platform: "linux", exists: () => true, probe: () => null }).torch, "rocm");
+  assert.strictEqual(gen.autoTorch({}, { ...none, platform: "darwin" }).torch, undefined);
+  const cpu = gen.autoTorch({}, { ...none, platform: "win32" });
+  assert.strictEqual(cpu.torch, "cpu");
+  assert.match(cpu.why, /slowly/);
+});
+
+test("pickSpeechModel: --like clones, --describe designs, installed first, never non-commercial unasked", () => {
+  const nothing = () => false;
+  assert.strictEqual(gen.pickSpeechModel({}, {}, nothing).id, gen.DEFAULT_TTS);
+  assert.strictEqual(gen.pickSpeechModel({}, { ref: "a.wav" }, nothing).id, "chatterbox");
+  assert.strictEqual(gen.pickSpeechModel({}, { describe: "calm" }, nothing).id, "qwen3-tts-design");
+  // An installed cloning model is used rather than downloading another.
+  assert.strictEqual(gen.pickSpeechModel({}, { ref: "a.wav" }, (m) => m.id === "outetts").id, "outetts");
+  // OmniVoice (non-commercial) only when nothing else can do the job: clone AND describe.
+  for (const req of [{ ref: "a" }, { describe: "x" }, {}]) assert.ok(!gen.pickSpeechModel({}, req, () => true).nonCommercial);
+  assert.strictEqual(gen.pickSpeechModel({}, { ref: "a", describe: "x" }, nothing).id, "omnivoice");
+  // An emotion word with a clip: Kitten does exactly that, and is not non-commercial.
+  assert.strictEqual(gen.pickSpeechModel({}, { ref: "a", describe: "joyful" }, nothing).id, "kitten-tts-2");
+  // The user's own default wins when it can do what was asked.
+  assert.strictEqual(gen.pickSpeechModel({ ttsModel: "omnivoice" }, { ref: "a" }, nothing).id, "omnivoice");
 });
