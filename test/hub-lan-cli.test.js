@@ -94,3 +94,26 @@ test("the hub process: LAN mailbox on by default, off with --local", async () =>
     } finally { await h.stop(); }
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+test("pair puts the RUNNING hub's port in the link, and says when no hub is running", async (t) => {
+  const { lanAddresses } = require("../lib/hub/cli");
+  if (!lanAddresses().length) return t.skip("this machine has no LAN address to build a link from");
+  const home = mkHome();
+  try {
+    assert.strictEqual(run(home, ["phone", "user", "add", "alice", "--password-stdin"], "correct-horse-battery\n").status, 0);
+    // No hub yet: the link would point at nothing, so pair must say so (the phone would only report a timeout).
+    let p = run(home, ["phone", "pair", "--no-wait", "--no-qr"]);
+    assert.match(p.stdout, /no hub is running/i);
+    // A hub on a port other than the configured one (--port): pair, run without --port, must use that port.
+    const h = await hubProcess(home, []);
+    try {
+      assert.notStrictEqual(h.port, 7878);
+      p = run(home, ["phone", "pair", "--no-wait", "--no-qr"]);
+      assert.strictEqual(p.status, 0, p.stdout + p.stderr);
+      assert.strictEqual(new URL(linkOf(p.stdout).searchParams.get("l")).port, String(h.port), "the link points at the running hub");
+      assert.doesNotMatch(p.stdout, /no hub is running/i);
+    } finally { await h.stop(); }
+    // Stopped hub: the record is gone, the warning is back.
+    assert.match(run(home, ["phone", "pair", "--no-wait", "--no-qr"]).stdout, /no hub is running/i);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});

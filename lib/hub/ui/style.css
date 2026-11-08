@@ -207,7 +207,15 @@ button { font: inherit; color: inherit; }
   min-height: 48px;
   text-decoration: none;
   min-width: 0;
+  /* At large system font sizes the wordmark does not fit beside the connection chip. Instead of running under it,
+     it wraps to a second row, which this one-row box clips: the mascot stays, the wordmark is simply not drawn. */
+  flex-wrap: wrap;
+  align-content: flex-start;
+  height: 48px;
+  overflow: hidden;
 }
+.brand > .mascot-sm, .brand > .wordmark { height: 48px; }
+.brand > .wordmark { display: inline-flex; align-items: center; }
 .wordmark {
   font: 400 20px/1 var(--display);
   letter-spacing: 0.02em;

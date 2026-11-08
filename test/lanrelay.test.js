@@ -268,13 +268,26 @@ test("channel count limits", async () => {
     await put(toks);
     const mine = [];
     for (let i = 0; i < 8; i++) { mine.push(chan()); eq(`channel #${i + 1}`, (await cGet(toks[0], mine[i])).status, 200); }
-    let r = await cGet(toks[0], chan());
-    assert.ok(r.status === 429 && Number(r.h.get("retry-after")) >= 1, "9th channel for one token");
-    eq("9th via POST", (await cPost(toks[0], chan(), [mkFrame()])).status, 429);
-    for (let k = 1; k < 8; k++) for (let i = 0; i < 8; i++) eq(`fill ${k}/${i}`, (await cGet(toks[k], chan())).status, 200);
-    r = await cGet(toks[8], chan());
-    assert.ok(r.status === 429 && Number(r.h.get("retry-after")) >= 1, "65th channel in the room");
-    eq("a bound channel keeps working at the limit", (await cGet(toks[0], mine[3])).status, 200);
+    // LAN rule (TUNNEL.md 16.1): a phone's 9th channel replaces that phone's least recently used one instead of a 429.
+    // A phone that was killed mid-session cannot close its channels; with a 429 it was locked out for 15 minutes
+    // after four relaunches (seen on an Android 16 emulator), and told to check its Wi-Fi.
+    t.clock.off += 1000; await cGet(toks[0], mine[0]);                 // mine[0] is now the most recent; mine[1] the oldest
+    t.clock.off += 1000;
+    const ninth = chan();
+    eq("9th channel for one token replaces its own oldest", (await cGet(toks[0], ninth)).status, 200);
+    eq("the oldest (mine[1]) was released: another token may bind that id now", (await cGet(toks[1], mine[1])).status, 200);
+    eq("the others are still bound to their owner", (await cGet(toks[1], mine[2])).status, 403);
+    t.clock.off += 1000;
+    eq("10th via POST also replaces", (await cPost(toks[0], chan(), [mkFrame()])).status, 200);
+    for (let k = 2; k < 8; k++) for (let i = 0; i < 8; i++) eq(`fill ${k}/${i}`, (await cGet(toks[k], chan())).status, 200);
+    for (let i = 0; i < 7; i++) eq(`fill 1/${i}`, (await cGet(toks[1], chan())).status, 200);
+    let r = await cGet(toks[8], chan());
+    assert.ok(r.status === 429 && Number(r.h.get("retry-after")) >= 1, "65th channel in the room: still refused, nobody else's channel is taken");
+    eq("a bound channel keeps working at the limit", (await cGet(toks[0], ninth)).status, 200);
+    // A token churning at its own limit never takes another token's channel.
+    for (let i = 0; i < 20; i++) { t.clock.off += 10; eq(`churn ${i}`, (await cGet(toks[0], chan())).status, 200); }
+    eq("toks[1]'s channel survived toks[0] churning", (await cGet(toks[2], mine[1])).status, 403);
+    eq("room still full for a new token", (await cGet(toks[8], chan())).status, 429);
   } finally { await t.close(); }
 });
 

@@ -609,6 +609,14 @@ handshakes, the frames or the transport changes; only the carrier does.
   `https://localhost` and `capacitor://localhost`, never `*`); a preflight that
   asks for Private Network Access from an allowed origin is answered with
   `Access-Control-Allow-Private-Network: true`.
+  **Channel limit:** a token's 9th channel does not get 429: it replaces that
+  token's least recently used channel (only ever its own; the 64-per-room cap
+  still answers 429). A phone that is killed mid-session cannot close its
+  channels, and with a 429 four relaunches within 15 minutes locked it out until
+  the idle sweep, with only "did not answer" on the phone (found on an Android 16
+  emulator). Someone holding the LAN token could already deny service by filling
+  the 8 channels, so this adds nothing for them. **The internet relay (section 15)
+  still answers 429 and needs the same change.**
 - **13/14**: the LAN rows above.
 - **8**: unchanged. The hub's tunnel polls its own mailbox in-process (no HTTP
   hop, no token) and feeds the same session handling, the same per-device login

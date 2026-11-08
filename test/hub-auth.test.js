@@ -421,3 +421,19 @@ test("a flood of logins is bounded: a few at a time, the excess turned away", as
   const ok = await a.login({ username: "real", password: "a long enough password", ip: "10.9.9.9" });
   assert.strictEqual(ok.ok, true);
 });
+
+test("a parallel burst of guesses gets no more than the free failures checked (lockout re-checked after the queue)", async () => {
+  // Seen against a real hub: 60 parallel wrong passwords for one user, and 15 reached the password check because
+  // every queued request had passed the lockout check before the first failure was recorded.
+  const a = new AuthStore({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "af-auth-burst-")) });
+  a.createAccount("tester", PW);
+  const rs = await Promise.all(Array.from({ length: 40 }, (_, i) =>
+    a.login({ username: "tester", password: "guess number " + i, ip: "192.168.1.50" })));
+  const checked = rs.filter((r) => r.code === "BAD_CREDENTIALS").length;
+  assert.ok(checked <= 5, `at most 5 guesses checked, got ${checked}`);
+  assert.ok(rs.every((r) => !r.ok));
+  assert.ok(rs.filter((r) => r.code === "LOCKED").every((r) => r.retryAfterMs > 0), "refused ones say how long to wait");
+  // Different users from different addresses are not held back by it.
+  const other = await a.login({ username: "nobody", password: "x".repeat(12), ip: "192.168.1.51" });
+  assert.strictEqual(other.code, "BAD_CREDENTIALS");
+});

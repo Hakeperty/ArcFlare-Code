@@ -512,3 +512,14 @@ test("N5: replacing a pairing needs the first 4 characters of the OLD fingerprin
   await u.advance(1500);
   assert.equal(u.els["cf-pair"].disabled, false);
 });
+
+test("launch: home-network-only pairing REFUSED (revoked on the computer) says so, not 'check your Wi-Fi'", async () => {
+  // Seen on a real hub: after `arcflare phone devices revoke`, the LAN mailbox answers 401 and the phone was told
+  // to check that it is on the same Wi-Fi, which sends the person looking for a network problem that does not exist.
+  const s = makeShell({ store: pairedRecord(key(REAL), { relay: LAN }), behave: () => "REFUSED" });
+  await s.start();
+  assert.equal(s.visible(), "v-status");
+  assert.match(s.text("st-msg"), /refused this phone/);
+  assert.match(s.text("st-msg"), /removed on the computer/);
+  assert.doesNotMatch(s.text("st-msg"), /same Wi-Fi/);
+});

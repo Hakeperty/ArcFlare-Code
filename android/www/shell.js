@@ -280,6 +280,9 @@
     if (relay && relay.code === "REFUSED") return "The relay no longer accepts this phone. It may have been removed on the computer. Pair again to use it.";
     if (relay && relay.code === "HANDSHAKE") return "The answer from the relay did not match your computer's key, so it was refused. Try again later, or pair again.";
     if (Mode.needsHomeRepair(rec) && rec.relay === rec.lan) return REPAIR + " The internet relay is not set up, so there is nothing else to connect through.";
+    // The home mailbox answered (401/403) but turned this phone's token down: not a Wi-Fi problem. Unauthenticated
+    // plain http, so worded as "may": whoever answers at that address could say it, but they could also just not answer.
+    if (home && home.code === "REFUSED" && rec && rec.relay === rec.lan) return "Your computer refused this phone on your home network. It may have been removed on the computer (arcflare phone devices). Pair again to use it.";
     if (rec && rec.relay === rec.lan) return "Your computer did not answer on your home network. Check that this phone is on the same Wi-Fi, that the computer is on and that arcflare phone is running, then try again. The internet relay is not set up.";
     return "Your computer did not answer on your home network or through the relay. Check that it is on and that arcflare phone is running with the relay on, then try again." + (Mode.needsHomeRepair(rec) ? " " + REPAIR : "");
   }

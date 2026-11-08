@@ -866,6 +866,31 @@ flow(12, "layout: no sideways scroll, 44px targets, 16px inputs, both themes, sc
   await page.keyboard.press("Escape");
   await hidden(page, "#sheet-new", { timeout: 500 });
   await page.emulateMedia({ reducedMotion: "no-preference" });
+  P.step("largest Android font (text x2): the wordmark never runs under the connection chip");
+  // Seen on an Android 16 emulator at font scale 2.0: "arcflare_" spanned x 154-759 and the chip x 547-1003.
+  // Desktop Chromium has no WebView text zoom, so the header text is doubled by hand.
+  // Through the CSSOM: the page's CSP (style-src 'self') refuses an injected <style>, which is as it should be.
+  const clash = await page.evaluate(() => {
+    const wm = document.querySelector("#tb-brand .wordmark"), ch = document.querySelector("#conn-chip");
+    wm.style.fontSize = "40px";
+    Object.assign(ch.style, { fontSize: "24px", height: "auto", padding: "6px 16px" });
+    const chip = ch.getBoundingClientRect();
+    const brand = document.querySelector("#tb-brand").getBoundingClientRect();
+    const out = [];
+    for (const el of document.querySelectorAll("#tb-brand .wordmark, #tb-brand .mascot")) {
+      const r = el.getBoundingClientRect();
+      // Visible = the part of it inside the brand box (which clips); an element pushed out of it is hidden, not drawn.
+      const left = Math.max(r.left, brand.left), right = Math.min(r.right, brand.right);
+      const top = Math.max(r.top, brand.top), bottom = Math.min(r.bottom, brand.bottom);
+      const clipped = getComputedStyle(document.querySelector("#tb-brand")).overflow !== "visible";
+      const [l, rr, t, b] = clipped ? [left, right, top, bottom] : [r.left, r.right, r.top, r.bottom];
+      if (rr > l && b > t && l < chip.right && rr > chip.left && t < chip.bottom && b > chip.top) out.push(`${el.className} [${Math.round(l)}-${Math.round(rr)}] overlaps chip [${Math.round(chip.left)}-${Math.round(chip.right)}]`);
+    }
+    wm.style.fontSize = "";
+    Object.assign(ch.style, { fontSize: "", height: "", padding: "" });
+    return out;
+  });
+  assert.deepStrictEqual(clash, [], "header items overlap at large text: " + clash.join("; "));
   const need = ["login-setup", "login", "login-locked", "dashboard-empty", "dashboard", "agent", "agent-approval", "devices", "hostile-agent", "hostile-dashboard", "new-sheet", "devices-confirm", "hostile-approval", "agent-rich"];
   const missing = need.filter((s) => !P.screens.has(s));
   const bad = P.layout.filter((l) => l.issues.length).map((l) => `${l.name}: ${l.issues.join("; ")}`);
