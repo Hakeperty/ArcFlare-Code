@@ -1,5 +1,6 @@
 # Runs the real one-line installers from arcflare.net on fresh Linux distributions, each in a throwaway
-# container that is deleted when the job ends. As an ordinary user with sudo, the way a person installs it.
+# container that is deleted when the job ends. As an ordinary user with sudo, the way a person installs it,
+# and with no git on the system (a fresh desktop install has none).
 name: installers
 
 on:
