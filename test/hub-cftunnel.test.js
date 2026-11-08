@@ -51,3 +51,22 @@ test("a stored address that is not a plain trycloudflare https URL is ignored", 
   }
   assert.strictEqual(cf.callerOf({ headers: { "cf-connecting-ip": "x<script>" } }), "cloudflare");
 });
+
+test("connect install keeps only a download whose SHA-256 matches the one GitHub publishes", async () => {
+  const crypto = require("crypto");
+  const name = cf.assetName();
+  if (!name || name.endsWith(".tgz")) return; // the archive path needs tar; the plain-file path is what is tested here
+  const body = Buffer.from("pretend cloudflared");
+  const good = "sha256:" + crypto.createHash("sha256").update(body).digest("hex");
+  const mk = (digest, url = `https://github.com/cloudflare/cloudflared/releases/download/2026.1.1/${name}`) => async (u) => {
+    if (u.includes("/releases/latest")) return new Response(JSON.stringify({ tag_name: "2026.1.1", assets: [{ name, size: body.length, digest, browser_download_url: url }] }));
+    return new Response(body);
+  };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cfi-"));
+  await assert.rejects(cf.installPortable({ fetchImpl: mk("sha256:" + "0".repeat(64)), dir }), /checksum mismatch/);
+  assert.deepStrictEqual(fs.readdirSync(dir), [], "nothing kept after a mismatch");
+  await assert.rejects(cf.installPortable({ fetchImpl: mk(undefined), dir }), /checksum/);
+  await assert.rejects(cf.installPortable({ fetchImpl: mk(good, "https://evil.example/cloudflared"), dir }), /has no/);
+  const exe = await cf.installPortable({ fetchImpl: mk(good), dir });
+  assert.deepStrictEqual(fs.readFileSync(exe), body);
+});
