@@ -840,3 +840,13 @@ body.kbd .bottomnav, body.kbd .fab { display: none; }
   .progress::before { width: 100%; opacity: 0.5; }
   .bar { background: var(--surface-2); }
 }
+
+/* ---- Chat ---------------------------------------------------------------- */
+.ai-card { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+#chat-new { margin-bottom: 16px; }
+a.dev-top { color: inherit; text-decoration: none; }
+.model-select {
+  flex: 1; min-width: 0; height: 36px; padding: 0 12px; border-radius: 18px;
+  border: 1px solid var(--border); background: var(--surface); color: inherit; font: inherit; font-size: 14px;
+}
+.model-select:disabled { opacity: 0.6; }

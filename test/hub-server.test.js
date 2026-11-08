@@ -584,3 +584,141 @@ test("app update publish: refuses downgrades, non-APKs and bad version codes; a 
   fs.truncateSync(path.join(dir, "app", "current.apk"), 100);
   assert.strictEqual(au.info(dir), null, "size no longer matches: not offered");
 });
+
+// ---- chat (lib/hub/chat.js) ----
+
+/** A fake llama-server: streams `words` one per `gapMs`, reasoning first. Records the request bodies. */
+function fakeLlama({ words = ["Hello", " there", "!"], reasoning = ["thinking"], gapMs = 5 } = {}) {
+  const seen = { bodies: [], aborted: 0 };
+  const srv = http.createServer((req, res) => {
+    let b = "";
+    req.on("data", (c) => { b += c; });
+    req.on("end", async () => {
+      seen.bodies.push(JSON.parse(b));
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      let closed = false;
+      res.on("close", () => { if (!res.writableEnded) { closed = true; seen.aborted++; } });
+      const send = (delta) => res.write(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`);
+      for (const r of reasoning) { if (closed) return; send({ reasoning_content: r }); await new Promise((x) => setTimeout(x, gapMs)); }
+      for (const w of words) { if (closed) return; send({ content: w }); await new Promise((x) => setTimeout(x, gapMs)); }
+      res.end("data: [DONE]\n\n");
+    });
+  });
+  return new Promise((resolve) => srv.listen(0, "127.0.0.1", () => resolve({ srv, port: srv.address().port, seen })));
+}
+
+async function chatHub(llama, extra = {}) {
+  const { ChatManager } = require("../lib/hub/chat");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hub-chat-"));
+  const loads = [];
+  const backend = async (arg) => { loads.push(arg); return { port: llama.port, model: "served", nCtx: 8192, modelRef: (arg && arg.modelRef) || "default-model", sampling: { temperature: 0.7 } }; };
+  const chats = new ChatManager({ dir, backend, models: () => [{ id: "flint:ud-q6_k_xl" }, { id: "default-model" }] });
+  let unloaded = 0;
+  const ai = { status: async () => ({ modelRef: "flint:ud-q6_k_xl", running: true }), stop: async () => { const n = chats.stopAll(); unloaded++; return { ok: true, chats: n }; } };
+  const s = await start({ opts: { chats, ai, ...extra } });
+  const a = await login(s);
+  return { s, a, chats, loads, dir, unloadedCount: () => unloaded };
+}
+
+async function chatWait(fn, ms = 3000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await new Promise((r) => setTimeout(r, 20)); }
+  throw new Error("timed out");
+}
+
+test("chat: create with a model, send, the answer streams and is saved with its reasoning", async () => {
+  const llama = await fakeLlama();
+  const { s, a, loads } = await chatHub(llama);
+  try {
+    const get = (p) => req(s.port, { path: p, headers: { Cookie: a.cookie } });
+    assert.strictEqual((await req(s.port, { path: "/api/chats" })).status, 401, "sign-in required");
+    const c = (await jsonPost(s, a, "/api/chats", { model: "flint:ud-q6_k_xl" })).json;
+    assert.match(c.id, /^[0-9a-f]{16}$/);
+    assert.strictEqual(c.model, "flint:ud-q6_k_xl");
+    const r = await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "Hi!" });
+    assert.strictEqual(r.status, 200);
+    const done = await chatWait(async () => { const g = (await get(`/api/chats/${c.id}`)).json; return g.status === "idle" && g.messages.length === 2 ? g : null; });
+    assert.strictEqual(done.messages[1].content, "Hello there!");
+    assert.strictEqual(done.messages[1].reasoning, "thinking");
+    assert.strictEqual(done.title, "Hi!");
+    assert.deepStrictEqual(loads[0], { modelRef: "flint:ud-q6_k_xl" });
+    assert.deepStrictEqual(llama.seen.bodies[0].messages, [{ role: "user", content: "Hi!" }]);
+    assert.strictEqual(llama.seen.bodies[0].stream, true);
+    assert.strictEqual(llama.seen.bodies[0].temperature, 0.7);
+    assert.strictEqual((await get("/api/chats")).json.length, 1);
+  } finally { await s.close(); llama.srv.close(); }
+});
+
+test("chat: stop cuts the answer off, keeps what was said, and closes the model request", async () => {
+  const llama = await fakeLlama({ words: Array.from({ length: 200 }, (_, i) => ` w${i}`), reasoning: [], gapMs: 15 });
+  const { s, a } = await chatHub(llama);
+  try {
+    const get = (p) => req(s.port, { path: p, headers: { Cookie: a.cookie } });
+    const c = (await jsonPost(s, a, "/api/chats", {})).json;
+    await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "count", model: "default-model" });
+    await new Promise((r) => setTimeout(r, 120));
+    assert.strictEqual((await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "again" })).status, 409, "one answer at a time");
+    const st = (await jsonPost(s, a, `/api/chats/${c.id}/stop`, {})).json;
+    assert.strictEqual(st.stopped, true);
+    const g = await chatWait(async () => { const x = (await get(`/api/chats/${c.id}`)).json; return x.status === "idle" ? x : null; });
+    assert.strictEqual(g.messages.length, 2);
+    assert.strictEqual(g.messages[1].stopped, true);
+    assert.ok(g.messages[1].content.length > 0 && g.messages[1].content.split(" w").length < 150, "cut off early");
+    await chatWait(() => llama.seen.aborted > 0);
+  } finally { await s.close(); llama.srv.close(); }
+});
+
+test("chat: models must be on this computer; bad ids, CSRF and oversize messages are refused", async () => {
+  const llama = await fakeLlama();
+  const { s, a } = await chatHub(llama);
+  try {
+    assert.strictEqual((await jsonPost(s, a, "/api/chats", { model: "../../etc" })).status, 400);
+    assert.strictEqual((await jsonPost(s, a, "/api/chats", { model: 5 })).status, 400);
+    const c = (await jsonPost(s, a, "/api/chats", {})).json;
+    assert.strictEqual((await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "x", model: "not-installed" })).status, 400);
+    assert.strictEqual((await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "x".repeat(40000) })).status, 413);
+    assert.strictEqual((await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "  " })).status, 400);
+    assert.strictEqual((await jsonPost(s, a, "/api/chats/0123456789abcdef/send", { text: "hi" })).status, 404);
+    assert.strictEqual((await req(s.port, { path: "/api/chats/..%2f..%2fx", headers: { Cookie: a.cookie } })).status, 404);
+    assert.strictEqual((await jsonPost(s, a, "/api/chats", {}, { "X-CSRF-Token": "wrong" })).status, 403);
+    const del = await req(s.port, { method: "DELETE", path: `/api/chats/${c.id}`, headers: { Cookie: a.cookie, "X-CSRF-Token": a.csrf } });
+    assert.strictEqual(del.status, 200);
+    assert.strictEqual((await req(s.port, { path: `/api/chats/${c.id}`, headers: { Cookie: a.cookie } })).status, 404);
+  } finally { await s.close(); llama.srv.close(); }
+});
+
+test("chat: the event stream replays and follows one chat", async () => {
+  const llama = await fakeLlama();
+  const { s, a } = await chatHub(llama);
+  try {
+    const c = (await jsonPost(s, a, "/api/chats", {})).json;
+    await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "Hi" });
+    await chatWait(async () => (await req(s.port, { path: `/api/chats/${c.id}`, headers: { Cookie: a.cookie } })).json.status === "idle");
+    const text = await new Promise((resolve, reject) => {
+      const r = http.get({ host: "127.0.0.1", port: s.port, path: `/api/chats/${c.id}/events?after=0`, headers: { Cookie: a.cookie }, agent: false }, (res) => {
+        let buf = "";
+        res.on("data", (d) => { buf += d; if (buf.includes("\"kind\":\"done\"")) { r.destroy(); resolve(buf); } });
+      });
+      r.on("error", (e) => { if (e.code !== "ECONNRESET") reject(e); });
+    });
+    const evs = text.split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)));
+    assert.deepStrictEqual(evs.map((e) => e.kind), ["start", "reasoning", "delta", "delta", "delta", "done"]);
+    assert.ok(evs.every((e) => e.chatId === c.id));
+  } finally { await s.close(); llama.srv.close(); }
+});
+
+test("stop AI: one call stops every answer and the model server", async () => {
+  const llama = await fakeLlama({ words: Array.from({ length: 200 }, (_, i) => ` w${i}`), gapMs: 15 });
+  const { s, a, unloadedCount } = await chatHub(llama);
+  try {
+    const c = (await jsonPost(s, a, "/api/chats", {})).json;
+    await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "go" });
+    await new Promise((r) => setTimeout(r, 80));
+    assert.strictEqual((await req(s.port, { path: "/api/ai/stop", method: "POST", headers: { Cookie: a.cookie } })).status, 403, "CSRF required");
+    const r = (await jsonPost(s, a, "/api/ai/stop", {})).json;
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.chats, 1);
+    assert.strictEqual(unloadedCount(), 1);
+    assert.deepStrictEqual((await req(s.port, { path: "/api/ai/status", headers: { Cookie: a.cookie } })).json, { modelRef: "flint:ud-q6_k_xl", running: true });
+  } finally { await s.close(); llama.srv.close(); }
+});

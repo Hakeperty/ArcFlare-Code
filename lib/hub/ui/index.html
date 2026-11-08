@@ -121,6 +121,40 @@
         </form>
       </section>
 
+      <!-- Chats: plain conversations with a local model, plus the AI server switch -->
+      <section id="view-chats" class="view" hidden>
+        <h1 class="view-title">Chat</h1>
+        <div class="card ai-card">
+          <p class="dev-name">AI server</p>
+          <p id="ai-status" class="dev-meta">Checking…</p>
+          <button id="ai-stop" class="btn danger block" type="button">Stop AI server</button>
+        </div>
+        <p id="chats-error" class="banner error" role="alert" hidden></p>
+        <button id="chat-new" class="btn primary block lg" type="button">New chat</button>
+        <ul id="chat-list" class="stack"></ul>
+      </section>
+
+      <!-- One chat -->
+      <section id="view-chat" class="view view-agent" hidden>
+        <div class="statusbar">
+          <label class="sr-only" for="chat-model">Model</label>
+          <select id="chat-model" class="model-select"></select>
+          <button id="chat-stop" class="btn danger sm" type="button" hidden>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>Stop
+          </button>
+        </div>
+        <div id="chat-transcript" class="transcript" aria-live="polite"></div>
+        <p class="chat-empty">Ask anything. The answer comes from the model on your computer.</p>
+        <p id="chat-error" class="banner error" role="alert" hidden></p>
+        <form id="chat-compose" class="compose">
+          <label class="sr-only" for="chat-text">Message</label>
+          <textarea id="chat-text" rows="1" placeholder="Message" enterkeyhint="enter"></textarea>
+          <button id="chat-send" type="submit" class="send" aria-label="Send" disabled>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+          </button>
+        </form>
+      </section>
+
       <!-- Devices -->
       <section id="view-devices" class="view" hidden>
         <h1 class="view-title">Devices</h1>
@@ -149,6 +183,10 @@
       <a id="tab-agents" href="#/">
         <span class="pill"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8V4H8"/><path d="M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></span>
         <span class="lbl">Agents</span>
+      </a>
+      <a id="tab-chats" href="#/chats">
+        <span class="pill"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+        <span class="lbl">Chat</span>
       </a>
       <a id="tab-devices" href="#/devices">
         <span class="pill"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M12 18h.01"/></svg></span>
