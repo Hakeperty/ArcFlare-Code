@@ -44,6 +44,16 @@
      * openInstallSettings(). The native side checks size and SHA-256 before Android sees the file, and
      * Android installs only an APK signed with this app's key, after the user confirms. null outside the app.
      */
+    /** Local notifications (NotifierPlugin.java): state(), request(), notify({id, title, body}). null outside the app. */
+    notifier: function () {
+      var p;
+      try { p = plugin("Notifier"); } catch (e) { return null; }
+      return {
+        state: function () { return p.state(); },
+        request: function () { return p.request(); },
+        notify: function (o) { return p.notify({ id: o.id, title: o.title, body: o.body }); },
+      };
+    },
     appUpdater: function () {
       var p;
       try { p = plugin("AppUpdater"); } catch (e) { return null; }

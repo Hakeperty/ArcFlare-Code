@@ -46,4 +46,6 @@
     <!-- Lets the app hand Android an update it downloaded from the hub (AppUpdaterPlugin). Android still asks the
          user every time, and installs it only if it is signed with this app's key. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Local notifications (NotifierPlugin): a chat answer is ready, an agent needs approval or finished. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

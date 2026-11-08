@@ -24,6 +24,8 @@ public class MainActivity extends BridgeActivity {
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
         // Updates of this app, downloaded from the signed-in hub (see AppUpdaterPlugin).
         registerPlugin(AppUpdaterPlugin.class);
+        // Local notifications for chat answers and agent events (see NotifierPlugin).
+        registerPlugin(NotifierPlugin.class);
         super.onCreate(savedInstanceState);
         WebView webView = bridge.getWebView();
         // The app never needs file:// or content:// access from the WebView.

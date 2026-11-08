@@ -30,7 +30,7 @@ test("navigate: only the bundled UI (with the optional via hint); everything els
 
 test("the native bridge surface is small: no NavGuard, no setLan, no generic http, no cookie setter", () => {
   const { N } = load();
-  assert.deepEqual(Object.keys(N).sort(), ["appUpdater", "clearCookies", "getLaunchUrl", "nativeHttp", "navigate", "onAppUrl", "onForeground", "supportsX25519"]);
+  assert.deepEqual(Object.keys(N).sort(), ["appUpdater", "clearCookies", "getLaunchUrl", "nativeHttp", "navigate", "notifier", "onAppUrl", "onForeground", "supportsX25519"]);
 });
 
 test("nativeHttp exposes get and post only (what lanfetch.js wraps), nothing else of CapacitorHttp", () => {
