@@ -70,3 +70,33 @@ test("connect install keeps only a download whose SHA-256 matches the one GitHub
   const exe = await cf.installPortable({ fetchImpl: mk(good), dir });
   assert.deepStrictEqual(fs.readFileSync(exe), body);
 });
+
+test("a kept tunnel survives a hub restart: same address, same cloudflared; a dead one is replaced", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-keep-"));
+  const fake = path.join(dir, "fake-cloudflared.js");
+  // Each start prints a different address, so reuse is visible.
+  fs.writeFileSync(fake, "console.error('INF | https://run-' + process.pid + '.trycloudflare.com |'); setInterval(() => {}, 1000);");
+  const mailbox = { handle: (req, res) => res.end("{}") };
+  const keepFile = path.join(dir, "cloudflared.json");
+  const opts = { mailbox, roomId: ROOM, file: path.join(dir, "url.json"), keepFile, exe: process.execPath, prefixArgs: [fake], timeoutMs: 15000 };
+  const ok = async () => ({ status: 200 });
+  const a = await cf.startCloudflare({ ...opts, fetchImpl: ok });
+  const k1 = cf.readKeep(keepFile);
+  assert.ok(k1 && cf.pidAlive(k1.pid) && k1.url === a.url);
+  a.close({ keep: true });                       // the hub stops; cloudflared keeps running
+  assert.ok(cf.pidAlive(k1.pid));
+  const b = await cf.startCloudflare({ ...opts, fetchImpl: ok });
+  try {
+    assert.strictEqual(b.url, a.url, "the phone's address did not change");
+    assert.strictEqual(cf.readKeep(keepFile).pid, k1.pid, "no second cloudflared");
+  } finally { b.close({ keep: true }); }
+  // The kept address no longer reaches us (Cloudflare dropped it): kill it and start a fresh one.
+  const c = await cf.startCloudflare({ ...opts, fetchImpl: async () => { throw new Error("unreachable"); } });
+  try {
+    assert.notStrictEqual(c.url, a.url);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.ok(!cf.pidAlive(k1.pid), "the stale cloudflared was stopped");
+  } finally { c.close(); }
+  assert.strictEqual(cf.readKeep(keepFile), null, "a full close removes the kept tunnel");
+  assert.strictEqual(cf.stopKept(keepFile), false);
+});
