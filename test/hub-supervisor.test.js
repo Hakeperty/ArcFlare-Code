@@ -474,3 +474,66 @@ test("YOLO keeps going: questions are answered for the person, a few times, and 
   assert.deepStrictEqual(plain.sent, ["build the game"]);
   assert.strictEqual(plain.events.filter((e) => e.type === "auto_continue").length, 0);
 });
+
+test("queue: lines messages up behind a busy turn, runs them in order, pauses on failure, clears on stop", async () => {
+  const { MAX_QUEUE } = require("../lib/hub/supervisor");
+  const dir = fs.mkdtempSync(path.join(TMP, "hub-"));
+  const sent = [];
+  let release = null;
+  const makeAgent = () => ({
+    busy: false, conversation: () => [], loadConversation() {}, abort() { if (release) release(); },
+    async send(t) {
+      sent.push(t);
+      if (t === "slow") await new Promise((r) => { release = r; });
+      if (t === "fail") return { ok: false, content: "" };
+      return { ok: true, content: `did ${t}` };
+    },
+  });
+  const sup = new Supervisor({ dir, roots: [ROOT], backend, makeAgent });
+  const { id } = sup.create({ name: "q", cwd: PROJ });
+  const events = [];
+  sup.on("event", (e) => events.push(e));
+  const until = async (fn) => { for (let i = 0; i < 200 && !fn(); i++) await new Promise((r) => setTimeout(r, 5)); assert.ok(fn()); };
+
+  // Free agent: queue sends at once.
+  assert.strictEqual((await sup.enqueue(id, "first")).queued, false);
+  await sup.whenIdle(id);
+  // Busy: lined up, saved, and visible in the snapshot.
+  await sup.wake(id, "slow");
+  assert.strictEqual((await sup.enqueue(id, "a")).queued, true);
+  await sup.enqueue(id, "b");
+  assert.deepStrictEqual(sup.get(id).queue, ["a", "b"]);
+  const again = new Supervisor({ dir, roots: [ROOT], backend, makeAgent });
+  assert.deepStrictEqual(again.get(id).queue, ["a", "b"]);
+  await assert.rejects(() => sup.wake(id, "c"), { code: "BUSY" });
+  // Removing one by position.
+  await sup.enqueue(id, "x");
+  assert.deepStrictEqual(sup.unqueue(id, 2).queue, ["a", "b"]);
+  assert.throws(() => sup.unqueue(id, 5), { code: "BAD_REQUEST" });
+  release();
+  await until(() => sent.length === 4 && sup.get(id).status === "idle" && !sup.get(id).queue.length);
+  assert.deepStrictEqual(sent, ["first", "slow", "a", "b"], "each queued message runs as its own turn, in order");
+  assert.strictEqual(events.filter((e) => e.type === "turn_end").length, 4);
+  assert.ok(events.some((e) => e.type === "queue" && e.items.length === 0));
+
+  // A failed turn holds the rest; the next message the person sends resumes the line.
+  await sup.wake(id, "slow");
+  await sup.enqueue(id, "fail");
+  await sup.enqueue(id, "after");
+  release();
+  await until(() => events.some((e) => e.type === "queue" && e.paused));
+  assert.deepStrictEqual(sup.get(id).queue, ["after"]);
+  await sup.enqueue(id, "go on");
+  await until(() => sent.includes("go on") && sup.get(id).status === "idle");
+  assert.deepStrictEqual(sent.slice(-2), ["after", "go on"]);
+
+  // Stop clears it; a full queue says so.
+  await sup.wake(id, "slow");
+  for (let i = 0; i < MAX_QUEUE; i++) await sup.enqueue(id, `m${i}`);
+  await assert.rejects(() => sup.enqueue(id, "one too many"), { code: "QUEUE_FULL" });
+  assert.deepStrictEqual(sup.unqueue(id).queue.length, 0);
+  await sup.enqueue(id, "later");
+  await sup.stop(id, { clearQueue: true });
+  assert.deepStrictEqual(sup.get(id).queue, []);
+  await sup.stopAll();
+});

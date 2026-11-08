@@ -1048,3 +1048,24 @@ test("YOLO mode can only be switched by an owner, with a true/false body", async
     assert.deepStrictEqual(calls, [["a1", true]]);
   } finally { await s.close(); }
 });
+
+test("queue routes: add needs text, remove takes a whole-number position or nothing, Stop clears the queue", async () => {
+  const s = await start();
+  const calls = [];
+  s.supervisor.enqueue = async (id, text) => { calls.push(["q", id, text]); return { id, queue: [text], queued: true }; };
+  s.supervisor.unqueue = (id, index) => { calls.push(["u", id, index]); return { id, queue: [] }; };
+  s.supervisor.stop = async (id, o) => { calls.push(["s", id, o]); return { id, status: "stopped" }; };
+  try {
+    const a = await login(s);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/queue", { text: "" })).status, 400);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/nope/queue", { text: "hi" })).status, 404);
+    const r = await jsonPost(s, a, "/api/agents/a1/queue", { text: "next" });
+    assert.strictEqual(r.status, 200);
+    assert.deepStrictEqual(r.json.queue, ["next"]);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/unqueue", { index: "0" })).status, 400);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/unqueue", { index: 0 })).status, 200);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/unqueue", {})).status, 200);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/stop", {})).status, 200);
+    assert.deepStrictEqual(calls, [["q", "a1", "next"], ["u", "a1", 0], ["u", "a1", undefined], ["s", "a1", { clearQueue: true }]]);
+  } finally { await s.close(); }
+});

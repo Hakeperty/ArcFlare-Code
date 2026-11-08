@@ -115,11 +115,22 @@
         <p class="chat-empty">Write a message below to get this agent working.</p>
 
         <p id="agent-error" class="banner error" role="alert" hidden></p>
+        <div id="queue" class="queue" hidden>
+          <div class="queue-head">
+            <span id="queue-title" class="queue-title">Queued</span>
+            <button id="queue-clear" class="queue-clear" type="button">Clear</button>
+          </div>
+          <ol id="queue-list" class="queue-list"></ol>
+        </div>
         <form id="compose" class="compose">
           <label class="sr-only" for="compose-text">Message the agent</label>
           <textarea id="compose-text" rows="1" placeholder="Message the agent" enterkeyhint="enter"></textarea>
           <button id="compose-send" type="submit" class="send" aria-label="Send" disabled>
             <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+          </button>
+          <button id="compose-queue" type="submit" class="queue-btn" aria-label="Queue this message for when the agent is done" hidden disabled>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h12"/><path d="M4 12h12"/><path d="M4 18h7"/><path d="M18 15v6"/><path d="M15 18h6"/></svg>
+            <span>Queue</span>
           </button>
         </form>
       </section>
