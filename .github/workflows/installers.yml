@@ -53,11 +53,19 @@ jobs:
             cat out.txt; grep -q "apk add nodejs npm" out.txt
             apk add -q nodejs npm
           fi
-          su - tester -c 'set -e
+          # The installer prints where it put arcflare and adds that to the shell profile; a new login shell reads it.
+          if ! su - tester -c 'set -e
             curl -fsSL https://arcflare.net/install.sh | sh
-            export PATH="$HOME/.arcflare/node/bin:$HOME/.local/bin:$PATH"
+            export PATH="$HOME/.arcflare/node/bin:$HOME/.arcflare/npm-global/bin:$HOME/.local/bin:$PATH"
             arcflare --version
-            arcflare --help >/dev/null'
+            arcflare --help >/dev/null' > cli.txt 2>&1; then
+            cat cli.txt
+            # Public annotation with the end of the output (job logs need admin rights to read).
+            msg=$(tail -n 25 cli.txt | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')
+            echo "::error title=CLI installer failed on ${{ matrix.distro }}::$msg"
+            exit 1
+          fi
+          cat cli.txt
 
       - name: Desktop installer (curl -fsSL https://arcflare.net/install-desktop.sh | sh)
         if: ${{ !startsWith(matrix.distro, 'alpine') }}
