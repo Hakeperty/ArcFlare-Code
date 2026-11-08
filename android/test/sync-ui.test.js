@@ -10,6 +10,13 @@ const { copyUi, resolveSrc, assertCspInHead, transformIndex, FILES, SyncError } 
 const hubUi = path.join(__dirname, "..", "..", "lib", "hub", "ui");
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "syncui-"));
 
+// Windows lets a normal user make symlinks only with Developer Mode on; skip there rather than fail.
+const canSymlink = (() => {
+  const d = tmp();
+  try { fs.symlinkSync(path.join(d, "x"), path.join(d, "y")); return true; } catch { return false; } finally { fs.rmSync(d, { recursive: true, force: true }); }
+})();
+const symlinkTest = canSymlink ? {} : { skip: "this account cannot create symlinks (Windows without Developer Mode)" };
+
 /** A copy of the real hub UI restricted to the allowlist (plus whatever `extra` adds). */
 function fakeSrc() {
   const d = tmp();
@@ -39,7 +46,7 @@ test("copies exactly the allowlist and a stray extra file is not copied", () => 
   assert.deepEqual(walk(out).sort(), [...FILES].sort());
 });
 
-test("a symlinked file in the source is rejected, and nothing is written", () => {
+test("a symlinked file in the source is rejected, and nothing is written", symlinkTest, () => {
   const src = fakeSrc(), out = path.join(tmp(), "ui");
   const secret = path.join(tmp(), "secret.js");
   fs.writeFileSync(secret, "window.ArcFlareTransport");
@@ -48,7 +55,7 @@ test("a symlinked file in the source is rejected, and nothing is written", () =>
   assert.equal(fs.existsSync(out), false);
 });
 
-test("a symlinked asset, a symlinked assets directory and a symlinked source directory are rejected", () => {
+test("a symlinked asset, a symlinked assets directory and a symlinked source directory are rejected", symlinkTest, () => {
   let src = fakeSrc(); const out = path.join(tmp(), "ui");
   fs.rmSync(path.join(src, "assets", "mascot-dark.png")); fs.symlinkSync(path.join(src, "app.js"), path.join(src, "assets", "mascot-dark.png"));
   assert.throws(() => copyUi(src, out), /symlink/);
@@ -88,7 +95,7 @@ test("transformIndex output passes the CSP placement check for the real index.ht
   assert.doesNotThrow(() => assertCspInHead(transformIndex(fs.readFileSync(path.join(hubUi, "index.html"), "utf8"))));
 });
 
-test("ARCFLARE_UI_SRC is ignored unless it resolves inside the repo", () => {
+test("ARCFLARE_UI_SRC is ignored unless it resolves inside the repo", symlinkTest, () => {
   const repo = tmp(), dflt = path.join(repo, "default-ui");
   fs.mkdirSync(dflt); fs.mkdirSync(path.join(repo, "inside"));
   const outside = tmp();
