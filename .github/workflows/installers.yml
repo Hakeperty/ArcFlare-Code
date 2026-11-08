@@ -37,10 +37,11 @@ jobs:
           case "${{ matrix.distro }}" in
             ubuntu*|debian*) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates sudo tar gzip xz-utils ;;
             archlinux*) pacman -Sy --noconfirm --needed curl ca-certificates sudo tar gzip xz ;;
-            fedora*) dnf -y -q install curl ca-certificates sudo tar gzip xz shadow-utils ;;
-            opensuse*) zypper -n -q install curl ca-certificates sudo tar gzip xz shadow ;;
+            fedora*) dnf -y -q install --allowerasing curl ca-certificates sudo tar gzip xz shadow-utils util-linux ;;
+            opensuse*) for p in curl ca-certificates sudo tar gzip xz shadow util-linux; do zypper -n -q install --no-recommends "$p" || echo "(no package $p)"; done ;;
             alpine*) apk add -q curl ca-certificates sudo tar bash ;;
           esac
+          for c in curl su tar; do command -v "$c" >/dev/null || { echo "missing $c after setup"; exit 1; }; done
           id tester >/dev/null 2>&1 || useradd -m -s /bin/sh tester 2>/dev/null || adduser -D -s /bin/sh tester
           echo 'tester ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/tester
 
