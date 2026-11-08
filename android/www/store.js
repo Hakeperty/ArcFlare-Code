@@ -61,6 +61,20 @@
     return tx("readwrite", function (s) { return s.put(rec, KEY); });
   }
 
+  /**
+   * The hub moved its internet address (a Cloudflare quick tunnel gets a new one each time the hub starts). Told only
+   * over the tunnel, whose hub key is pinned, so it comes from our hub. https only, and only when the stored address
+   * is not the LAN base (the record must keep a home target and an internet target). Resolves true when it changed.
+   */
+  function updateRelay(url) {
+    if (typeof url !== "string" || url.length > 200 || !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(url)) return Promise.resolve(false);
+    return load().then(function (rec) {
+      if (!rec || rec.relay === url || (rec.lan && rec.relay === rec.lan)) return false;
+      rec.relay = url;
+      return tx("readwrite", function (s) { return s.put(rec, KEY); }).then(function () { return true; });
+    });
+  }
+
   /** Resolves true only when the database is really gone; false on error, or if still blocked after a while. */
   function deleteDb(name) {
     return new Promise(function (resolve) {
@@ -114,7 +128,7 @@
     return failed.length ? { ok: false, failed: failed } : { ok: true, failed: [] };
   }
 
-  return { load: load, save: save, getFlag: getFlag, setFlag: setFlag, wipeAll: wipeAll, DB_NAME: DB };
+  return { load: load, save: save, updateRelay: updateRelay, getFlag: getFlag, setFlag: setFlag, wipeAll: wipeAll, DB_NAME: DB };
   }
 
   var api = create(globalRoot);

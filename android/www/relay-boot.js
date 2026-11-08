@@ -31,6 +31,14 @@
   window.addEventListener("online", function () { if (watcher) watcher.kick(); });
   document.addEventListener("visibilitychange", function () { if (!document.hidden && watcher) watcher.kick(); });
 
+  // The hub's internet address can move (a Cloudflare quick tunnel gets a new one on each hub start). After every
+  // connect, ask the hub over the tunnel and keep what it says, so the phone can still find it away from home.
+  function followRelay() {
+    transport.fetch("/api/where").then(function (res) { return res.ok ? res.json() : null; }).then(function (j) {
+      if (j && typeof j.relayUrl === "string") return window.ArcFlareStore.updateRelay(j.relayUrl);
+    }).catch(function () { /* next connect tries again */ });
+  }
+
   var transport = window.ArcFlareTransportAdapter.create({
     connect: async function () {
       var rec = await window.ArcFlareStore.load();
@@ -39,6 +47,7 @@
       first = false;
       var r = await window.ArcFlareConnector.connectBest(deps, rec, { skipHome: skipHome });
       watchHome(r, rec);
+      setTimeout(followRelay, 0);
       window.ArcFlareConnection = r.kind;
       if (typeof window.arcflareSetConnection === "function") window.arcflareSetConnection(r.kind);
       return r.tunnel;

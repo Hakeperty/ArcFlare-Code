@@ -25,7 +25,7 @@ const needX = (t) => {
 };
 
 /** A hub with its LAN mailbox mounted; optionally also the (fake) internet relay as a second target. */
-async function lanEnv({ withRelay = false } = {}) {
+async function lanEnv({ withRelay = false, cloudflare = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lan-"));
   const auth = new AuthStore({ dir });
   auth.createAccount("alice", PASSWORD);
@@ -38,12 +38,13 @@ async function lanEnv({ withRelay = false } = {}) {
   let hub = null;
   const server = createHubServer({
     auth, supervisor, lanRelay: mailbox, getRemoteAddress: () => remote.addr, config: { heartbeatMs: 1000 },
+    ...(cloudflare ? { publicRelayUrl: () => "https://abc-def.trycloudflare.com" } : {}),
   });
   const relay = fakeRelay();
   const logs = [];
   hub = new HubTunnel({
     store, relay: withRelay ? RELAY : null, local: mailbox.local, dispatch: server.dispatchTunnel, auth,
-    fetch: relay.fetch, pollWaitSec: 1, minPollMs: 50, log: (m) => logs.push(String(m && m.message || m)),
+    localServesNet: cloudflare, fetch: relay.fetch, pollWaitSec: 1, minPollMs: 50, log: (m) => logs.push(String(m && m.message || m)),
   });
   const where = await server.listen({ port: 0, host: "127.0.0.1" });
   await hub.start();
@@ -484,4 +485,36 @@ test("pairing picks the real Wi-Fi address, not a virtual adapter or link-local 
   assert.strictEqual(ranked[0], "192.168.1.23");
   assert.ok(!ranked.includes("169.254.10.5"));
   assert.ok(!ranked.includes("127.0.0.1"));
+});
+
+test("cloudflare mode: the hub's own mailbox also takes the phone's internet token, and the phone learns the address", async (t) => {
+  if (!needX(t)) return;
+  const env = await lanEnv({ cloudflare: true });
+  try {
+    const { device } = await TC.pair({ link: env.link, label: "Pixel away", fetch: env.opts.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 });
+    env.store.approve(device.deviceId);
+    // The internet token (aftc_), as a phone away from home sends it to the Cloudflare address.
+    assert.match(device.roomToken, /^aftc_/);
+    // Away from home: the stored home address differs from the address in use, so the internet token is sent.
+    const away = { ...device, lan: "http://192.168.77.7:7878" };
+    const tun = await TC.connect(away, env.opts);
+    const r = await tun.request("GET", "/api/where");
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.json().relayUrl, "https://abc-def.trycloudflare.com", "told over the tunnel");
+    tun.close();
+    // A browser on the LAN is never told.
+    const plain = await status(env, "GET", "/api/where");
+    assert.strictEqual(plain.status, 404);
+  } finally { await env.close(); }
+});
+
+test("without cloudflare mode the LAN mailbox refuses the internet token", async (t) => {
+  if (!needX(t)) return;
+  const env = await lanEnv();
+  try {
+    const { device } = await TC.pair({ link: env.link, label: "Pixel", fetch: env.opts.fetch, pollWaitSec: 1, minPollMs: 50, timeoutMs: 4000 });
+    env.store.approve(device.deviceId);
+    const away = { ...device, lan: "http://192.168.77.7:7878" };
+    await assert.rejects(TC.connect(away, { ...env.opts, handshakeTimeoutMs: 1500 }));
+  } finally { await env.close(); }
 });
