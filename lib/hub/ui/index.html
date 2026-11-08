@@ -175,6 +175,7 @@
         <div class="dev-actions">
           <button id="revoke-others" class="btn outline block" type="button">Sign out other devices</button>
           <button id="logout" class="btn danger block" type="button">Log out</button>
+          <button id="open-licenses" class="btn outline block" type="button">Open-source licenses</button>
         </div>
       </section>
     </main>
@@ -279,6 +280,17 @@
         <button id="question-later" class="btn outline block lg" type="button">Later</button>
         <button id="question-send" class="btn primary block lg" type="button">Send</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Open-source licenses: the texts this app and the hub ship with (assets/LICENSES.txt) -->
+  <div id="sheet-licenses" class="sheet-wrap" hidden>
+    <div class="scrim" data-dismiss="sheet-licenses"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="licenses-title" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <h2 id="licenses-title" class="sheet-title">Open-source licenses</h2>
+      <pre id="licenses-text" class="licenses-text" tabindex="0">Loading…</pre>
+      <button id="licenses-close" class="btn outline block lg" type="button">Close</button>
     </div>
   </div>
 

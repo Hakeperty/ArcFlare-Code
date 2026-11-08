@@ -850,3 +850,4 @@ a.dev-top { color: inherit; text-decoration: none; }
   border: 1px solid var(--border); background: var(--surface); color: inherit; font: inherit; font-size: 14px;
 }
 .model-select:disabled { opacity: 0.6; }
+.licenses-text { max-height: 60vh; overflow: auto; white-space: pre-wrap; font: 12px/1.5 var(--mono); padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); margin-bottom: 12px; }
