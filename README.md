@@ -1055,8 +1055,8 @@ When it does need to write config, it backs the file up first
 | **Hermes Desktop** | Same config, launched via `hermes desktop --skip-build` when the packaged app already exists |
 | **Codex CLI** | `[model_providers.arcflare]` in `~/.codex/config.toml`, `wire_api = "responses"` |
 | **DeepSeek Harness** (`dsh`) | ArcFlare's own overlay at `~/.arcflare/harness/dsh.patch.yml`, launched as `dsh web --patch …`, so your dsh profile is never edited. Auto mode: `DSH_PERMISSION_MODE=danger-full-access` |
-| **CodeWhale** (formerly DeepSeek-TUI) | One `[providers.arcflare]` table in `~/.codewhale/config.toml`, launched with `--provider arcflare`. Auto mode: `--full-access` |
-| **Deep Code** | `env.MODEL` / `BASE_URL` / `API_KEY`, `model` and the context window in `~/.deepcode/settings.json`. Approvals follow that file's `permissions` (default allow all); there is no flag to pass |
+| **Codewhale** (formerly DeepSeek-TUI) | One `[providers.arcflare]` table in `~/.codewhale/config.toml`, launched with `--provider arcflare`. Auto mode: `--full-access` |
+| **Deep Code CLI** | `env.MODEL` / `BASE_URL` / `API_KEY`, `model` and the context window in `~/.deepcode/settings.json`. Approvals follow that file's `permissions` (default allow all); there is no flag to pass |
 
 ```bash
 arcflare use opencode qwen3.6-35b-a3b     # configure and launch
