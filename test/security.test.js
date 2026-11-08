@@ -65,7 +65,7 @@ test("official remotes are recognised in https and ssh form, and nothing else", 
 });
 
 test("npm installs are pinned to an exact sha, never a branch", () => {
-  assert.strictEqual(upd.npmSpec("Hakeperty/ArcFlare-Code", SHA), `github:Hakeperty/ArcFlare-Code#${SHA}`);
+  assert.strictEqual(upd.npmSpec("Hakeperty/ArcFlare-Code", SHA), `https://codeload.github.com/Hakeperty/ArcFlare-Code/tar.gz/${SHA}`);
   assert.throws(() => upd.npmSpec("Hakeperty/ArcFlare-Code", "main"));
   assert.throws(() => upd.npmSpec("Hakeperty/ArcFlare-Code", SHA.slice(0, 7)));
   assert.throws(() => upd.npmSpec("not a repo", SHA));
@@ -78,7 +78,7 @@ test("an online npm update asks first and installs nothing without consent", asy
   const r = await upd.apply({ root, fetchImpl, log: () => {} });
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.needsConfirm, true);
-  assert.strictEqual(r.preview.spec, `github:Hakeperty/ArcFlare-Code#${SHA}`);
+  assert.strictEqual(r.preview.spec, `https://codeload.github.com/Hakeperty/ArcFlare-Code/tar.gz/${SHA}`);
   assert.strictEqual(r.preview.official, true);
 
   const no = await upd.apply({ root, fetchImpl, log: () => {}, confirm: async () => false });

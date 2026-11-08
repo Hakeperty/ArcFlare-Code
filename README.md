@@ -971,7 +971,7 @@ with a four-second timeout, and the next start prints one line:
 `arcflare update` shows what it is about to install and asks first. A clone
 fetches the official repository by URL (not whatever `origin` points at), lists
 the incoming commits and fast-forwards only; an npm install is pinned to the
-exact commit it found (`github:Hakeperty/ArcFlare-Code#<sha>`), never a moving
+exact commit it found (`https://codeload.github.com/Hakeperty/ArcFlare-Code/tar.gz/<sha>`, no git needed), never a moving
 branch. `--yes` skips the question. In a session, `/update` shows the commits
 and `/update --yes` installs them. The background check only ever *checks*.
 
