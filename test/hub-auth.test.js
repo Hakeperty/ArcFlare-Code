@@ -437,3 +437,43 @@ test("a parallel burst of guesses gets no more than the free failures checked (l
   const other = await a.login({ username: "nobody", password: "x".repeat(12), ip: "192.168.1.51" });
   assert.strictEqual(other.code, "BAD_CREDENTIALS");
 });
+
+test("account actions from the phone ask for the password again and end the account's sessions", async () => {
+  const { store } = mk();
+  store.createAccount("alice", PW);                          // owner
+  store.createAccount("bob", PW, { role: "user" });
+  const bobLogin = await store.login({ username: "bob", password: PW, ip: "10.0.0.3" });
+  assert.ok(bobLogin.ok);
+
+  // Wrong password: nothing happens.
+  assert.strictEqual((await store.removeAccount("alice", "nope-nope-nope", "bob", "10.0.0.2")).code, "BAD_CREDENTIALS");
+  assert.ok(store.listAccounts().some((a) => a.username === "bob"));
+  // Only an owner removes others, never themselves through this door.
+  await assert.rejects(() => store.removeAccount("bob", PW, "alice", "10.0.0.3"), { code: "NOT_OWNER" });
+  await assert.rejects(() => store.removeAccount("alice", PW, "alice", "10.0.0.2"), { code: "SELF" });
+  // The only owner cannot leave bob without an owner.
+  await assert.rejects(() => store.deleteOwnAccount("alice", PW, "10.0.0.2"), { code: "LAST_OWNER" });
+
+  assert.deepStrictEqual(await store.removeAccount("alice", PW, "bob", "10.0.0.2"), { ok: true });
+  assert.strictEqual(store.authenticate(bobLogin.token), null, "bob is signed out everywhere");
+
+  // Password change: weak refused before any check, then every session ends.
+  const a1 = await store.login({ username: "alice", password: PW, ip: "10.0.0.2" });
+  await assert.rejects(() => store.changePassword("alice", PW, "short", "10.0.0.2"), { code: "WEAK_PASSWORD" });
+  assert.deepStrictEqual(await store.changePassword("alice", PW, "a new long password", "10.0.0.2"), { ok: true });
+  assert.strictEqual(store.authenticate(a1.token), null);
+  assert.ok((await store.login({ username: "alice", password: "a new long password", ip: "10.0.0.2" })).ok);
+
+  // Now alone, alice can delete her own account.
+  assert.deepStrictEqual(await store.deleteOwnAccount("alice", "a new long password", "10.0.0.2"), { ok: true });
+  assert.strictEqual(store.hasAccounts(), false);
+});
+
+test("account actions share the login lockout: guessing the password through them gets locked out", async () => {
+  const { store } = mk();
+  store.createAccount("alice", PW);
+  let last;
+  for (let i = 0; i < 12; i++) last = await store.deleteOwnAccount("alice", "wrong-guess-" + i, "10.0.0.9");
+  assert.strictEqual(last.code, "LOCKED");
+  assert.ok(store.hasAccounts(), "still there");
+});

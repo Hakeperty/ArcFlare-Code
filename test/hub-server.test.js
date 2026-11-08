@@ -949,3 +949,28 @@ test("readJson: a body over 64 KB is read when the caller allows more, and refus
   assert.deepStrictEqual(await run(2 * 1024 * 1024), [200, "100000"]);
   assert.strictEqual((await run(undefined))[0], 413);
 });
+
+test("account routes: details, wrong password refused, CSRF required, delete signs you out", async () => {
+  const { AuthStore } = require("../lib/hub/auth");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hub-acct-"));
+  const auth = new AuthStore({ dir });
+  auth.createAccount("alice", "correct-horse-1");
+  auth.createAccount("bob", "correct-horse-2", { role: "user" });
+  const s = await start({ opts: { auth } });
+  try {
+    const a = await login(s);
+    const me = (await req(s.port, { path: "/api/account", headers: { Cookie: a.cookie } })).json;
+    assert.strictEqual(me.username, "alice");
+    assert.strictEqual(me.role, "owner");
+    assert.deepStrictEqual(me.others.map((o) => o.username), ["bob"]);
+    assert.ok(!JSON.stringify(me).includes("hash"), "no password hashes");
+    assert.strictEqual((await jsonPost(s, a, "/api/accounts/bob/delete", { password: "x" }, { "X-CSRF-Token": "bad" })).status, 403, "CSRF");
+    assert.strictEqual((await jsonPost(s, a, "/api/accounts/bob/delete", { password: "wrong-password" })).status, 403);
+    assert.strictEqual((await jsonPost(s, a, "/api/account/delete", { password: "correct-horse-1" })).status, 409, "last owner");
+    assert.strictEqual((await jsonPost(s, a, "/api/accounts/bob/delete", { password: "correct-horse-1" })).status, 200);
+    const del = await jsonPost(s, a, "/api/account/delete", { password: "correct-horse-1" });
+    assert.strictEqual(del.status, 200);
+    assert.match(String(del.headers["set-cookie"]), /Max-Age=0|Expires=Thu, 01 Jan 1970/i);
+    assert.strictEqual((await req(s.port, { path: "/api/account", headers: { Cookie: a.cookie } })).status, 401);
+  } finally { await s.close(); }
+});

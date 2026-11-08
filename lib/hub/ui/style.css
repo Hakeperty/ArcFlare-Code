@@ -918,3 +918,23 @@ fieldset.muted-off { opacity: 0.5; }
 .agent-model-line .ico { width: 14px; height: 14px; flex: none; color: var(--accent-ink); }
 .agent-model-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hint.block { display: block; }
+
+/* ---- Account ------------------------------------------------------------- */
+.account-card { display: flex; flex-direction: column; gap: 12px; margin: 16px var(--pr) 0 var(--pl); padding: 16px; }
+.acct-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.acct-who { min-width: 0; }
+.acct-who .dev-name { display: flex; align-items: center; gap: 8px; }
+.acct-sec { border-top: 1px solid var(--border); padding-top: 12px; }
+.acct-sec > summary { display: flex; align-items: center; min-height: 40px; font-size: 15px; font-weight: 600; cursor: pointer; list-style: none; }
+.acct-sec > summary::after { content: "›"; margin-left: auto; color: var(--muted-2); font-size: 20px; transition: transform 150ms var(--ease); }
+.acct-sec[open] > summary::after { transform: rotate(90deg); }
+.acct-sec.danger-zone > summary { color: var(--danger); }
+.acct-form { padding-bottom: 4px; }
+.acct-form .field:first-child { margin-top: 4px; }
+.acct-form .btn { margin-top: 16px; }
+.acct-form input[type=password] { width: 100%; }
+.acct-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.acct-row { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.acct-row-name { flex: 1; min-width: 0; font: 14px/20px var(--mono); overflow: hidden; text-overflow: ellipsis; }
+.check { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: 14px; line-height: 20px; }
+.check input { width: 20px; height: 20px; accent-color: var(--danger); }

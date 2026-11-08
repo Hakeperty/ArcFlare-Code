@@ -177,6 +177,49 @@
           <p id="app-update-error" class="banner error" role="alert" hidden></p>
           <button id="app-update-btn" class="btn block" type="button">Install update</button>
         </div>
+        <!-- Your account on this hub. Every change asks for the password again. -->
+        <div id="account-card" class="card account-card">
+          <div class="acct-top">
+            <span class="dev-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>
+            <div class="acct-who">
+              <p class="dev-name"><span id="acct-name">Account</span> <span id="acct-role" class="tier"></span></p>
+              <p id="acct-meta" class="dev-meta"></p>
+            </div>
+          </div>
+          <p id="acct-error" class="banner error" role="alert" hidden></p>
+          <p id="acct-note" class="notice ok" role="status" hidden></p>
+
+          <details class="acct-sec">
+            <summary>Change password</summary>
+            <form id="acct-pw-form" class="acct-form" autocomplete="off">
+              <label class="field"><span class="lbl">Current password</span><input id="acct-pw-cur" type="password" autocomplete="current-password" required></label>
+              <label class="field"><span class="lbl">New password</span><input id="acct-pw-new" type="password" autocomplete="new-password" minlength="8" required></label>
+              <label class="field"><span class="lbl">New password again</span><input id="acct-pw-new2" type="password" autocomplete="new-password" minlength="8" required></label>
+              <p class="hint">Every device signs out, this one too. Sign in again with the new password.</p>
+              <button id="acct-pw-btn" class="btn primary block" type="submit">Change password</button>
+            </form>
+          </details>
+
+          <details id="acct-others" class="acct-sec" hidden>
+            <summary>Other accounts</summary>
+            <div class="acct-form">
+              <ul id="acct-list" class="acct-list"></ul>
+              <label class="field"><span class="lbl">Your password, to remove an account</span><input id="acct-owner-pw" type="password" autocomplete="current-password"></label>
+              <p class="hint">New accounts are made on the computer: arcflare phone user add &lt;name&gt;</p>
+            </div>
+          </details>
+
+          <details class="acct-sec danger-zone">
+            <summary>Delete my account</summary>
+            <form id="acct-del-form" class="acct-form" autocomplete="off">
+              <p class="hint">This removes your account from this hub and signs out all your devices. Your agents, chats and files on the computer are not deleted. It cannot be undone.</p>
+              <label class="field"><span class="lbl">Password</span><input id="acct-del-pw" type="password" autocomplete="current-password" required></label>
+              <label class="check"><input id="acct-del-sure" type="checkbox" required> <span>I understand, delete my account</span></label>
+              <button id="acct-del-btn" class="btn danger block" type="submit">Delete my account</button>
+            </form>
+          </details>
+        </div>
+
         <div class="dev-actions">
           <button id="revoke-others" class="btn outline block" type="button">Sign out other devices</button>
           <button id="logout" class="btn danger block" type="button">Log out</button>
