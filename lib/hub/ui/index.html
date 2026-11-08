@@ -103,6 +103,7 @@
           <span id="agent-status" class="st" role="status"></span>
           <label class="sr-only" for="agent-model">Model for this agent</label>
           <select id="agent-model" class="model-select compact" title="The model this agent uses"></select>
+          <button id="agent-yolo" class="yolo-btn" type="button" aria-pressed="false" title="YOLO mode: run without asking">YOLO</button>
           <button id="agent-start" class="btn primary sm" type="button" hidden>Start</button>
           <button id="agent-stop" class="btn danger sm" type="button" hidden>
             <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>Stop
@@ -343,6 +344,33 @@
   </div>
 
   <!-- Confirm -->
+  <!-- YOLO mode: the agent runs everything without asking. Only after reading this and ticking the box. -->
+  <div id="sheet-yolo" class="sheet-wrap strong" hidden>
+    <div class="scrim" data-dismiss="sheet-yolo"></div>
+    <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="yolo-title" aria-describedby="yolo-body" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <div class="approval-head">
+        <span class="shield warn" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>
+        <h2 id="yolo-title" class="sheet-title">Turn on YOLO mode?</h2>
+      </div>
+      <div id="yolo-body" class="yolo-body">
+        <p>This agent will <b>run commands and change files on your computer without asking you first</b>.</p>
+        <ul>
+          <li>A wrong or misunderstood instruction can delete or overwrite your work.</li>
+          <li>Anything the agent reads can steer it: a web page, a file or a tool result can contain instructions.</li>
+          <li>You will see what it did in the conversation, but only after it has run.</li>
+        </ul>
+        <p>Use it in a project you can afford to lose or have backed up, like <span class="mono" id="yolo-folder"></span>. It stays on for this agent until you turn it off.</p>
+      </div>
+      <label class="check yolo-check"><input id="yolo-sure" type="checkbox"> <span>I understand the agent runs without asking</span></label>
+      <p id="yolo-error" class="banner error" role="alert" hidden></p>
+      <div class="two">
+        <button id="yolo-cancel" class="btn outline block lg" type="button">Cancel</button>
+        <button id="yolo-ok" class="btn danger-fill block lg" type="button" disabled>Turn on</button>
+      </div>
+    </div>
+  </div>
+
   <div id="sheet-confirm" class="sheet-wrap" hidden>
     <div class="scrim" data-dismiss="sheet-confirm"></div>
     <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-body" tabindex="-1">

@@ -999,3 +999,17 @@ fieldset.muted-off { opacity: 0.5; }
 .folder-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 20px; }
 .folder-chip { min-height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid var(--border); background: var(--surface); color: var(--foreground); font: inherit; font-size: 14px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-chip[aria-pressed="true"] { background: var(--accent-tonal); border-color: var(--accent); }
+
+/* ---------- YOLO mode ---------- */
+.yolo-btn { flex: none; min-height: 32px; padding: 0 10px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--muted); font: 700 12px/1 var(--mono, monospace); letter-spacing: .06em; cursor: pointer; }
+.yolo-btn[aria-pressed="true"] { background: var(--danger); border-color: var(--danger); color: var(--on-danger, #fff); }
+.statusbar.is-yolo { box-shadow: inset 0 -2px 0 var(--danger); }
+.yolo-line { margin-top: 4px; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--danger); }
+.yolo-body { display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 22px; color: var(--foreground); margin: 4px 0 12px; }
+.yolo-body ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
+.yolo-body .mono { overflow-wrap: anywhere; }
+.yolo-check { margin: 4px 0 16px; }
+.shield.warn { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.notice.yolo, .transcript .yolo { color: var(--danger); }
+.statusbar .st { flex: none; white-space: nowrap; }
+#agent-statusbar .model-select.compact { flex: 1 1 auto; min-width: 72px; }

@@ -1031,3 +1031,20 @@ test("workspace: no folder means the workspace, a name makes a project in it, ba
     assert.strictEqual((await jsonPost(s, a, "/api/agents", { name: "x", cwd: 5 })).status, 400);
   } finally { await s.close(); fs.rmSync(ws, { recursive: true, force: true }); }
 });
+
+test("YOLO mode can only be switched by an owner, with a true/false body", async () => {
+  const s = await start();
+  const calls = [];
+  s.supervisor.setYolo = (id, on) => { calls.push([id, on]); return { id, yolo: on }; };
+  try {
+    const a = await login(s);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/yolo", { on: "yes" })).status, 400);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/nope/yolo", { on: true })).status, 404);
+    const r = await jsonPost(s, a, "/api/agents/a1/yolo", { on: true });
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.json.yolo, true);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/yolo", { on: true })).status, 403);
+    assert.deepStrictEqual(calls, [["a1", true]]);
+  } finally { await s.close(); }
+});

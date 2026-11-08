@@ -407,3 +407,32 @@ test("an agent can be pinned to one model: it boots on that model, and changing 
   assert.strictEqual(asked.pop(), "standard", "back to the tier");
   await assert.rejects(() => sup.setModel(a.id, "a/b"), { code: "BAD_MODEL" });
 });
+
+test("YOLO mode: runs without asking, still records what ran, approves what is waiting, persists, and turns off", async () => {
+  const { sup, log, dir } = make();
+  const { id } = sup.create({ name: "yolo", cwd: PROJ });
+  const events = [];
+  sup.on("event", (e) => events.push(e));
+  // Waiting for an answer when YOLO is turned on: that approval goes through.
+  await sup.wake(id, "ask:npm test");
+  assert.ok(sup.get(id).pendingApproval);
+  assert.strictEqual(sup.setYolo(id, true).yolo, true);
+  await sup.whenIdle(id);
+  assert.strictEqual(log.filter((l) => l.asked).pop().ok, true);
+  // Later calls never wait, and the event says what ran.
+  await sup.wake(id, "ask:rm -rf dist");
+  await sup.whenIdle(id);
+  assert.strictEqual(log.filter((l) => l.asked).pop().ok, true);
+  assert.ok(!events.some((e) => e.type === "approval" && e.detail === "rm -rf dist"), "no question was asked");
+  const auto = events.find((e) => e.type === "approval_resolved" && e.auto);
+  assert.deepStrictEqual([auto.allow, auto.kind, auto.detail], [true, "bash", "rm -rf dist"]);
+  assert.ok(events.some((e) => e.type === "yolo" && e.on === true));
+  // Saved: a restarted hub still has it on.
+  const again = new Supervisor({ dir, roots: [ROOT], backend, makeAgent: fakeFactory([]) });
+  assert.strictEqual(again.get(id).yolo, true);
+  // Off: it asks again.
+  sup.setYolo(id, false);
+  await sup.wake(id, "ask:git push");
+  assert.strictEqual(sup.get(id).pendingApproval.detail, "git push");
+  await sup.stopAll();
+});
