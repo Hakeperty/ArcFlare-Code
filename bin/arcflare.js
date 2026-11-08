@@ -553,6 +553,7 @@ const HELP_GROUPS = [
     ["arcflare backend", "[kind]", "list or pick a llama.cpp backend"],
     ["arcflare memory", "[profile]", "lean | balanced | max"],
     ["arcflare batch", "[size]", "physical batch (prefill speed vs VRAM)"],
+    ["arcflare spec", "[on|off]", "n-gram speculation (faster repeated code)"],
     ["arcflare engine install", "", "download llama.cpp for this machine"],
     ["arcflare set-engine", "<path>", "remember where llama-server lives"],
     ["arcflare engine lmstudio", "", "run models in LM Studio (llamacpp: back)"],
@@ -1714,6 +1715,23 @@ async function main() {
       }
       console.log(`\n  ${c.dim("Larger batches also cost VRAM. If a model will not fit,")}`);
       console.log(`  ${c.dim("ArcFlare drops the batch before it reduces context.")}`);
+      return;
+    }
+
+    // Self-speculative decoding (n-gram drafts): faster when the model repeats text it has seen.
+    case "spec": {
+      const want = argv[1];
+      if (want === "on" || want === "off") {
+        saveConfig({ ...cfg, spec: want });
+        console.log(`  ${c.green(ui.sym.ok)} n-gram speculation ${c.accent(want)} ${c.dim("(applies the next time a model loads)")}`);
+        return;
+      }
+      if (want) die(`usage: arcflare spec [on|off]`);
+      const on = require("../lib/serve").specFor(cfg);
+      console.log(`  n-gram speculation: ${on ? c.accent("on") : "off"} ${c.dim(`(--spec-type ${require("../lib/serve").SPEC_TYPE})`)}`);
+      console.log(`  ${c.dim("Drafts tokens from text already in the conversation, with no extra model. Measured on Flint:")}`);
+      console.log(`  ${c.dim("+14% on code from the start, +45% once it has seen it, no change on fresh text. Models with their own")}`);
+      console.log(`  ${c.dim("MTP draft heads keep using those instead.")}`);
       return;
     }
 
