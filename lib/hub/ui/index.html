@@ -131,6 +131,13 @@
           <li class="card skel"><span class="bar w40"></span><span class="bar w90"></span></li>
         </ul>
         <ul id="session-list" class="stack"></ul>
+        <!-- Shown in the phone app only, when the hub offers a newer build of it. -->
+        <div id="app-update" class="card app-update" hidden>
+          <p class="dev-name">App update</p>
+          <p id="app-update-text" class="dev-meta"></p>
+          <p id="app-update-error" class="banner error" role="alert" hidden></p>
+          <button id="app-update-btn" class="btn block" type="button">Install update</button>
+        </div>
         <div class="dev-actions">
           <button id="revoke-others" class="btn outline block" type="button">Sign out other devices</button>
           <button id="logout" class="btn danger block" type="button">Log out</button>

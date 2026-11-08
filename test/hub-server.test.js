@@ -525,3 +525,62 @@ test("one session cannot hold more than a handful of streams open", async () => 
   for (const c of open) c.res.destroy();
   await s.close();
 });
+
+// ---- phone app updates (lib/hub/appupdate.js) ----
+
+test("app update: sign-in required; version and parts reassemble to the published APK", async () => {
+  const au = require("../lib/hub/appupdate");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hub-app-"));
+  const apk = path.join(dir, "in.apk");
+  const bytes = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), require("node:crypto").randomBytes(au.CHUNK * 2 + 1234)]);
+  fs.writeFileSync(apk, bytes);
+  au.publish(dir, apk, { versionCode: 7, versionName: "1.0.7" });
+  const s = await start({ opts: { appUpdates: au.forHub(dir) } });
+  try {
+    assert.strictEqual((await req(s.port, { path: "/api/app/version" })).status, 401, "not without a session");
+    assert.strictEqual((await req(s.port, { path: "/api/app/apk?part=0" })).status, 401);
+    const a = await login(s);
+    const get = (p) => req(s.port, { path: p, headers: { Cookie: a.cookie } });
+    const v = (await get("/api/app/version")).json;
+    assert.strictEqual(v.available, true);
+    assert.strictEqual(v.versionCode, 7);
+    assert.strictEqual(v.parts, 3);
+    assert.strictEqual(v.sha256, require("node:crypto").createHash("sha256").update(bytes).digest("hex"));
+    const parts = [];
+    for (let i = 0; i < v.parts; i++) {
+      const p = (await get("/api/app/apk?part=" + i)).json;
+      assert.strictEqual(p.part, i);
+      assert.strictEqual(p.sha256, v.sha256);
+      parts.push(Buffer.from(p.data, "base64"));
+    }
+    assert.ok(Buffer.concat(parts).equals(bytes));
+    for (const bad of ["3", "-1", "1e2", "", "x", "0x1", "../current.json", "1234567"]) {
+      assert.strictEqual((await get("/api/app/apk?part=" + encodeURIComponent(bad))).status, 404, bad);
+    }
+  } finally { await s.close(); }
+});
+
+test("app update: no update published, or no updater wired in: available false", async () => {
+  const s = await start();
+  try {
+    const a = await login(s);
+    assert.deepStrictEqual((await req(s.port, { path: "/api/app/version", headers: { Cookie: a.cookie } })).json, { available: false });
+  } finally { await s.close(); }
+});
+
+test("app update publish: refuses downgrades, non-APKs and bad version codes; a truncated file is not offered", () => {
+  const au = require("../lib/hub/appupdate");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hub-app-"));
+  const apk = path.join(dir, "in.apk");
+  fs.writeFileSync(apk, Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(5000, 7)]));
+  assert.throws(() => au.publish(dir, apk, { versionCode: 0 }), /version-code/);
+  assert.throws(() => au.publish(dir, apk, { versionCode: 1.5 }), /version-code/);
+  au.publish(dir, apk, { versionCode: 5 });
+  assert.throws(() => au.publish(dir, apk, { versionCode: 5 }), /downgrade/);
+  assert.throws(() => au.publish(dir, apk, { versionCode: 4 }), /downgrade/);
+  const txt = path.join(dir, "x.apk");
+  fs.writeFileSync(txt, Buffer.alloc(5000, 65));
+  assert.throws(() => au.publish(dir, txt, { versionCode: 9 }), /not an APK/);
+  fs.truncateSync(path.join(dir, "app", "current.apk"), 100);
+  assert.strictEqual(au.info(dir), null, "size no longer matches: not offered");
+});

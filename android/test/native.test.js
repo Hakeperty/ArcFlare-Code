@@ -30,7 +30,7 @@ test("navigate: only the bundled UI (with the optional via hint); everything els
 
 test("the native bridge surface is small: no NavGuard, no setLan, no generic http, no cookie setter", () => {
   const { N } = load();
-  assert.deepEqual(Object.keys(N).sort(), ["clearCookies", "getLaunchUrl", "nativeHttp", "navigate", "onAppUrl", "onForeground", "supportsX25519"]);
+  assert.deepEqual(Object.keys(N).sort(), ["appUpdater", "clearCookies", "getLaunchUrl", "nativeHttp", "navigate", "onAppUrl", "onForeground", "supportsX25519"]);
 });
 
 test("nativeHttp exposes get and post only (what lanfetch.js wraps), nothing else of CapacitorHttp", () => {
@@ -51,4 +51,16 @@ test("only lanfetch.js (and its two callers) mention nativeHttp; nothing else in
   const www = path.join(__dirname, "..", "www");
   const hits = fs.readdirSync(www).filter((f) => f.endsWith(".js")).filter((f) => /CapacitorHttp|nativeHttp/.test(fs.readFileSync(path.join(www, f), "utf8").replace(/\/\/.*$/gm, "")));
   assert.deepEqual(hits.sort(), ["native.js", "relay-boot.js", "shell.js"]);
+});
+
+test("appUpdater exposes the six update calls and nothing else, and is null outside the app", () => {
+  const { N } = load();
+  const u = N.appUpdater();
+  if (u) assert.deepEqual(Object.keys(u).sort(), ["abort", "begin", "commit", "info", "openInstallSettings", "write"]);
+  const saved = global.window && global.window.Capacitor;
+  if (global.window) {
+    delete global.window.Capacitor;
+    assert.equal(N.appUpdater(), null);
+    global.window.Capacitor = saved;
+  }
 });

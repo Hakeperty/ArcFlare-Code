@@ -7,8 +7,9 @@ android {
         applicationId "net.arcflare.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Raised by scripts/build-apk.js for each build, so a newer build installs over an older one (Android refuses downgrades).
+        versionCode((project.findProperty("arcflareVersionCode") ?: "1") as Integer)
+        versionName((project.findProperty("arcflareVersionName") ?: "1.0") as String)
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

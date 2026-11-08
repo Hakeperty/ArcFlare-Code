@@ -39,6 +39,23 @@
       try { var h = plugin("App").addListener("appStateChange", function (e) { if (e && e.isActive) fn(); }); if (h && h.catch) h.catch(function () {}); } catch (e) { /* not native */ }
     },
     clearCookies: function () { return plugin("CapacitorCookies").clearAllCookies(); },
+    /**
+     * Self-update (AppUpdaterPlugin.java): info(), begin({size, sha256}), write({data}), commit(), abort(),
+     * openInstallSettings(). The native side checks size and SHA-256 before Android sees the file, and
+     * Android installs only an APK signed with this app's key, after the user confirms. null outside the app.
+     */
+    appUpdater: function () {
+      var p;
+      try { p = plugin("AppUpdater"); } catch (e) { return null; }
+      return {
+        info: function () { return p.info(); },
+        begin: function (o) { return p.begin({ size: o.size, sha256: o.sha256 }); },
+        write: function (data) { return p.write({ data: data }); },
+        commit: function () { return p.commit(); },
+        abort: function () { return p.abort(); },
+        openInstallSettings: function () { return p.openInstallSettings(); },
+      };
+    },
     /** TUNNEL.md section 2: feature-detect X25519; never fall back. */
     supportsX25519: async function () {
       try { await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]); return true; } catch (e) { return false; }

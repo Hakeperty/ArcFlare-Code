@@ -41,6 +41,9 @@
         <!-- The template's FileProvider is removed: nothing in this app shares files. -->
     </application>
 
-    <!-- Network only. No camera, storage, location or any other permission. -->
+    <!-- Network, and installing updates of this app itself. No camera, storage, location or any other permission. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets the app hand Android an update it downloaded from the hub (AppUpdaterPlugin). Android still asks the
+         user every time, and installs it only if it is signed with this app's key. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

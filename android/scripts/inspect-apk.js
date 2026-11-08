@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Looks inside a BUILT apk and fails if its merged manifest is not what the README claims.
 //
-// Why: the source manifest says allowBackup=false, only INTERNET, one launcher activity, a single arcflare://pair
+// Why: the source manifest says allowBackup=false, only INTERNET (+ REQUEST_INSTALL_PACKAGES for self-updates), one launcher activity, a single arcflare://pair
 // link. What ships is the MERGED manifest (library manifests, Gradle injections), and nobody could check that before
 // there was a build. This runs in CI against the real apk with the SDK's own aapt2.
 //
@@ -119,7 +119,10 @@ function check(s, { mode, pkg = "net.arcflare.app" }) {
   ok(s.application.requestLegacyExternalStorage !== true, "no legacy external storage access", s.application.requestLegacyExternalStorage);
   ok(s.application.networkSecurityConfig !== undefined, "a network security config is set", s.application.networkSecurityConfig);
 
-  const extra = s.permissions.filter((p) => p !== "android.permission.INTERNET" && p !== `${pkg}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`);
+  // REQUEST_INSTALL_PACKAGES: the app installs its own updates from the hub (AppUpdaterPlugin); Android still
+  // confirms each install and refuses any APK not signed with this app's key.
+  const ALLOWED = ["android.permission.INTERNET", "android.permission.REQUEST_INSTALL_PACKAGES", `${pkg}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`];
+  const extra = s.permissions.filter((p) => !ALLOWED.includes(p));
   ok(s.permissions.includes("android.permission.INTERNET"), "the INTERNET permission is requested", "");
   ok(extra.length === 0, "no other permissions are requested", extra.join(", "));
 

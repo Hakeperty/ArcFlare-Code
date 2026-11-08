@@ -107,8 +107,9 @@ test("manifest: allowBackup=false, rules files, networkSecurityConfig, no debugg
   // intent filter: arcflare://pair only, never https app links
   assert.match(m, /<data android:scheme="arcflare" android:host="pair" \/>/);
   assert.doesNotMatch(m, /android:autoVerify|android:scheme="https?"/);
-  assert.equal([...m.matchAll(/<uses-permission/g)].length, 1);
-  assert.match(m, /android\.permission\.INTERNET/);
+  // INTERNET, and REQUEST_INSTALL_PACKAGES for the app's own updates (AppUpdaterPlugin). Nothing else.
+  assert.deepEqual([...m.matchAll(/<uses-permission android:name="([^"]+)"/g)].map((x) => x[1]).sort(),
+    ["android.permission.INTERNET", "android.permission.REQUEST_INSTALL_PACKAGES"]);
 });
 
 test("backup rule files exclude every domain", () => {
@@ -150,8 +151,21 @@ test("gradle: minSdk 26, release not debuggable, signing only from environment",
 
 test("native source lint (greps only, cannot catch an inverted condition): MainActivity and NavPolicy", () => {
   const dir = path.join(native, "java", "net", "arcflare", "app");
-  assert.deepEqual(fs.readdirSync(dir).sort(), ["MainActivity.java", "NavPolicy.java"], "no NavGuard plugin any more");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "MainActivity.java", "NavPolicy.java"], "no NavGuard plugin any more");
   const main = read(path.join(dir, "MainActivity.java"));
+  // The updater: only ever this app, a private receiver, an explicit intent, size and hash checked before
+  // commit, and no file sharing (no FileProvider, no shared storage, no ACTION_VIEW of a file).
+  const up = read(path.join(dir, "AppUpdaterPlugin.java"));
+  assert.match(up, /setAppPackageName\(getContext\(\)\.getPackageName\(\)\)/);
+  assert.ok(up.includes("ContextCompat.registerReceiver(getContext(), receiver, new IntentFilter(ACTION), ContextCompat.RECEIVER_NOT_EXPORTED)"));
+  assert.ok(!up.includes("getContext().registerReceiver("), "never the bare call: exported below Android 13");
+  assert.ok(up.includes("if (confirm != null && opensSystemApp(ctx, confirm))"));
+  assert.ok(up.includes("if (pendingCommit == null) return;"));
+  assert.match(up, /new Intent\(ACTION\)\.setPackage\(getContext\(\)\.getPackageName\(\)\)/);
+  assert.match(up, /if \(!got\.equals\(expectedSha\)\) \{ abandon\(\);/);
+  assert.match(up, /if \(written != expectedSize\) \{ abandon\(\);/);
+  assert.doesNotMatch(up, /FileProvider|getExternal|ACTION_VIEW|ACTION_INSTALL_PACKAGE|setDataAndType/);
+  assert.match(main, /registerPlugin\(AppUpdaterPlugin\.class\)/);
   const java = main + read(path.join(dir, "NavPolicy.java"));
   assert.match(main, /FLAG_SECURE/);
   assert.match(main, /setAllowFileAccess\(false\)/);
@@ -166,7 +180,9 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.match(main, /onPageFinished[\s\S]*if \(!NavPolicy\.allows\(url\)\)[\s\S]*loadUrl\(NavPolicy\.START\)/);
   assert.match(main, /bridge\.setWebViewClient\(new GuardedClient\(bridge\)\)/);
   // there is no way to add an exception, no plugin, no settable state
-  assert.doesNotMatch(java, /registerPlugin|@CapacitorPlugin|@PluginMethod|setLan|lanOrigin|static\s+(volatile\s+)?String\s+\w+\s*=\s*null/);
+  // The one native plugin is the updater; MainActivity registers it and nothing else, NavPolicy none.
+  assert.deepEqual([...java.matchAll(/registerPlugin\((\w+)\.class\)/g)].map((x) => x[1]), ["AppUpdaterPlugin"]);
+  assert.doesNotMatch(java, /@CapacitorPlugin|@PluginMethod|setLan|lanOrigin|static\s+(volatile\s+)?String\s+\w+\s*=\s*null/);
   assert.doesNotMatch(java, /addJavascriptInterface|@JavascriptInterface|setWebContentsDebuggingEnabled\(true\)|android\.util\.Log|\bLog\.|System\.out|printStackTrace/);
   assert.doesNotMatch(java, /startActivity|ACTION_VIEW|launchIntent/, "external links must open nothing");
   assert.equal(read(path.join(native, "res", "layout", "activity_main.xml")).includes('android:importantForAutofill="noExcludeDescendants"'), true);
