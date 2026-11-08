@@ -559,6 +559,29 @@ defence in depth rather than the control. The hub endpoints need no CORS.
 
 Dropping frames is safe: the protocol detects the gap and re-handshakes.
 
+### Short polling (serverless relays)
+
+A long-poll holds a function open for its whole `wait`, and a serverless host
+bills that as memory-time even while it sleeps; an always-on hub would hold one
+open around the clock, which alone exceeds a free tier. A relay on Redis
+(arcflare.net) therefore short-polls by default (`TUNNEL_LONG_POLL=1` turns it
+off): both GET endpoints answer at once, ignoring `wait`, and add
+`"next": <ms>`, how long to wait before polling again.
+
+- Hub: 500 after frames; 2 000 while a phone polled in the last 2 min; 10 000
+  within 30 min; 30 000 otherwise. Hubs are online for 75 s after a poll.
+- Phone: 500 after frames; 1 000 for 30 s after it sent something; 5 000
+  otherwise. The phone also polls at once after each send.
+- Clients clamp `next` (hub 250 ms..60 s, phone 250 ms..30 s): a hostile relay
+  can neither spin nor stall them. A relay that sends no `next` is long-polled
+  as before; a hub waits out 1 s after three early, empty replies in a row.
+- Clients that understand `next` send `short=1`. An empty poll without it gets
+  `429` + `Retry-After: 30`, so an older build backs off instead of spinning.
+- Cost: each short poll is one store round trip (one Lua script: rate check,
+  touch, read); an allowed phone adds one read for the allowlist. The
+  failed-auth counter is read only when a token fails. An idle hub is about
+  86 400 polls a month.
+
 ### Redis layout (suggested; all keys expire with the retention above)
 
 ```
