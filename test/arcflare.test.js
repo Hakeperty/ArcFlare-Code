@@ -239,6 +239,24 @@ test("codex config preserves unrelated user settings", () => {
   fs.rmSync(d, { recursive: true, force: true });
 });
 
+test("codex config: a model key inside the user's own tables survives, twice over", () => {
+  const d = tmpdir("codex-profiles");
+  const f = path.join(d, "config.toml");
+  fs.writeFileSync(f, 'model = "gpt-5"\n\n[profiles.fast]\nmodel = "o4-mini"\nmodel_provider = "openai"\n\n[mcp_servers.x]\nargs = ["a", "[b]"]\n');
+  const cx = Object.create(harness.byId("codex"));
+  cx.configFile = () => f;
+  cx.configure({ port: 11434, ctx: 4096, model: { id: "m", label: "m" } });
+  cx.configure({ port: 11434, ctx: 4096, model: { id: "m2", label: "m2" } });
+  const txt = fs.readFileSync(f, "utf8");
+  assert.match(txt, /^model = "m2"$/m);
+  assert.ok(!/^model = "gpt-5"$/m.test(txt), "the top-level model is ours to replace");
+  assert.match(txt, /\[profiles\.fast\]\nmodel = "o4-mini"\nmodel_provider = "openai"/);
+  assert.match(txt, /args = \["a", "\[b\]"\]/);
+  assert.strictEqual((txt.match(/\[model_providers\.arcflare\]/g) || []).length, 1);
+  assert.strictEqual((txt.match(/^model = /gm) || []).length, 2);
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
 test("every harness exposes the interface the CLI relies on", () => {
   for (const h of harness.list()) {
     assert.strictEqual(typeof h.id, "string");
