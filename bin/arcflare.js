@@ -1041,7 +1041,11 @@ async function genCommand(cfg, argv) {
       console.log(`\n  ${c.bold("First use of")} ${c.accent(m.label)} ${c.dim(`— installing it once (~${m.vram} GB of VRAM when running)`)}`);
       try {
         const r = await setupWithTorch(cfg, m, rest);
-        if (!r.check || !r.check.ok) die(`${m.label} installed, but its check failed: ${((r.check && r.check.problems) || []).join("; ") || "see above"}`);
+        const problems = (r.check && r.check.problems) || [];
+        // No GPU is a warning, not a failure: on a machine without one the CPU build is the right install.
+        const fatal = problems.filter((p) => !/sees no GPU/i.test(p));
+        if (!r.check || (!r.check.ok && (fatal.length || !problems.length))) die(`${m.label} installed, but its check failed: ${fatal.join("; ") || "see above"}`);
+        if (problems.length > fatal.length) console.log(`  ${c.dim("no GPU for this model: it will run on the CPU, which is slower")}`);
       } catch (e) {
         die(e.message);
       }
