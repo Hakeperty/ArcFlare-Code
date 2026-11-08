@@ -63,13 +63,14 @@
 
   /**
    * The hub moved its internet address (a Cloudflare quick tunnel gets a new one each time the hub starts). Told only
-   * over the tunnel, whose hub key is pinned, so it comes from our hub. https only, and only when the stored address
-   * is not the LAN base (the record must keep a home target and an internet target). Resolves true when it changed.
+   * over the tunnel, whose hub key is pinned, so it comes from our hub. https only. A phone paired on the home network
+   * only (relay = LAN base) gains an internet target this way; the LAN base stays its home target. Resolves true when
+   * it changed.
    */
   function updateRelay(url) {
     if (typeof url !== "string" || url.length > 200 || !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(url)) return Promise.resolve(false);
     return load().then(function (rec) {
-      if (!rec || rec.relay === url || (rec.lan && rec.relay === rec.lan)) return false;
+      if (!rec || rec.relay === url) return false;
       rec.relay = url;
       return tx("readwrite", function (s) { return s.put(rec, KEY); }).then(function () { return true; });
     });

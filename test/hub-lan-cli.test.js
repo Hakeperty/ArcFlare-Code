@@ -29,11 +29,11 @@ test("lan on|off|status persist; pair puts the LAN base in r, rm and l with the 
     p = run(home, ["phone", "pair", "--no-wait", "--no-qr", "--lan-url", "http://192.168.1.9:7878"]);
     const q = linkOf(p.stdout).searchParams;
     assert.strictEqual(q.get("v"), "1");
-    assert.strictEqual(q.get("r"), "http://192.168.1.9:7878", "r is the LAN base while the relay is off");
+    assert.strictEqual(q.get("r"), "http://192.168.1.9:7878", "r is the LAN base until the hub has a Connect address");
     assert.strictEqual(q.get("l"), "http://192.168.1.9:7878");
     assert.match(q.get("rm"), /^[A-Za-z0-9_-]{43}$/, "rm present");
     assert.match(q.get("hk"), /^[A-Za-z0-9_-]{43}$/);
-    assert.match(p.stdout, /relay: off/);
+    assert.match(p.stdout, /ArcFlare Connect: on/, "the default way in from anywhere");
     // a non-LAN address is refused
     p = run(home, ["phone", "pair", "--no-wait", "--no-qr", "--lan-url", "http://8.8.8.8:7878"]);
     assert.match(p.stdout + p.stderr, /private IPv4|\.local/);
@@ -82,7 +82,7 @@ test("the hub process: LAN mailbox on by default, off with --local", async () =>
     let h = await hubProcess(home, []);
     try {
       assert.match(h.out(), /lan tunnel: on/);
-      assert.match(h.out(), /relay: off/);
+      assert.match(h.out(), /ArcFlare Connect/, "on by default (cloudflared is not installed on a test box)");
       const r = await fetch(`http://127.0.0.1:${h.port}/api/tunnel/`);
       assert.strictEqual(r.status, 401, "mailbox answers (and wants a token)");
       assert.strictEqual((await fetch(`http://127.0.0.1:${h.port}/api/me`)).status, 401);
