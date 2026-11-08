@@ -556,6 +556,7 @@ const HELP_GROUPS = [
     ["arcflare memory", "[profile]", "lean | balanced | max"],
     ["arcflare batch", "[size]", "physical batch (prefill speed vs VRAM)"],
     ["arcflare spec", "[on|off]", "n-gram speculation (faster repeated code)"],
+    ["arcflare team", "[set swarm|advisor <model>]", "helper and advisor models for Team mode"],
     ["arcflare engine install", "", "download llama.cpp for this machine"],
     ["arcflare set-engine", "<path>", "remember where llama-server lives"],
     ["arcflare engine lmstudio", "", "run models in LM Studio (llamacpp: back)"],
@@ -1839,6 +1840,34 @@ async function main() {
       console.log(`  ${c.dim("Drafts tokens from text already in the conversation, with no extra model. Measured on Flint:")}`);
       console.log(`  ${c.dim("+14% on code from the start, +45% once it has seen it, no change on fresh text. Models with their own")}`);
       console.log(`  ${c.dim("MTP draft heads keep using those instead.")}`);
+      return;
+    }
+
+    // Team mode's helper models: which small model takes the swarm jobs, which one advises.
+    case "team": {
+      const T = require("../lib/agent/team");
+      const all = models.discover({ meta: true });
+      const tcfg = T.loadConfig();
+      const [, sub, role, id] = argv;
+      if (sub === "set") {
+        if (!["swarm", "advisor"].includes(role) || !id) die("usage: arcflare team set swarm|advisor <model>");
+        const mdl = models.resolve(all, id);
+        if (!mdl) die(`no installed model matches ${id} (see arcflare list)`);
+        T.saveConfig({ ...tcfg, [role]: mdl.id });
+        console.log(`  ${c.green(ui.sym.ok)} team ${role}: ${c.accent(mdl.id)} ${c.dim("(used the next time a Team agent starts)")}`);
+        return;
+      }
+      if (sub === "reset") { T.saveConfig({}); console.log(`  ${c.green(ui.sym.ok)} team models back to automatic`); return; }
+      if (sub) die("usage: arcflare team [set swarm|advisor <model> | reset]");
+      const lead = cfg.defaultModel || null;
+      const p = T.pick(all, lead, tcfg);
+      const gb = (x) => x ? ` ${c.dim(`(${(x.size / 1e9).toFixed(1)} GB${tcfg.swarm === x.id || tcfg.advisor === x.id ? ", set" : ", automatic"})`)}` : "";
+      console.log(`  Team mode (turn it on per agent with TEAM in the phone app):`);
+      console.log(`    lead     the agent's own model; the only one that edits files and runs commands`);
+      console.log(`    swarm    ${p.swarm ? c.accent(p.swarm.id) + gb(p.swarm) : c.red("none: pull a model up to 7 GB")}  read-only jobs, up to 4 at once`);
+      console.log(`    advisor  ${p.advisor ? c.accent(p.advisor.id) + gb(p.advisor) : c.red("none")}  plans, reviews before done, never writes code`);
+      console.log(`  ${c.dim("Slower answers: the advisor reads the session before and after each task (about a minute each), and")}`);
+      console.log(`  ${c.dim("swarm and advisor take turns in a second model server, 5-15 s per swap. Change: arcflare team set swarm|advisor <model>")}`);
       return;
     }
 

@@ -1069,3 +1069,17 @@ test("queue routes: add needs text, remove takes a whole-number position or noth
     assert.deepStrictEqual(calls, [["q", "a1", "next"], ["u", "a1", 0], ["u", "a1", undefined], ["s", "a1", { clearQueue: true }]]);
   } finally { await s.close(); }
 });
+
+test("Team mode route: true/false body, unknown agent is 404", async () => {
+  const s = await start();
+  const calls = [];
+  s.supervisor.setTeam = async (id, on) => { calls.push([id, on]); return { id, team: on, status: "stopped" }; };
+  try {
+    const a = await login(s);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/team", { on: 1 })).status, 400);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/nope/team", { on: true })).status, 404);
+    const r = await jsonPost(s, a, "/api/agents/a1/team", { on: true });
+    assert.deepStrictEqual([r.status, r.json.team], [200, true]);
+    assert.deepStrictEqual(calls, [["a1", true]]);
+  } finally { await s.close(); }
+});

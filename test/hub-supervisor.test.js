@@ -537,3 +537,34 @@ test("queue: lines messages up behind a busy turn, runs them in order, pauses on
   assert.deepStrictEqual(sup.get(id).queue, []);
   await sup.stopAll();
 });
+
+test("Team mode: saved per agent, passed to the agent factory, refused mid-turn, restarts a running agent", async () => {
+  const dir = fs.mkdtempSync(path.join(TMP, "hub-"));
+  const made = [];
+  let release = null;
+  const makeAgent = (o) => { made.push(o); return { busy: false, conversation: () => [], loadConversation() {}, abort() { if (release) release(); },
+    async send(t, opts) { o.onEvent({ type: "team", role: "advisor", phase: "start", kind: "plan" }); if (t === "slow") await new Promise((r) => { release = r; }); return { ok: true, content: "ok", opts }; } }; };
+  const sup = new Supervisor({ dir, roots: [ROOT], backend, makeAgent });
+  const { id } = sup.create({ name: "t", cwd: PROJ });
+  const events = [];
+  sup.on("event", (e) => events.push(e));
+  assert.strictEqual(sup.get(id).team, false);
+  await sup.wake(id, "hi");
+  await sup.whenIdle(id);
+  assert.strictEqual(made[0].team, null);
+  await sup.wake(id, "slow");
+  await assert.rejects(() => sup.setTeam(id, true), { code: "BUSY" });
+  release();
+  await sup.whenIdle(id);
+  const snap = await sup.setTeam(id, true);
+  assert.deepStrictEqual([snap.team, snap.status], [true, "stopped"], "restarted so the next message brings the team");
+  assert.ok(events.some((e) => e.type === "team_mode" && e.on === true));
+  assert.strictEqual(new Supervisor({ dir, roots: [ROOT], backend, makeAgent }).get(id).team, true, "saved");
+  await sup.wake(id, "go");
+  await sup.whenIdle(id);
+  assert.match(made[1].team.modelRef, /^ref-/);
+  assert.strictEqual(typeof made[1].team.helper, "function");
+  const t = events.find((e) => e.type === "team");
+  assert.deepStrictEqual([t.role, t.phase, t.kind], ["advisor", "start", "plan"], "team progress reaches the phone");
+  await sup.stopAll();
+});

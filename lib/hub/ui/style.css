@@ -1029,3 +1029,10 @@ fieldset.muted-off { opacity: 0.5; }
 .queue-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 0 16px; border: 0; border-radius: 24px; background: var(--accent-bright); color: var(--on-accent); font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
 .queue-btn:disabled { background: var(--surface-2); color: var(--muted-2); cursor: default; }
 .queue-btn[hidden], .send[hidden] { display: none; }
+
+/* ---------- Team mode ---------- */
+.team-btn { flex: none; min-height: 32px; padding: 0 10px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--muted); font: 700 12px/1 var(--mono, monospace); letter-spacing: .06em; cursor: pointer; }
+.team-btn[aria-pressed="true"] { background: var(--accent-bright); border-color: var(--accent-bright); color: var(--on-accent); }
+.team-line { margin-top: 4px; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--accent); }
+.notice.team { color: var(--accent); }
+.team-advice .tool-result { white-space: pre-wrap; }

@@ -103,6 +103,7 @@
           <span id="agent-status" class="st" role="status"></span>
           <label class="sr-only" for="agent-model">Model for this agent</label>
           <select id="agent-model" class="model-select compact" title="The model this agent uses"></select>
+          <button id="agent-team" class="team-btn" type="button" aria-pressed="false" title="Team mode: helper models and an advisor work with this agent">TEAM</button>
           <button id="agent-yolo" class="yolo-btn" type="button" aria-pressed="false" title="YOLO mode: run without asking">YOLO</button>
           <button id="agent-start" class="btn primary sm" type="button" hidden>Start</button>
           <button id="agent-stop" class="btn danger sm" type="button" hidden>
@@ -378,6 +379,34 @@
       <div class="two">
         <button id="yolo-cancel" class="btn outline block lg" type="button">Cancel</button>
         <button id="yolo-ok" class="btn danger-fill block lg" type="button" disabled>Turn on</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-team" class="sheet-wrap strong" hidden>
+    <div class="scrim" data-dismiss="sheet-team"></div>
+    <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="team-title" aria-describedby="team-body" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <div class="approval-head">
+        <span class="shield" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+        <h2 id="team-title" class="sheet-title">Turn on Team mode?</h2>
+      </div>
+      <div id="team-body" class="yolo-body">
+        <p>This agent gets a team, all on your computer: <b>small helper models</b> that search and read the project in parallel, and an <b>advisor</b>, a stronger model that checks the work but never writes code.</p>
+        <p><b>Answers will be slower, often by minutes:</b></p>
+        <ul>
+          <li>Before it starts, the advisor reads the task and makes a plan: about 20 seconds to a minute.</li>
+          <li>Before it says it is done, the advisor reviews the work, and it may send the agent back to fix things.</li>
+          <li>Helpers and advisor take turns in a second model server. Loading one takes 5 to 15 seconds each time they swap.</li>
+          <li>It needs GPU memory for the helpers, so the main model gets a shorter memory of the conversation (context), and helper models that do not fit are skipped.</li>
+        </ul>
+        <p>In return it should catch more mistakes, like an edit that failed but was reported as done. The agent restarts with its conversation kept.</p>
+      </div>
+      <label class="check yolo-check"><input id="team-sure" type="checkbox"> <span>I understand answers will be slower</span></label>
+      <p id="team-error" class="banner error" role="alert" hidden></p>
+      <div class="two">
+        <button id="team-cancel" class="btn outline block lg" type="button">Cancel</button>
+        <button id="team-ok" class="btn primary block lg" type="button" disabled>Turn on</button>
       </div>
     </div>
   </div>
