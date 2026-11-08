@@ -187,3 +187,37 @@ test("pairBest: LAN-only link (r = l) has a single attempt with the full cap; re
   await C.pairBest(env.deps, validateLink(hubLink({ lan: null })).value, "x");
   assert.equal(env.lanFetches.length, 0);
 });
+
+test("homeWatcher: on the relay, a later home check that succeeds switches back once; failures and the background do not", async () => {
+  let tick = null, t = 0, homes = 0, answers = [false, false, true, true], hidden = false, checks = 0;
+  const w = C.homeWatcher({
+    check: async () => { checks++; return { ok: answers.shift() }; },
+    onHome: () => { homes++; },
+    hidden: () => hidden,
+    setInterval: (fn) => { tick = fn; return 1; }, clearInterval: () => { tick = null; },
+    now: () => t, everyMs: 60000, minGapMs: 10000,
+  });
+  w.start();
+  t = 60000; await tick();                       // fails
+  hidden = true; t = 120000; await tick();       // in the background: skipped
+  assert.equal(checks, 1);
+  hidden = false; t = 125000; assert.equal(await w.kick(), false);  // app back in front: checks now (fails)
+  t = 126000; assert.equal(await w.kick(), false, "at most one check per 10 s");
+  assert.equal(checks, 2);
+  t = 190000; await tick();                      // home answers
+  assert.equal(homes, 1);
+  assert.equal(tick, null, "stopped after switching");
+  t = 300000; assert.equal(await w.kick(), false);
+  assert.equal(homes, 1, "only once");
+});
+
+test("homeWatcher: a check that throws counts as not home and the watcher keeps going", async () => {
+  let tick, t = 0, homes = 0, n = 0;
+  const w = C.homeWatcher({ check: async () => { if (n++ === 0) throw new Error("boom"); return { ok: true }; }, onHome: () => homes++,
+    setInterval: (fn) => { tick = fn; return 1; }, clearInterval: () => {}, now: () => t });
+  w.start();
+  t = 60000; await tick();
+  assert.equal(homes, 0);
+  t = 120000; await tick();
+  assert.equal(homes, 1);
+});

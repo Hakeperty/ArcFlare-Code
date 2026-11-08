@@ -135,5 +135,35 @@
     throw last || fail("FAILED", "pairing failed");
   }
 
-  return { connectBest: connectBest, connectTarget: connectTarget, check: check, pairBest: pairBest, HOME_MS: HOME_MS, RELAY_MS: RELAY_MS };
+  /**
+   * While connected through the relay, keep checking whether the home network answers again (back home, or Wi-Fi came
+   * up after launch), so the phone stops using the relay (and its Redis budget) as soon as it can. o.check() resolves
+   * { ok }; o.onHome() is called once, when a check succeeds, and the watcher stops. Checks run every o.everyMs
+   * (default 60 s) and on o.kick() (network change, app back in front), at most one at a time and at most every
+   * o.minGapMs (10 s); o.hidden() true (app in the background) skips the periodic check. Timers are injectable.
+   */
+  function homeWatcher(o) {
+    var every = o.everyMs || 60000, minGap = o.minGapMs || 10000;
+    var setI = o.setInterval || setInterval, clearI = o.clearInterval || clearInterval;
+    var now = o.now || Date.now;
+    var timer = null, busy = false, last = 0, done = false;
+    function run(force) {
+      if (done || busy) return Promise.resolve(false);
+      if (!force && o.hidden && o.hidden()) return Promise.resolve(false);
+      if (now() - last < minGap) return Promise.resolve(false);
+      busy = true; last = now();
+      return Promise.resolve().then(o.check).then(function (r) {
+        busy = false;
+        if (done || !r || r.ok !== true) return false;
+        stop();
+        try { o.onHome(); } catch (e) { /* the caller's problem */ }
+        return true;
+      }, function () { busy = false; return false; });
+    }
+    function start() { if (!timer && !done) timer = setI(function () { return run(false); }, every); }
+    function stop() { done = true; if (timer) { clearI(timer); timer = null; } }
+    return { start: start, stop: stop, kick: function () { return run(true); } };
+  }
+
+  return { connectBest: connectBest, connectTarget: connectTarget, check: check, pairBest: pairBest, homeWatcher: homeWatcher, HOME_MS: HOME_MS, RELAY_MS: RELAY_MS };
 });
