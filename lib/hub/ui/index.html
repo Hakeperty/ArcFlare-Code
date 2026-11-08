@@ -263,6 +263,25 @@
     </div>
   </div>
 
+  <!-- A question an agent on the computer asked (ask_phone). "Later" keeps it open on the hub. -->
+  <div id="sheet-question" class="sheet-wrap" hidden>
+    <div class="scrim" data-dismiss="sheet-question"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="question-title" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <h2 id="question-title" class="sheet-title">A question from your computer</h2>
+      <p id="question-text" class="lead"></p>
+      <div id="question-options" class="stack"></div>
+      <label class="field"><span class="lbl">Or write an answer</span>
+        <textarea id="question-answer" rows="2"></textarea>
+      </label>
+      <p id="question-error" class="banner error" role="alert" hidden></p>
+      <div class="two">
+        <button id="question-later" class="btn outline block lg" type="button">Later</button>
+        <button id="question-send" class="btn primary block lg" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Approval: modal, cannot be dismissed, only answered -->
   <div id="approval" class="sheet-wrap strong" hidden>
     <div class="scrim"></div>

@@ -722,3 +722,149 @@ test("stop AI: one call stops every answer and the model server", async () => {
     assert.deepStrictEqual((await req(s.port, { path: "/api/ai/status", headers: { Cookie: a.cookie } })).json, { modelRef: "flint:ud-q6_k_xl", running: true });
   } finally { await s.close(); llama.srv.close(); }
 });
+
+// ---- local API for agents (lib/hub/local.js) ----
+
+async function localHub(extra = {}) {
+  const L = require("../lib/hub/local");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hub-local-"));
+  const token = L.ensureToken(dir);
+  const questions = new L.QuestionBox();
+  let unloaded = 0;
+  const backend = async () => ({ port: extra.llamaPort || 1, model: "served", modelRef: "m1", nCtx: 4096, sampling: {} });
+  backend.status = async () => ({ modelRef: "m1", running: true });
+  backend.unload = async () => { unloaded++; return { stopped: true, modelRef: "m1" }; };
+  const srv = require("../lib/hub/server");
+  const api = L.makeLocalApi({ questions, backend, models: () => [{ id: "m1", size: 5 }], readJson: (r) => srv.readJson(r), sendJson: srv.sendJson });
+  const s = await start({ opts: { local: { token, questions, api }, ...(extra.opts || {}) } });
+  return { s, token, questions, dir, unloaded: () => unloaded };
+}
+
+const bearerReq = (s, method, p, token, body) => req(s.port, {
+  method, path: p,
+  headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
+test("local API: token required and constant-time checked; the token file is private and stable", async () => {
+  const { s, token, dir } = await localHub();
+  try {
+    assert.match(token, /^[0-9a-f]{64}$/);
+    assert.strictEqual(require("../lib/hub/local").ensureToken(dir), token, "reused, not rotated on every start");
+    assert.strictEqual((await bearerReq(s, "GET", "/api/local/models")).status, 401);
+    assert.strictEqual((await bearerReq(s, "GET", "/api/local/models", "0".repeat(64))).status, 401);
+    assert.strictEqual((await bearerReq(s, "GET", "/api/local/models", token.slice(0, 63))).status, 401);
+    const r = await bearerReq(s, "GET", "/api/local/models", token);
+    assert.strictEqual(r.status, 200);
+    assert.deepStrictEqual(r.json, { models: [{ id: "m1", size: 5 }], loaded: "m1" });
+    // A browser session cookie is not enough: the local API ignores cookies.
+    const a = await login(s);
+    assert.strictEqual((await req(s.port, { path: "/api/local/models", headers: { Cookie: a.cookie } })).status, 401);
+  } finally { await s.close(); }
+});
+
+test("local API: only this computer: a LAN address or a tunnelled request gets 404", async () => {
+  const L = require("../lib/hub/local");
+  assert.ok(L.isLoopback("127.0.0.1") && L.isLoopback("::1") && L.isLoopback("::ffff:127.0.0.1"));
+  assert.ok(!L.isLoopback("192.168.0.5") && !L.isLoopback("10.0.0.1") && !L.isLoopback("") && !L.isLoopback(undefined));
+  const { s, token } = await localHub({ opts: { getRemoteAddress: () => "192.168.0.5" } });
+  try {
+    assert.strictEqual((await bearerReq(s, "GET", "/api/local/models", token)).status, 404);
+  } finally { await s.close(); }
+});
+
+test("ask_phone round trip: agent asks, the phone sees it and answers, the agent gets the answer", async () => {
+  const { s, token } = await localHub();
+  try {
+    const asked = await bearerReq(s, "POST", "/api/local/ask", token, { question: "Deploy now?", options: ["Yes", "No"], timeoutSec: 60 });
+    assert.strictEqual(asked.status, 200);
+    const id = asked.json.id;
+    assert.match(id, /^[0-9a-f]{16}$/);
+    const a = await login(s);
+    const pending = (await req(s.port, { path: "/api/questions", headers: { Cookie: a.cookie } })).json;
+    assert.strictEqual(pending.length, 1);
+    assert.strictEqual(pending[0].question, "Deploy now?");
+    assert.deepStrictEqual(pending[0].options, ["Yes", "No"]);
+    // Waiting on it from the agent side while the phone answers.
+    const waiting = bearerReq(s, "GET", `/api/local/ask/${id}?wait=5`, token);
+    await new Promise((r) => setTimeout(r, 50));
+    assert.strictEqual((await jsonPost(s, a, `/api/questions/${id}/answer`, { answer: "Yes" })).status, 200);
+    const got = await waiting;
+    assert.deepStrictEqual([got.json.status, got.json.answer], ["answered", "Yes"]);
+    assert.strictEqual((await jsonPost(s, a, `/api/questions/${id}/answer`, { answer: "No" })).status, 409, "answered once");
+    assert.strictEqual((await jsonPost(s, a, `/api/questions/${id}/answer`, { answer: "No" }, { "X-CSRF-Token": "x" })).status, 403);
+    assert.strictEqual((await req(s.port, { path: "/api/questions" })).status, 401, "the phone side needs a session");
+  } finally { await s.close(); }
+});
+
+test("ask_phone limits: bad input refused, questions expire, at most 20 open", async () => {
+  const { s, token, questions } = await localHub();
+  try {
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/ask", token, { question: "" })).status, 400);
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/ask", token, { question: "x".repeat(2001) })).status, 413);
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/ask", token, { question: "q", options: Array(9).fill("a") })).status, 400);
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/ask", token, { question: "q", options: [5] })).status, 400);
+    for (let i = 0; i < 20; i++) assert.strictEqual((await bearerReq(s, "POST", "/api/local/ask", token, { question: "q" + i })).status, 200);
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/ask", token, { question: "one too many" })).status, 429);
+    // Expiry, with a clock we control.
+    let t = 1000;
+    const L = require("../lib/hub/local");
+    const qb = new L.QuestionBox({ now: () => t });
+    const { id } = qb.ask({ question: "q", timeoutSec: 10 });
+    t += 11000;
+    assert.strictEqual(qb.get(id).status, "expired");
+    assert.throws(() => qb.answer(id, "late"), /expired/);
+    assert.ok(questions.pending().length === 20);
+  } finally { await s.close(); }
+});
+
+test("local API: notify reaches the phone's event stream; unload calls the backend", async () => {
+  const { s, token, unloaded } = await localHub();
+  try {
+    const a = await login(s);
+    const got = new Promise((resolve, reject) => {
+      const r = http.get({ host: "127.0.0.1", port: s.port, path: "/api/events", headers: { Cookie: a.cookie }, agent: false }, (res) => {
+        let buf = "";
+        res.on("data", (d) => { buf += d; if (buf.includes("\"type\":\"notice\"")) { r.destroy(); resolve(buf); } });
+      });
+      r.on("error", (e) => { if (e.code !== "ECONNRESET") reject(e); });
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/notify", token, { title: "Build done", body: "all green" })).status, 200);
+    const text = await got;
+    assert.match(text, /"title":"Build done"/);
+    const u = await bearerReq(s, "POST", "/api/local/unload", token, {});
+    assert.deepStrictEqual(u.json, { stopped: true, modelRef: "m1" });
+    assert.strictEqual(unloaded(), 1);
+  } finally { await s.close(); }
+});
+
+test("local_generate: runs the prompt on the local model server and returns the text", async () => {
+  const llama = await new Promise((resolve) => {
+    const srv = http.createServer((q, r) => {
+      let b = ""; q.on("data", (d) => { b += d; });
+      q.on("end", () => {
+        const j = JSON.parse(b);
+        r.writeHead(200, { "Content-Type": "text/event-stream" });
+        r.write("data: " + JSON.stringify({ choices: [{ delta: { content: j.stream === true ? "echo: " : "NOT STREAMED " } }] }) + "\n\n");
+        r.end("data: " + JSON.stringify({ choices: [{ delta: { content: j.messages.at(-1).content }, finish_reason: "stop" }] }) + "\n\ndata: [DONE]\n\n");
+      });
+    });
+    srv.listen(0, "127.0.0.1", () => resolve(srv));
+  });
+  const { s, token } = await localHub({ llamaPort: llama.address().port });
+  try {
+    // A job: POST starts it, GET collects it (a long answer must not depend on one long request).
+    const started = await bearerReq(s, "POST", "/api/local/generate", token, { prompt: "hi", system: "be brief" });
+    assert.strictEqual(started.status, 200);
+    assert.match(started.json.id, /^[0-9a-f]{16}$/);
+    const r = await bearerReq(s, "GET", "/api/local/generate/" + started.json.id + "?wait=5", token);
+    assert.strictEqual(r.json.status, "done");
+    assert.strictEqual(r.json.text, "echo: hi");
+    assert.strictEqual(r.json.model, "m1");
+    assert.strictEqual(r.json.finish, "stop");
+    assert.strictEqual((await bearerReq(s, "GET", "/api/local/generate/0123456789abcdef", token)).status, 404);
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/generate", token, { prompt: "hi", model: "not-here" })).status, 400);
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/generate", token, { prompt: "" })).status, 400);
+  } finally { await s.close(); llama.close(); }
+});
