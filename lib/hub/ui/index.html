@@ -296,10 +296,12 @@
         <label class="field"><span class="lbl">Name</span>
           <input id="new-name" type="text" maxlength="64" required>
         </label>
-        <label class="field"><span class="lbl">Folder on the computer</span>
+        <label class="field"><span class="lbl">Project <span class="opt">(optional)</span></span>
           <input id="new-cwd" class="mono" type="text" autocapitalize="none" autocorrect="off" spellcheck="false"
-                 placeholder="/home/you/project" required>
+                 placeholder="my-project" aria-describedby="cwd-hint">
+          <span id="cwd-hint" class="hint block">Empty: the workspace on the computer. A name: a new folder in it.</span>
         </label>
+        <div id="new-folders" class="folder-chips" hidden></div>
         <label class="field"><span class="lbl">Model</span>
           <select id="new-model" class="model-select field-select" aria-describedby="model-hint">
             <option value="">Automatic: the tier picks it</option>

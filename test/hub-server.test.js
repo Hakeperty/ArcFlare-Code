@@ -1004,3 +1004,30 @@ test("chat: instructions go first as the system message; regenerate replaces the
     assert.deepStrictEqual(llama.seen.bodies[2].messages.map((m) => m.role), ["user"]);
   } finally { await s.close(); llama.srv.close(); }
 });
+
+test("workspace: no folder means the workspace, a name makes a project in it, bad names and odd paths are refused", async () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "hub-ws-"));
+  fs.mkdirSync(path.join(ws, "older"));
+  fs.mkdirSync(path.join(ws, ".hidden"));
+  const s = await start({ config: { workspace: ws, roots: [ws, "/elsewhere"] } });
+  const seen = [];
+  s.supervisor.create = async (o) => { seen.push(o.cwd); return { id: "a9", ...o }; };
+  try {
+    const a = await login(s);
+    const w = (await req(s.port, { path: "/api/workspace", headers: { Cookie: a.cookie } })).json;
+    assert.strictEqual(w.path, ws);
+    assert.deepStrictEqual(w.folders.map((f) => f.name), ["older"], "hidden folders are not listed");
+    assert.deepStrictEqual(w.roots, [ws, "/elsewhere"]);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents", { name: "x" })).status, 201);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents", { name: "x", cwd: "  " })).status, 201);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents", { name: "x", cwd: "my game" })).status, 201);
+    assert.ok(fs.statSync(path.join(ws, "my game")).isDirectory(), "the project folder was made");
+    assert.strictEqual((await jsonPost(s, a, "/api/agents", { name: "x", cwd: "/elsewhere/p" })).status, 201);
+    assert.deepStrictEqual(seen, [ws, ws, path.join(ws, "my game"), "/elsewhere/p"]);
+    for (const bad of ["..", ".git", "a..b", "con", "NUL.txt", "x.", "x".repeat(70), "a*b"]) {
+      assert.strictEqual((await jsonPost(s, a, "/api/agents", { name: "x", cwd: bad })).status, 400, bad);
+    }
+    assert.ok(!fs.existsSync(path.join(ws, "a..b")));
+    assert.strictEqual((await jsonPost(s, a, "/api/agents", { name: "x", cwd: 5 })).status, 400);
+  } finally { await s.close(); fs.rmSync(ws, { recursive: true, force: true }); }
+});
