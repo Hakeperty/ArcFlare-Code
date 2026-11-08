@@ -388,3 +388,22 @@ test("a hand-edited agents.json cannot point ids at other folders", () => {
   const sup = new Supervisor({ dir, roots: [ROOT], backend, makeAgent: fakeFactory([]) });
   assert.deepStrictEqual(sup.list().map((a) => a.name), ["ok"]);
 });
+
+test("an agent can be pinned to one model: it boots on that model, and changing it restarts the agent", async () => {
+  const asked = [];
+  const be = async (arg) => { asked.push(arg); const ref = typeof arg === "object" ? arg.modelRef : "ref-" + arg; return { port: 1, model: "m", nCtx: 4096, modelRef: ref }; };
+  const { sup } = make({ backend: be });
+  assert.throws(() => sup.create({ name: "x", cwd: PROJ, model: "../evil" }), { code: "BAD_MODEL" });
+  const a = sup.create({ name: "pinned", cwd: PROJ, tier: "standard", model: "flint:q6" });
+  assert.strictEqual(a.model, "flint:q6");
+  await sup.start(a.id);
+  assert.deepStrictEqual(asked.pop(), { modelRef: "flint:q6" }, "booted on the pinned model");
+  assert.strictEqual(sup.get(a.id).modelRef, "flint:q6");
+  const after = await sup.setModel(a.id, null);
+  assert.strictEqual(after.model, null);
+  assert.strictEqual(after.status, "stopped", "a running agent is stopped so its next message uses the new model");
+  await sup.wake(a.id, "hi");
+  await sup.whenIdle(a.id);
+  assert.strictEqual(asked.pop(), "standard", "back to the tier");
+  await assert.rejects(() => sup.setModel(a.id, "a/b"), { code: "BAD_MODEL" });
+});

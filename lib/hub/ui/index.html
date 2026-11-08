@@ -101,6 +101,8 @@
         <div id="agent-statusbar" class="statusbar">
           <span id="agent-dot" class="dot dot-off" aria-hidden="true"></span>
           <span id="agent-status" class="st" role="status"></span>
+          <label class="sr-only" for="agent-model">Model for this agent</label>
+          <select id="agent-model" class="model-select compact" title="The model this agent uses"></select>
           <button id="agent-start" class="btn primary sm" type="button" hidden>Start</button>
           <button id="agent-stop" class="btn danger sm" type="button" hidden>
             <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>Stop
@@ -218,6 +220,12 @@
         <label class="field"><span class="lbl">Folder on the computer</span>
           <input id="new-cwd" class="mono" type="text" autocapitalize="none" autocorrect="off" spellcheck="false"
                  placeholder="/home/you/project" required>
+        </label>
+        <label class="field"><span class="lbl">Model</span>
+          <select id="new-model" class="model-select field-select" aria-describedby="model-hint">
+            <option value="">Automatic: the tier picks it</option>
+          </select>
+          <span id="model-hint" class="hint block">Pick one to always use it for this agent. You can change it later.</span>
         </label>
         <fieldset class="field" id="new-tier">
           <legend class="lbl">Tier</legend>

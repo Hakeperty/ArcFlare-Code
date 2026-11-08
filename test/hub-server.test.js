@@ -679,6 +679,19 @@ test("chat: the model load is reported as progress events, and the answer is sav
   } finally { llama.srv.close(); }
 });
 
+test("agents: a pinned model must be installed; it can be changed later", async () => {
+  const llama = await fakeLlama();
+  const { s, a } = await chatHub(llama, { models: () => [{ id: "flint:ud-q6_k_xl", size: 1 }] });
+  try {
+    const cwd = s.roots ? s.roots[0] : null;
+    const list = (await req(s.port, { path: "/api/agents", headers: { Cookie: a.cookie } })).json;
+    assert.ok(Array.isArray(list));
+    const bad = await jsonPost(s, a, "/api/agents", { name: "x", cwd: cwd || process.cwd(), model: "not-here" });
+    assert.strictEqual(bad.status, 400);
+    assert.match(bad.json.error || "", /not on this computer/);
+  } finally { await s.close(); llama.srv.close(); }
+});
+
 test("chat: stop cuts the answer off, keeps what was said, and closes the model request", async () => {
   const llama = await fakeLlama({ words: Array.from({ length: 200 }, (_, i) => ` w${i}`), reasoning: [], gapMs: 15 });
   const { s, a } = await chatHub(llama);

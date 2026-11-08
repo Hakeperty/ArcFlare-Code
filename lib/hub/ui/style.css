@@ -909,3 +909,12 @@ progress.load-bar::-moz-progress-bar { background: var(--accent-bright); border-
   .spin { border-top-color: var(--accent-tonal-line); }
   .bubble.typing span { opacity: 0.6; }
 }
+
+/* ---- Agent model choice ---------------------------------------------------- */
+.model-select.compact { flex: 0 1 44%; height: 32px; font-size: 13px; padding: 0 10px; }
+.field-select { display: block; width: 100%; height: 44px; border-radius: 12px; font-size: 16px; }
+fieldset.muted-off { opacity: 0.5; }
+.agent-model-line { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--muted); }
+.agent-model-line .ico { width: 14px; height: 14px; flex: none; color: var(--accent-ink); }
+.agent-model-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hint.block { display: block; }
