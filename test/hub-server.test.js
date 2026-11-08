@@ -614,7 +614,8 @@ async function chatHub(llama, extra = {}) {
   const backend = async (arg) => { loads.push(arg); return { port: llama.port, model: "served", nCtx: 8192, modelRef: (arg && arg.modelRef) || "default-model", sampling: { temperature: 0.7 } }; };
   const chats = new ChatManager({ dir, backend, models: () => [{ id: "flint:ud-q6_k_xl" }, { id: "default-model" }] });
   let unloaded = 0;
-  const ai = { status: async () => ({ modelRef: "flint:ud-q6_k_xl", running: true }), stop: async () => { const n = chats.stopAll(); unloaded++; return { ok: true, chats: n }; } };
+  const ai = { status: async () => ({ modelRef: "flint:ud-q6_k_xl", running: true }), stop: async () => { const n = chats.stopAll(); unloaded++; return { ok: true, chats: n }; },
+    unload: async () => { const n = chats.stopAll(); unloaded++; return { ok: true, chats: n, server: true, model: "flint:ud-q6_k_xl" }; } };
   const s = await start({ opts: { chats, ai, ...extra } });
   const a = await login(s);
   return { s, a, chats, loads, dir, unloadedCount: () => unloaded };
@@ -720,6 +721,25 @@ test("stop AI: one call stops every answer and the model server", async () => {
     assert.strictEqual(r.chats, 1);
     assert.strictEqual(unloadedCount(), 1);
     assert.deepStrictEqual((await req(s.port, { path: "/api/ai/status", headers: { Cookie: a.cookie } })).json, { modelRef: "flint:ud-q6_k_xl", running: true });
+  } finally { await s.close(); llama.srv.close(); }
+});
+
+test("chat stop with unload: stops the answer and frees the GPU; plain stop does not unload", async () => {
+  const llama = await fakeLlama({ words: Array.from({ length: 200 }, (_, i) => ` w${i}`), gapMs: 15 });
+  const { s, a, unloadedCount } = await chatHub(llama);
+  try {
+    const c = (await jsonPost(s, a, "/api/chats", {})).json;
+    await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "go" });
+    await new Promise((r) => setTimeout(r, 80));
+    const plain = (await jsonPost(s, a, `/api/chats/${c.id}/stop`, {})).json;
+    assert.strictEqual(plain.stopped, true);
+    assert.strictEqual(unloadedCount(), 0, "without unload the weights stay loaded");
+    const r = (await jsonPost(s, a, `/api/chats/${c.id}/stop`, { unload: true })).json;
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.unloaded, true);
+    assert.strictEqual(r.model, "flint:ud-q6_k_xl");
+    assert.strictEqual(unloadedCount(), 1);
+    assert.strictEqual((await jsonPost(s, a, `/api/chats/${c.id}/stop`, { unload: "yes" })).json.unloaded, undefined, "only a real true unloads");
   } finally { await s.close(); llama.srv.close(); }
 });
 

@@ -103,7 +103,7 @@
           <span id="agent-status" class="st" role="status"></span>
           <button id="agent-start" class="btn primary sm" type="button" hidden>Start</button>
           <button id="agent-stop" class="btn danger sm" type="button" hidden>
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>Stop
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg><span id="chat-stop-label">Unload</span>
           </button>
           <span class="progress" aria-hidden="true"></span>
         </div>
@@ -146,6 +146,7 @@
         <div id="chat-transcript" class="transcript" aria-live="polite"></div>
         <p class="chat-empty">Ask anything. The answer comes from the model on your computer.</p>
         <p id="chat-error" class="banner error" role="alert" hidden></p>
+        <p id="chat-note" class="dev-meta sub" role="status" hidden></p>
         <form id="chat-compose" class="compose">
           <label class="sr-only" for="chat-text">Message</label>
           <textarea id="chat-text" rows="1" placeholder="Message" enterkeyhint="enter"></textarea>
