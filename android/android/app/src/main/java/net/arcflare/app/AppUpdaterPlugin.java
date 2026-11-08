@@ -84,7 +84,7 @@ public class AppUpdaterPlugin extends Plugin {
     @PluginMethod
     public synchronized void begin(PluginCall call) {
         abandon();
-        // Not call.getLong(): it returns null unless the JSON number was parsed as a Long, and an APK size
+        // Not the PluginCall getLong getter: it returns null unless the JSON number was parsed as a Long, and an APK size
         // (a few MB) parses as an Integer. optLong accepts any JSON number; -1 when absent or not a number.
         long size = call.getData().optLong("size", -1);
         String sha = call.getString("sha256");
