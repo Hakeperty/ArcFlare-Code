@@ -1,0 +1,67 @@
+# Runs the real one-line installers from arcflare.net on fresh Linux distributions, each in a throwaway
+# container that is deleted when the job ends. As an ordinary user with sudo, the way a person installs it.
+name: installers
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"   # every Monday
+  push:
+    branches: [main]
+    paths: ["package.json", "bin/**", ".github/workflows/installers.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        distro:
+          - ubuntu:24.04
+          - ubuntu:22.04
+          - debian:12
+          - archlinux:latest
+          - fedora:41
+          - opensuse/tumbleweed:latest
+          - alpine:3.20
+    container: ${{ matrix.distro }}
+    steps:
+      - name: What a fresh install of this distribution already has (curl, certificates, tar, sudo, a user)
+        shell: sh
+        run: |
+          case "${{ matrix.distro }}" in
+            ubuntu*|debian*) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates sudo tar gzip xz-utils ;;
+            archlinux*) pacman -Sy --noconfirm --needed curl ca-certificates sudo tar gzip xz ;;
+            fedora*) dnf -y -q install curl ca-certificates sudo tar gzip xz shadow-utils ;;
+            opensuse*) zypper -n -q install curl ca-certificates sudo tar gzip xz shadow ;;
+            alpine*) apk add -q curl ca-certificates sudo tar bash ;;
+          esac
+          id tester >/dev/null 2>&1 || useradd -m -s /bin/sh tester 2>/dev/null || adduser -D -s /bin/sh tester
+          echo 'tester ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/tester
+
+      - name: CLI installer (curl -fsSL https://arcflare.net/install.sh | sh)
+        shell: sh
+        run: |
+          if [ "${{ matrix.distro }}" = "alpine:3.20" ]; then
+            # musl: the installer is expected to stop and ask for the distribution's Node.js.
+            if su - tester -c 'curl -fsSL https://arcflare.net/install.sh | sh' > out.txt 2>&1; then cat out.txt; echo "expected a clear stop on musl"; exit 1; fi
+            cat out.txt; grep -q "apk add nodejs npm" out.txt
+            apk add -q nodejs npm
+          fi
+          su - tester -c 'set -e
+            curl -fsSL https://arcflare.net/install.sh | sh
+            export PATH="$HOME/.arcflare/node/bin:$HOME/.local/bin:$PATH"
+            arcflare --version
+            arcflare --help >/dev/null'
+
+      - name: Desktop installer (curl -fsSL https://arcflare.net/install-desktop.sh | sh)
+        if: ${{ !startsWith(matrix.distro, 'alpine') }}
+        shell: sh
+        run: |
+          su - tester -c 'set -e
+            curl -fsSL https://arcflare.net/install-desktop.sh | sh
+            ls ~/Applications ~/.local/bin /usr/bin /opt 2>/dev/null | grep -i arcflare'
