@@ -1108,7 +1108,7 @@ async function reportCommand(argv) {
   let body = flag(argv, "--body");
   const contact = flag(argv, "--contact");
   if (interactive) {
-    console.log(`\n  ${c.bold("Report a problem")} ${c.dim("· goes to the public list at arcflare.net — no keys or personal details")}\n`);
+    console.log(`\n  ${c.bold("Report a problem")} ${c.dim("· goes to the private report list at arcflare.net (read by the developer, not published) — no keys or personal details")}\n`);
     kind = kind || await ui.select("What is it?", rep.KINDS.map((k) => ({ label: k, value: k })));
     if (!kind) return;
     where = where || await ui.select("Where?", rep.WHERES.map((w) => ({ label: w, value: w })));
