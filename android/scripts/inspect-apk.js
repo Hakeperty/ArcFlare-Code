@@ -155,7 +155,7 @@ function findAapt2() {
   const bt = path.join(root, "build-tools");
   const versions = fs.readdirSync(bt).filter((v) => /^\d/.test(v)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   for (const v of versions.reverse()) {
-    const p = path.join(bt, v, "aapt2");
+    const p = path.join(bt, v, process.platform === "win32" ? "aapt2.exe" : "aapt2");
     if (fs.existsSync(p)) return p;
   }
   throw new Error("aapt2 not found under " + bt);
