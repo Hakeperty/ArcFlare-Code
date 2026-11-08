@@ -114,7 +114,7 @@ arcflare doctor
 | `arcflare uninstall` | Remove ArcFlare and its files; lists everything first (`--dry-run`, `--models`, `--keep-cli`) |
 | `arcflare rc` | Remote control: QR code, key and relay (`/rc` inside a session; `arcflare rc qr` for just the code) |
 | `arcflare update` | Show what's new and install it (`--check`, `--yes`, `--pack`, `--from <tgz\|dir>` offline) |
-| `arcflare harness update [id]` | Update Codex, OpenCode, Hermes and Claude Code with their own updaters (default: all installed) |
+| `arcflare harness update [id]` | Update Codex, OpenCode, Hermes, the DeepSeek agents and Claude Code with their own updaters (default: all installed) |
 | `arcflare report` | Send a bug, complaint or idea to [arcflare.net/report](https://arcflare.net/report) (`--title`, `--body`, `--kind`); `/report` in a session |
 | `arcflare mcp logout <server\|--all>` | Delete stored OAuth tokens for hosted MCP servers |
 | `arcflare doctor` | Check engine, GPU and harnesses |
@@ -1054,6 +1054,9 @@ When it does need to write config, it backs the file up first
 | **Hermes** | Uses `hermes config set` — its own tool, never hand-edited YAML. Also sets `terminal.cwd`, or its tools run in your home directory |
 | **Hermes Desktop** | Same config, launched via `hermes desktop --skip-build` when the packaged app already exists |
 | **Codex CLI** | `[model_providers.arcflare]` in `~/.codex/config.toml`, `wire_api = "responses"` |
+| **DeepSeek Harness** (`dsh`) | ArcFlare's own overlay at `~/.arcflare/harness/dsh.patch.yml`, launched as `dsh web --patch …`, so your dsh profile is never edited. Auto mode: `DSH_PERMISSION_MODE=danger-full-access` |
+| **CodeWhale** (formerly DeepSeek-TUI) | One `[providers.arcflare]` table in `~/.codewhale/config.toml`, launched with `--provider arcflare`. Auto mode: `--full-access` |
+| **Deep Code** | `env.MODEL` / `BASE_URL` / `API_KEY`, `model` and the context window in `~/.deepcode/settings.json`. Approvals follow that file's `permissions` (default allow all); there is no flag to pass |
 
 ```bash
 arcflare use opencode qwen3.6-35b-a3b     # configure and launch
@@ -1066,7 +1069,7 @@ arcflare harness update --dry-run         # show what would run
 `harness update` uses each tool's own updater and prints the command before it
 runs: `npm install -g @openai/codex@latest` (or `brew upgrade` for a Homebrew
 install), `opencode upgrade` (or npm, into the folder it was installed in, so
-OpenCode bundled with Hermes is updated there), `hermes update`, `claude update`.
+OpenCode bundled with Hermes is updated there), `hermes update`, `codewhale update`, npm for `@deepseek-ai/dsh` and `@vegamo/deepcode-cli`, `claude update`.
 
 ## Layout
 

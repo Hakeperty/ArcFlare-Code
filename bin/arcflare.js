@@ -515,7 +515,7 @@ const HELP_GROUPS = [
     ["arcflare agent", "[model]", "coding agent: tools, MCP, skills"],
     ["arcflare agent", "--resume", "pick up a saved session (--continue: the latest)"],
     ["arcflare use", "<harness> [m]", "configure + launch (--no-launch, --yolo, --ask)"],
-    ["arcflare harness update", "[id]", "update Codex, OpenCode, Hermes, Claude Code"],
+    ["arcflare harness update", "[id]", "update Codex, OpenCode, Hermes, DeepSeek agents, Claude Code"],
   ]],
   ["machine server (mcp)", [
     ["arcflare mcp", "[--install]", "run, open, build and test on this computer"],

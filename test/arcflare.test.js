@@ -270,8 +270,11 @@ test("the agent is offered as a harness and is the only one with tools", () => {
 // chat is the only entry that should not be asked: it has no tools to approve.
 test("every harness that runs tools has an auto mode, and chat does not", () => {
   const list = harness.list();
+  // Deep Code is the exception: it has no flag or variable for approvals, only
+  // `permissions` in its own settings file, which is the user's to set.
   assert.deepStrictEqual(
-    list.filter((h) => !h.auto).map((h) => h.id), ["chat"]);
+    list.filter((h) => !h.auto).map((h) => h.id), ["chat", "deepcode"]);
+  assert.match(harness.byId("deepcode").approvals, /settings/);
   for (const h of list.filter((x) => x.auto)) {
     assert.ok(h.auto.label, `${h.id} says what auto mode does`);
     assert.ok(h.auto.note, `${h.id} says what auto mode costs`);
@@ -322,6 +325,72 @@ test("hermes desktop carries auto mode in the environment", () => {
     "nothing on the command line — `hermes desktop` would reject it");
   // The CLI takes the flag instead, so it must not also set the variable.
   assert.deepStrictEqual(harness.autoEnv(harness.byId("hermes").auto, "yolo"), {});
+});
+
+// ------------------------------------------------------ deepseek agents --
+
+test("deep code settings keep the user's keys and own only endpoint, model and window", () => {
+  const d = tmpdir("deepcode");
+  const f = path.join(d, "settings.json");
+  fs.writeFileSync(f, JSON.stringify({
+    env: { MODEL: "deepseek-v4-flash", TELEMETRY_ENABLED: "false" },
+    model: "deepseek-v4-pro",
+    permissions: { defaultMode: "askAll" },
+  }));
+  const dc = Object.create(harness.byId("deepcode"));
+  dc.configFile = () => f;
+  const r = dc.configure({ port: 11435, ctx: 131072, model: { id: "m1", label: "m1" } });
+  assert.ok(r.ok);
+  const out = JSON.parse(fs.readFileSync(f, "utf8"));
+  assert.strictEqual(out.env.MODEL, "m1");
+  assert.strictEqual(out.model, "m1", "the top-level model overrides env.MODEL, so it is ours too");
+  assert.strictEqual(out.env.BASE_URL, "http://127.0.0.1:11435/v1");
+  assert.strictEqual(out.env.TELEMETRY_ENABLED, "false");
+  assert.deepStrictEqual(out.permissions, { defaultMode: "askAll" }, "approvals stay the user's");
+  assert.strictEqual(out.contextWindow, 131072);
+  assert.strictEqual(out.autoCompactWindow, 104857);
+  assert.ok(fs.existsSync(f + ".arcflare-bak"));
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test("codewhale gets one provider table and keeps the user's default provider", () => {
+  const d = tmpdir("codewhale");
+  const f = path.join(d, "config.toml");
+  fs.writeFileSync(f, 'provider = "deepseek"\n\n[providers.deepseek]\napi_key_env = "DEEPSEEK_API_KEY"\n');
+  const cw = Object.create(harness.byId("codewhale"));
+  cw.configFile = () => f;
+  const opts = { port: 11435, ctx: 65536, model: { id: "a:Q4", label: "a" } };
+  cw.configure(opts);
+  cw.configure({ ...opts, model: { id: "b:Q6", label: "b" } });
+  const txt = fs.readFileSync(f, "utf8");
+  assert.strictEqual((txt.match(/\[providers\.arcflare\]/g) || []).length, 1);
+  assert.match(txt, /^provider = "deepseek"/m);
+  assert.match(txt, /\[providers\.deepseek\]\napi_key_env = "DEEPSEEK_API_KEY"/);
+  assert.match(txt, /model = "b:Q6"/);
+  assert.doesNotMatch(txt, /a:Q4/);
+  assert.match(txt, /kind = "openai-compatible"/);
+  assert.match(txt, /context_window = 65536/);
+  assert.deepStrictEqual(harness.autoArgs(cw.auto, "yolo", []), ["--full-access"]);
+  assert.deepStrictEqual(harness.autoArgs(cw.auto, "yolo", ["--sandbox", "read-only"]), []);
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test("dsh gets its own --patch overlay, and auto mode is an environment variable", () => {
+  const d = tmpdir("dsh");
+  const f = path.join(d, "dsh.patch.yml");
+  const ds = Object.create(harness.byId("dsh"));
+  ds.configFile = () => f;
+  assert.ok(ds.configure({ port: 11435, ctx: 131072, model: { id: 'x"y:Q6', label: "x" } }).ok);
+  const txt = fs.readFileSync(f, "utf8");
+  assert.match(txt, /- id: llm-pi-ai\n {2}config:\n {4}providers:\n {6}arcflare:/);
+  assert.match(txt, /baseURL: "http:\/\/127\.0\.0\.1:11435\/v1"/);
+  assert.match(txt, /maxTokensField: max_tokens/);
+  assert.match(txt, /- id: "x\\"y:Q6"\n {12}contextWindow: 131072/, "model ids are quoted, quotes escaped");
+  assert.match(txt, /- id: agent-default-model\n {2}config:\n {4}provider: arcflare/);
+  assert.deepStrictEqual(harness.autoEnv(ds.auto, "yolo"), { DSH_PERMISSION_MODE: "danger-full-access" });
+  assert.deepStrictEqual(harness.autoEnv(ds.auto, "ask"), {});
+  assert.deepStrictEqual(harness.autoArgs(ds.auto, "yolo", []), []);
+  fs.rmSync(d, { recursive: true, force: true });
 });
 
 // ------------------------------------------------------- draft sidecars --

@@ -134,6 +134,9 @@ test("harness updates use each tool's own updater, where it was installed", () =
   assert.strictEqual(hu.plan("codex", "/opt/homebrew/bin/codex", none).cmd, "brew");
   assert.deepStrictEqual(hu.plan("opencode", "/home/u/.opencode/bin/opencode", none).args, ["upgrade"]);
   assert.deepStrictEqual(hu.plan("hermes", "/x/hermes", none).args, ["update"]);
+  assert.deepStrictEqual(hu.plan("codewhale", "/x/codewhale", none).args, ["update"]);
+  assert.deepStrictEqual(hu.plan("deepcode", "/usr/local/bin/deepcode", none).args, ["install", "-g", "@vegamo/deepcode-cli@latest"]);
+  assert.deepStrictEqual(hu.plan("dsh", "/usr/local/bin/dsh", none).args, ["install", "-g", "@deepseek-ai/dsh@latest"]);
   assert.deepStrictEqual(hu.plan("claude", "/x/claude", none).args, ["update"]);
   assert.ok(hu.plan("codex", null).skip);
   assert.ok(hu.plan("agent", null).skip);
