@@ -463,6 +463,57 @@ test("a vision projector is never borrowed from another repo", () => {
   fs.rmSync(d, { recursive: true, force: true });
 });
 
+function ollamaStore(d, manifestPath, layers) {
+  fs.mkdirSync(path.join(d, "blobs"), { recursive: true });
+  const out = [];
+  for (const [mediaType, digest, body, from] of layers) {
+    fs.writeFileSync(path.join(d, "blobs", digest.replace(":", "-")), body);
+    out.push({ mediaType, digest, size: body.length, ...(from ? { from } : {}) });
+  }
+  const mf = path.join(d, ...manifestPath);
+  fs.mkdirSync(path.dirname(mf), { recursive: true });
+  fs.writeFileSync(mf, JSON.stringify({ schemaVersion: 2, layers: out }));
+}
+
+test("Ollama models are found under their ollama-list names", () => {
+  const d = tmpdir("ollama");
+  ollamaStore(d, ["manifests", "registry.ollama.ai", "library", "zephyrtest", "9b"], [
+    ["application/vnd.ollama.image.model", "sha256:aa", "GGUF weights", "Zephyrtest-9B-Q4_K_M.gguf"],
+    ["application/vnd.ollama.image.projector", "sha256:bb", "GGUF proj"],
+  ]);
+  ollamaStore(d, ["manifests-v2", "ollama.com", "someone", "Alphatest", "latest"], [
+    ["application/vnd.ollama.image.model", "sha256:cc", "GGUF more weights"],
+  ]);
+  ollamaStore(d, ["manifests", "registry.ollama.ai", "library", "safetest", "1b"], [
+    ["application/vnd.ollama.image.model", "sha256:dd", "not a gguf"],
+  ]);
+
+  const found = discoverIn(d);
+  const ids = found.map((m) => m.id).sort();
+  assert.deepStrictEqual(ids, ["someone/alphatest:latest", "zephyrtest:9b"],
+    "a blob llama-server cannot load is not offered");
+  const z = models.resolve(found, "zephyrtest");
+  assert.strictEqual(z.file, path.join(d, "blobs", "sha256-aa"));
+  assert.strictEqual(z.mmproj, path.join(d, "blobs", "sha256-bb"));
+  assert.strictEqual(z.name, "Zephyrtest-9B-Q4_K_M.gguf");
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test("an Ollama import of a GGUF already on disk is not listed twice", () => {
+  const d = tmpdir("ollama-dup");
+  const body = "GGUF same weights";
+  put(repo(d, "vendora", "Zephyrtest-9Z"), "Zephyrtest-9Z-Q4_K_M.gguf");
+  fs.writeFileSync(path.join(repo(d, "vendora", "Zephyrtest-9Z"), "Zephyrtest-9Z-Q4_K_M.gguf"), body);
+  ollamaStore(d, ["manifests", "registry.ollama.ai", "library", "zeph", "latest"], [
+    ["application/vnd.ollama.image.model", "sha256:ee", body, "Zephyrtest-9Z-Q4_K_M.gguf"],
+  ]);
+
+  const found = discoverIn(d);
+  assert.strictEqual(found.length, 1);
+  assert.strictEqual(found[0].ollama, undefined, "the named file wins over the blob");
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
 // ---------------------------------------------------------- hermes wiring --
 
 // Hermes' tools do not follow the process working directory, and neither
