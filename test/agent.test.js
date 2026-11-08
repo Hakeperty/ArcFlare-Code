@@ -646,3 +646,16 @@ test("a dangling symlink inside the roots cannot be written through", async (t) 
   assert.ok(!fs.existsSync(target), "the link target was not created");
   fs.rmSync(base, { recursive: true, force: true });
 });
+
+test("remote approval refuses a command too long to show in full", async () => {
+  const rc = require("../lib/rc");
+  const Cls = Object.values(rc).find((v) => typeof v === "function" && v.prototype && v.prototype.askApproval);
+  if (!Cls) return;
+  const fake = Object.create(Cls.prototype);
+  const events = [];
+  fake.approvalSeq = 0; fake.approvals = new Map(); fake.emit = (e) => events.push(e);
+  const ok = await fake.askApproval("bash", "echo hi " + "x".repeat(3000) + "; rm -rf ~");
+  assert.strictEqual(ok, false);
+  assert.ok(!events.some((e) => e.type === "approval"), "nothing truncated was shown for approval");
+  assert.match(events[0].reason, /too long/);
+});
