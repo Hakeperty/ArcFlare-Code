@@ -21,3 +21,8 @@
 @media (max-width: 359px) { .btn-row:not(.stack-btns) { flex-direction: column; } .code-digits { font-size: 36px; } }
 .hint.center { text-align: center; }
 #pair-go { margin-top: 24px; }
+
+/* Open-source licences on the pairing screen. */
+.licenses { margin: 16px auto 0; max-width: 420px; padding: 0 16px; font-size: 14px; }
+.licenses summary { cursor: pointer; color: var(--muted, #8a8a80); }
+.licenses-text { max-height: 50vh; overflow: auto; white-space: pre-wrap; font: 12px/1.5 monospace; margin-top: 8px; }

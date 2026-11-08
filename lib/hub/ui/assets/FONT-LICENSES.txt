@@ -1,4 +1,4 @@
-Fonts bundled with the ArcFlare Hub phone UI (not served; kept for attribution).
+Fonts bundled with the ArcFlare Hub phone UI and served by it (kept here for attribution; full texts in LICENSES.txt).
 
 Geist and Geist Mono (latin subsets)
   Copyright 2023 The Geist Project Authors (https://github.com/vercel/geist-font)

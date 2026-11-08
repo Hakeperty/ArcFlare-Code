@@ -1601,6 +1601,15 @@ async function main() {
       // Native download (lib/hf.js): no llama.cpp needed, resumable, checksummed,
       // written in the same cache layout llama.cpp's -hf uses. Models go where
       // existing ones already are, else llama.cpp's default cache folder.
+      // Abliterated builds: say what they are and ask first (also when the shop installs one through here).
+      const hubmod = require("../lib/hub");
+      if (hubmod.uncensoredRef(ref) && !argv.includes("--accept-uncensored") && process.env.ARCFLARE_ACCEPT_UNCENSORED !== "1") {
+        console.log("");
+        for (const l of hubmod.UNCENSORED_NOTICE) console.log(`  ${c.accent(ui.sym.warn)} ${l}`);
+        if (!process.stdin.isTTY) die("re-run with --accept-uncensored to confirm you have read this");
+        const a = await ui.ask("Type yes to continue");
+        if (String(a).trim().toLowerCase() !== "yes") { console.log(`  ${c.dim("cancelled: nothing was downloaded")}`); return; }
+      }
       const hf = require("../lib/hf");
       const dlmod = require("../lib/download");
       const hfRoot = models.roots().find((r) => {

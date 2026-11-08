@@ -148,3 +148,10 @@ test("harness updates use each tool's own updater, where it was installed", () =
   assert.strictEqual(p.cmd, "npm");
   assert.deepStrictEqual(p.args, ["install", "-g", "opencode-ai@latest", "--prefix", prefix]);
 });
+
+test("abliterated / uncensored downloads are recognised so the CLI warns and asks first", () => {
+  const hub = require("../lib/hub");
+  for (const r of ["dima6312/Flint-40B-A2.5B-abliterated-GGUF:Q6_K", "x/Some-Uncensored-GGUF", "OS-Software/Ternary-Bonsai-2-27B-Uncensored-Heretic-GGUF:PQ2_0"]) assert.ok(hub.uncensoredRef(r), r);
+  for (const r of ["unsloth/flint-GGUF:UD-Q6_K_XL", "unsloth/Qwen3.6-35B-A3B-GGUF"]) assert.ok(!hub.uncensoredRef(r), r);
+  assert.ok(hub.UNCENSORED_NOTICE.join(" ").includes("18+"));
+});

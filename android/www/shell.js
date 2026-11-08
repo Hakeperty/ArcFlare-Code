@@ -349,6 +349,14 @@
 
   async function start() {
     await firstRunCookieWipe();
+    // The licences of everything inside the app, readable before pairing too (the same file the signed-in UI shows).
+    $("pair-licenses").addEventListener("toggle", function () {
+      var box = $("pair-licenses-text");
+      if (!$("pair-licenses").open || box.textContent) return;
+      fetch("ui/assets/LICENSES.txt", { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.text() : "Could not load the licence texts."; })
+        .then(function (t) { box.textContent = t; }, function () { box.textContent = "Could not load the licence texts."; });
+    });
     $("pair-form").addEventListener("submit", function (ev) {
       ev.preventDefault();
       var text = $("pair-link").value;
