@@ -423,9 +423,11 @@ test("YOLO mode: runs without asking, still records what ran, approves what is w
   await sup.wake(id, "ask:rm -rf dist");
   await sup.whenIdle(id);
   assert.strictEqual(log.filter((l) => l.asked).pop().ok, true);
-  assert.ok(!events.some((e) => e.type === "approval" && e.detail === "rm -rf dist"), "no question was asked");
+  // (The fake agent runs its whole message, which in YOLO mode ends with the YOLO note.)
+  assert.ok(!events.some((e) => e.type === "approval" && String(e.detail).startsWith("rm -rf dist")), "no question was asked");
   const auto = events.find((e) => e.type === "approval_resolved" && e.auto);
-  assert.deepStrictEqual([auto.allow, auto.kind, auto.detail], [true, "bash", "rm -rf dist"]);
+  assert.deepStrictEqual([auto.allow, auto.kind], [true, "bash"]);
+  assert.ok(auto.detail.startsWith("rm -rf dist"));
   assert.ok(events.some((e) => e.type === "yolo" && e.on === true));
   // Saved: a restarted hub still has it on.
   const again = new Supervisor({ dir, roots: [ROOT], backend, makeAgent: fakeFactory([]) });
@@ -435,4 +437,40 @@ test("YOLO mode: runs without asking, still records what ran, approves what is w
   await sup.wake(id, "ask:git push");
   assert.strictEqual(sup.get(id).pendingApproval.detail, "git push");
   await sup.stopAll();
+});
+
+test("YOLO keeps going: questions are answered for the person, a few times, and the phone hears one turn_end", async () => {
+  const { YOLO_MAX_CONTINUES } = require("../lib/hub/supervisor");
+  const run = async (yolo, asks) => {
+    const dir = fs.mkdtempSync(path.join(TMP, "hub-"));
+    const sent = [];
+    const makeAgent = () => ({
+      busy: false, conversation: () => [], loadConversation() {},
+      async send(t) { sent.push(t); const q = sent.length <= asks; return { ok: true, content: q ? "Done with part one. Should I continue with part two?" : "All finished." }; },
+    });
+    const sup = new Supervisor({ dir, roots: [ROOT], backend, makeAgent });
+    const { id } = sup.create({ name: "y", cwd: PROJ });
+    if (yolo) sup.setYolo(id, true);
+    const events = [];
+    sup.on("event", (e) => events.push(e));
+    await sup.wake(id, "build the game");
+    await sup.whenIdle(id);
+    await sup.stopAll();
+    return { sent, events };
+  };
+  const y = await run(true, 2);
+  assert.strictEqual(y.sent.length, 3, "asked twice, answered twice, then it finished");
+  assert.match(y.sent[0], /^build the game\n\n\[YOLO mode is on/);
+  assert.match(y.sent[1], /^Yes, go ahead/);
+  assert.strictEqual(y.events.filter((e) => e.type === "auto_continue").length, 2);
+  const ends = y.events.filter((e) => e.type === "turn_end");
+  assert.strictEqual(ends.length, 1, "one 'done' for the phone");
+  assert.strictEqual(ends[0].text, "All finished.");
+  // It never loops forever.
+  const capped = await run(true, 99);
+  assert.strictEqual(capped.sent.length, YOLO_MAX_CONTINUES + 1);
+  // Without YOLO the question goes to the person, as before, and the message is sent as typed.
+  const plain = await run(false, 99);
+  assert.deepStrictEqual(plain.sent, ["build the game"]);
+  assert.strictEqual(plain.events.filter((e) => e.type === "auto_continue").length, 0);
 });
