@@ -650,6 +650,35 @@ test("chat: create with a model, send, the answer streams and is saved with its 
   } finally { await s.close(); llama.srv.close(); }
 });
 
+test("chat: the model load is reported as progress events, and the answer is saved with its speed", async () => {
+  const llama = await fakeLlama();
+  const { ChatManager } = require("../lib/hub/chat");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hub-chat-"));
+  const backend = async (arg, o) => {
+    o.onProgress({ phase: "loading", stage: "weights", model: "default-model", size: 5e9, ctx: 8192, pct: 40, elapsedMs: 400, estMs: 1000 });
+    o.onProgress({ phase: "loaded", model: "default-model", ctx: 8192, pct: 100, elapsedMs: 900 });
+    return { port: llama.port, model: "served", nCtx: 8192, modelRef: "default-model" };
+  };
+  const chats = new ChatManager({ dir, backend, models: () => [{ id: "default-model" }] });
+  try {
+    const c = chats.create({});
+    await chats.send(c.id, "Hi");
+    await chatWait(() => chats.get(c.id).status === "idle");
+    const evs = chats.history(c.id);
+    const loads = evs.filter((e) => e.kind === "load");
+    assert.deepStrictEqual(loads.map((e) => [e.phase, e.pct]), [["loading", 40], ["loaded", 100]]);
+    assert.strictEqual(loads[0].stage, "weights");
+    assert.strictEqual(loads[0].size, 5e9);
+    const done = evs.find((e) => e.kind === "done");
+    assert.ok(done.stats && done.stats.tokens > 0, "token count");
+    assert.strictEqual(done.stats.loadMs, 900);
+    assert.ok(typeof done.stats.ttftMs === "number");
+    const saved = chats.get(c.id).messages[1];
+    assert.deepStrictEqual(saved.stats, done.stats, "stats are kept with the message");
+    assert.deepStrictEqual(llama.seen.bodies[0].stream_options, { include_usage: true });
+  } finally { llama.srv.close(); }
+});
+
 test("chat: stop cuts the answer off, keeps what was said, and closes the model request", async () => {
   const llama = await fakeLlama({ words: Array.from({ length: 200 }, (_, i) => ` w${i}`), reasoning: [], gapMs: 15 });
   const { s, a } = await chatHub(llama);

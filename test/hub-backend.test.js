@@ -105,3 +105,18 @@ test("loads never overlap, however many agents start at once, and one failure do
   assert.strictEqual(results[0].status, "rejected");
   assert.strictEqual(results[1].status, "fulfilled", "the queue kept going after a failed load");
 });
+
+test("a load reports its progress, ending at 100%; a model already loaded reports nothing", async () => {
+  const w = world();
+  const seen = [];
+  await w.backend({ modelRef: "small:q4" }, { onProgress: (p) => seen.push(p) });
+  assert.ok(seen.length >= 2, "at least a start and an end");
+  assert.strictEqual(seen[0].phase, "loading");
+  assert.strictEqual(seen[0].model, "small:q4");
+  assert.ok(seen[0].pct >= 0 && seen[0].pct < 100 && seen[0].estMs > 0);
+  const last = seen[seen.length - 1];
+  assert.deepStrictEqual([last.phase, last.pct, last.ctx], ["loaded", 100, 8192]);
+  const again = [];
+  await w.backend({ modelRef: "small:q4" }, { onProgress: (p) => again.push(p) });
+  assert.deepStrictEqual(again, [], "no reload, no bar");
+});

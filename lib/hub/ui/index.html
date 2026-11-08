@@ -103,7 +103,7 @@
           <span id="agent-status" class="st" role="status"></span>
           <button id="agent-start" class="btn primary sm" type="button" hidden>Start</button>
           <button id="agent-stop" class="btn danger sm" type="button" hidden>
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg><span id="chat-stop-label">Unload</span>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>Stop
           </button>
           <span class="progress" aria-hidden="true"></span>
         </div>
@@ -136,12 +136,14 @@
 
       <!-- One chat -->
       <section id="view-chat" class="view view-agent" hidden>
-        <div class="statusbar">
+        <div id="chat-bar" class="statusbar">
+          <span id="chat-gpu" class="gpu-pill" role="status" title="Whether a model is in the GPU now"><span class="gpu-dot" aria-hidden="true"></span><span id="chat-gpu-text">GPU</span></span>
           <label class="sr-only" for="chat-model">Model</label>
           <select id="chat-model" class="model-select"></select>
           <button id="chat-stop" class="btn danger sm" type="button" hidden>
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>Stop
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg><span id="chat-stop-label">Unload</span>
           </button>
+          <span class="progress" aria-hidden="true"></span>
         </div>
         <div id="chat-transcript" class="transcript" aria-live="polite"></div>
         <p class="chat-empty">Ask anything. The answer comes from the model on your computer.</p>
