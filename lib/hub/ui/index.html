@@ -133,7 +133,12 @@
         </div>
         <p id="chats-error" class="banner error" role="alert" hidden></p>
         <button id="chat-new" class="btn primary block lg" type="button">New chat</button>
+        <div class="chat-search-wrap">
+          <label class="sr-only" for="chat-search">Search chats</label>
+          <input id="chat-search" class="chat-search" type="search" placeholder="Search chats" autocomplete="off" enterkeyhint="search">
+        </div>
         <ul id="chat-list" class="stack"></ul>
+        <p id="chat-nomatch" class="dev-meta chat-nomatch" hidden>No chat matches.</p>
       </section>
 
       <!-- One chat -->
@@ -147,6 +152,17 @@
           </button>
           <span class="progress" aria-hidden="true"></span>
         </div>
+        <details id="chat-sys" class="chat-sys">
+          <summary><span>Instructions</span><span id="chat-sys-badge" class="badge" hidden>On</span></summary>
+          <div class="chat-sys-body">
+            <label class="sr-only" for="chat-sys-text">Instructions for this chat</label>
+            <textarea id="chat-sys-text" rows="3" maxlength="8000" placeholder="How the model should answer in this chat, e.g. &quot;Answer briefly, in Swedish.&quot;"></textarea>
+            <div class="chat-sys-foot">
+              <span id="chat-sys-note" class="dev-meta sub" role="status"></span>
+              <button id="chat-sys-save" class="btn primary sm" type="button">Save</button>
+            </div>
+          </div>
+        </details>
         <div id="chat-transcript" class="transcript" aria-live="polite"></div>
         <p class="chat-empty">Ask anything. The answer comes from the model on your computer.</p>
         <p id="chat-error" class="banner error" role="alert" hidden></p>
@@ -161,6 +177,22 @@
       </section>
 
       <!-- Devices -->
+      <section id="view-tools" class="view" hidden>
+        <h1 class="view-title">Tools</h1>
+        <p class="lead">MCP servers on the computer. Switch one on and agents you start get its tools; every call still asks you first.</p>
+        <p id="tools-error" class="banner error" role="alert" hidden></p>
+        <p id="tools-note" class="dev-meta sub tools-note" hidden></p>
+        <ul id="tools-skeleton" class="stack" aria-hidden="true" hidden>
+          <li class="card skel"><span class="bar w60"></span><span class="bar w90"></span></li>
+          <li class="card skel"><span class="bar w40"></span><span class="bar w90"></span></li>
+        </ul>
+        <div id="tools-empty" class="empty" hidden>
+          <p class="dev-name">No MCP servers yet</p>
+          <p class="dev-meta">Add them on the computer in <code>~/.arcflare/mcp.json</code> (or Claude&#39;s config), then come back here.</p>
+        </div>
+        <ul id="mcp-list" class="stack"></ul>
+      </section>
+
       <section id="view-devices" class="view" hidden>
         <h1 class="view-title">Devices</h1>
         <p class="lead">Browsers and phones signed in to this hub. Revoking one signs it out.</p>
@@ -236,6 +268,10 @@
       <a id="tab-chats" href="#/chats">
         <span class="pill"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
         <span class="lbl">Chat</span>
+      </a>
+      <a id="tab-tools" href="#/tools">
+        <span class="pill"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></svg></span>
+        <span class="lbl">Tools</span>
       </a>
       <a id="tab-devices" href="#/devices">
         <span class="pill"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M12 18h.01"/></svg></span>

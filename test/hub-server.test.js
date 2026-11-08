@@ -974,3 +974,33 @@ test("account routes: details, wrong password refused, CSRF required, delete sig
     assert.strictEqual((await req(s.port, { path: "/api/account", headers: { Cookie: a.cookie } })).status, 401);
   } finally { await s.close(); }
 });
+
+test("chat: instructions go first as the system message; regenerate replaces the last answer", async () => {
+  const llama = await fakeLlama({ reasoning: [] });
+  const { s, a } = await chatHub(llama);
+  try {
+    const get = (p) => req(s.port, { path: p, headers: { Cookie: a.cookie } });
+    const patch = (p, body) => req(s.port, { method: "PATCH", path: p, headers: { "Content-Type": "application/json", Cookie: a.cookie, "X-CSRF-Token": a.csrf }, body: JSON.stringify(body) });
+    const c = (await jsonPost(s, a, "/api/chats", {})).json;
+    assert.strictEqual((await jsonPost(s, a, `/api/chats/${c.id}/regenerate`, {})).status, 409, "nothing to answer yet");
+    const sys = await patch(`/api/chats/${c.id}`, { system: "  Be brief.  " });
+    assert.strictEqual(sys.status, 200);
+    assert.strictEqual(sys.json.system, "Be brief.");
+    assert.strictEqual((await patch(`/api/chats/${c.id}`, { system: 5 })).status, 400);
+    assert.strictEqual((await patch(`/api/chats/${c.id}`, { system: "x".repeat(8001) })).status, 413);
+    await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "Hi" });
+    await chatWait(async () => { const g = (await get(`/api/chats/${c.id}`)).json; return g.status === "idle" && g.messages.length === 2; });
+    assert.deepStrictEqual(llama.seen.bodies[0].messages, [{ role: "system", content: "Be brief." }, { role: "user", content: "Hi" }]);
+    const r = await jsonPost(s, a, `/api/chats/${c.id}/regenerate`, {});
+    assert.strictEqual(r.status, 200);
+    const g = await chatWait(async () => { const x = (await get(`/api/chats/${c.id}`)).json; return x.status === "idle" && x.messages.length === 2 ? x : null; });
+    assert.strictEqual(g.messages[1].role, "assistant");
+    assert.strictEqual(llama.seen.bodies.length, 2);
+    assert.deepStrictEqual(llama.seen.bodies[1].messages.map((m) => m.role), ["system", "user"], "the old answer is not sent back");
+    // Clearing the instructions: the next request has no system message.
+    assert.strictEqual((await patch(`/api/chats/${c.id}`, { system: "" })).json.system, "");
+    await jsonPost(s, a, `/api/chats/${c.id}/regenerate`, {});
+    await chatWait(async () => llama.seen.bodies.length === 3 && (await get(`/api/chats/${c.id}`)).json.status === "idle");
+    assert.deepStrictEqual(llama.seen.bodies[2].messages.map((m) => m.role), ["user"]);
+  } finally { await s.close(); llama.srv.close(); }
+});
