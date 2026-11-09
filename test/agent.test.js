@@ -710,3 +710,26 @@ test("an MCP server whose command is not installed says so, at once", async () =
   assert.ok(Date.now() - t0 < 4000, "no wait for the timeout");
   s.stop();
 });
+
+test("a command that printed output and exited non-zero is drawn as a warning, not a pass", async () => {
+  const { renderEvent } = require("../lib/agent/run");
+  const ui = require("../lib/ui");
+  const draw = (out) => {
+    const chunks = [];
+    const real = process.stdout.write;
+    process.stdout.write = (s) => { chunks.push(String(s)); return true; };
+    try { renderEvent({ type: "tool_result", name: "bash", out }, {}); } finally { process.stdout.write = real; }
+    return chunks.join("");
+  };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "af-exit-"));
+  try {
+    const exec = tools.makeExecutor({ cwd: dir });
+    const failed = await exec("bash", { command: "echo building; exit 2" });
+    assert.match(failed, /^building\n\[exit 2\]$/);
+    assert.ok(draw(failed).includes(` ${ui.sym.warn} `), "output then a failing exit: warning");
+    assert.ok(draw(await exec("bash", { command: "exit 3" })).includes(` ${ui.sym.warn} `), "no output, failing exit: warning");
+    const fine = draw(await exec("bash", { command: "echo ok" }));
+    assert.ok(fine.includes(ui.sym.ok) && !fine.includes(` ${ui.sym.warn} `));
+    assert.ok(!draw("start\nsee [exit 2] in the log\nall good").includes(` ${ui.sym.warn} `), "only the tool's own last line counts");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
