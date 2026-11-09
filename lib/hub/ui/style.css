@@ -846,8 +846,8 @@ body.kbd .bottomnav, body.kbd .fab { display: none; }
 #chat-new { margin: 0 var(--pr) 16px var(--pl); width: calc(100% - var(--pl) - var(--pr)); }
 a.dev-top { color: inherit; text-decoration: none; }
 .model-select {
-  flex: 1; min-width: 0; height: 36px; padding: 0 12px; border-radius: 18px;
-  border: 1px solid var(--border); background: var(--surface); color: inherit; font: inherit; font-size: 14px;
+  flex: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 22px;
+  border: 1px solid var(--border); background: var(--surface); color: inherit; font: inherit; font-size: 16px;
 }
 .model-select:disabled { opacity: 0.6; }
 .licenses-text { max-height: 60vh; overflow: auto; white-space: pre-wrap; font: 12px/1.5 var(--mono); padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); margin-bottom: 12px; }
@@ -911,7 +911,7 @@ progress.load-bar::-moz-progress-bar { background: var(--accent-bright); border-
 }
 
 /* ---- Agent model choice ---------------------------------------------------- */
-.model-select.compact { flex: 0 1 44%; height: 32px; font-size: 13px; padding: 0 10px; }
+.model-select.compact { flex: 0 1 44%; padding: 0 10px; }
 .field-select { display: block; width: 100%; height: 44px; border-radius: 12px; font-size: 16px; }
 fieldset.muted-off { opacity: 0.5; }
 .agent-model-line { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--muted); }
@@ -944,9 +944,9 @@ fieldset.muted-off { opacity: 0.5; }
 .mcp .dev-top { align-items: center; }
 .mcp-st.mcp-on { color: var(--ok); }
 .mcp-st.mcp-error { color: var(--danger); }
-.mcp-foot { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.mcp-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
 .mcp-more { flex: 1; min-width: 0; }
-.mcp-more summary { cursor: pointer; font-size: 14px; line-height: 20px; color: var(--accent); }
+.mcp-more summary { cursor: pointer; padding: 12px 0; font-size: 14px; line-height: 20px; color: var(--accent); }
 .mcp-tools { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .mcp-tool { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mcp-tool code { font-size: 13px; overflow-wrap: anywhere; }
@@ -1001,7 +1001,7 @@ fieldset.muted-off { opacity: 0.5; }
 .folder-chip[aria-pressed="true"] { background: var(--accent-tonal); border-color: var(--accent); }
 
 /* ---------- YOLO mode ---------- */
-.yolo-btn { flex: none; min-height: 32px; padding: 0 10px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--muted); font: 700 12px/1 var(--mono, monospace); letter-spacing: .06em; cursor: pointer; }
+.yolo-btn { flex: none; min-height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--border); background: transparent; color: var(--muted); font: 700 12px/1 var(--mono, monospace); letter-spacing: .06em; cursor: pointer; }
 .yolo-btn[aria-pressed="true"] { background: var(--danger); border-color: var(--danger); color: var(--on-danger, #fff); }
 .statusbar.is-yolo { box-shadow: inset 0 -2px 0 var(--danger); }
 .yolo-line { margin-top: 4px; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--danger); }
@@ -1012,7 +1012,22 @@ fieldset.muted-off { opacity: 0.5; }
 .shield.warn { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
 .notice.yolo, .transcript .yolo { color: var(--danger); }
 .statusbar .st { flex: none; white-space: nowrap; }
-#agent-statusbar .model-select.compact { flex: 1 1 auto; min-width: 72px; }
+/* The agent bar is two rows: status and Start/Stop, then the model and the two mode switches. On one row a
+   long status ("Needs approval") pushed Stop off the screen and left the model name a few letters wide. */
+#agent-statusbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "dot st act act" "sel sel team yolo";
+  row-gap: 6px;
+  padding-top: 6px;
+  padding-bottom: 8px;
+}
+#agent-dot { grid-area: dot; }
+#agent-status { grid-area: st; overflow: hidden; text-overflow: ellipsis; }
+#agent-start, #agent-stop { grid-area: act; justify-self: end; }
+#agent-model { grid-area: sel; width: 100%; }
+#agent-team { grid-area: team; }
+#agent-yolo { grid-area: yolo; }
 
 /* ---------- Queue ---------- */
 .queue { margin: 0 12px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
@@ -1020,19 +1035,26 @@ fieldset.muted-off { opacity: 0.5; }
 .queue-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .queue-title { flex: 1; min-width: 0; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--muted); }
 .queue.is-paused .queue-title { color: var(--danger); }
-.queue-clear { flex: none; min-height: 32px; padding: 0 10px; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.queue-clear { flex: none; min-height: 44px; margin: -6px 0; padding: 0 10px; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
 .queue-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow-y: auto; }
 .queue-item { display: flex; align-items: flex-start; gap: 6px; font-size: 14px; line-height: 20px; }
 .queue-n { flex: none; color: var(--muted-2); font-variant-numeric: tabular-nums; }
 .queue-text { flex: 1; min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.queue-x { flex: none; width: 32px; height: 32px; margin: -6px -6px -6px 0; border: 0; border-radius: 16px; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.queue-x { flex: none; width: 44px; height: 44px; margin: -12px -10px -12px 0; border: 0; border-radius: 22px; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
 .queue-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 0 16px; border: 0; border-radius: 24px; background: var(--accent-bright); color: var(--on-accent); font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
 .queue-btn:disabled { background: var(--surface-2); color: var(--muted-2); cursor: default; }
 .queue-btn[hidden], .send[hidden] { display: none; }
 
 /* ---------- Team mode ---------- */
-.team-btn { flex: none; min-height: 32px; padding: 0 10px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--muted); font: 700 12px/1 var(--mono, monospace); letter-spacing: .06em; cursor: pointer; }
+.team-btn { flex: none; min-height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--border); background: transparent; color: var(--muted); font: 700 12px/1 var(--mono, monospace); letter-spacing: .06em; cursor: pointer; }
 .team-btn[aria-pressed="true"] { background: var(--accent-bright); border-color: var(--accent-bright); color: var(--on-accent); }
 .team-line { margin-top: 4px; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--accent); }
 .notice.team { color: var(--accent); }
 .team-advice .tool-result { white-space: pre-wrap; }
+
+/* A 320px phone: the chat bar gives its spare pixels to the model name. */
+@media (max-width: 359px) {
+  #chat-bar { gap: 6px; }
+  #chat-bar .btn.sm { padding: 0 12px; }
+  #chat-bar .model-select { padding: 0 4px 0 10px; }
+}
