@@ -140,6 +140,18 @@ test("JSONC parser strips comments and trailing commas", () => {
   assert.deepStrictEqual(o.c, [1, 2]);
 });
 
+test("JSONC parser: a string ending in a backslash, a comma before a bracket inside a string, a BOM", () => {
+  // A Windows folder ending in an escaped backslash used to swallow the next string's opening quote, so the
+  // // of the URL after it was cut off as a comment.
+  const o = harness.parseJsonc('{ "dir": "C:\\\\tools\\\\", "url": "http://127.0.0.1:8080/v1" }');
+  assert.strictEqual(o.dir, "C:\\tools\\");
+  assert.strictEqual(o.url, "http://127.0.0.1:8080/v1");
+  // Trailing commas go; the same characters inside a string stay (the file is written back from this).
+  const p = harness.parseJsonc('{ "hint": "one, two, ]", "glob": "{a,}", "list": [1, ], }');
+  assert.deepStrictEqual(p, { hint: "one, two, ]", glob: "{a,}", list: [1] });
+  assert.deepStrictEqual(harness.parseJsonc('\uFEFF{ "a": "say \\"hi\\" // not a comment" } // bye'), { a: 'say "hi" // not a comment' });
+});
+
 // ------------------------------------------------------------- presets ------
 
 test("preset ini renders sections and a global block", () => {
