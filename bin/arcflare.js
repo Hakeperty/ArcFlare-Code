@@ -556,7 +556,7 @@ const HELP_GROUPS = [
     ["arcflare memory", "[profile]", "lean | balanced | max"],
     ["arcflare batch", "[size]", "physical batch (prefill speed vs VRAM)"],
     ["arcflare spec", "[on|off]", "n-gram speculation (faster repeated code)"],
-    ["arcflare team", "[set swarm|advisor <model>]", "helper and advisor models for Team mode"],
+    ["arcflare team", "[set swarm|advisor <model> | think on|off]", "helper and advisor models for Team mode"],
     ["arcflare engine install", "", "download llama.cpp for this machine"],
     ["arcflare set-engine", "<path>", "remember where llama-server lives"],
     ["arcflare engine lmstudio", "", "run models in LM Studio (llamacpp: back)"],
@@ -1857,8 +1857,14 @@ async function main() {
         console.log(`  ${c.green(ui.sym.ok)} team ${role}: ${c.accent(mdl.id)} ${c.dim("(used the next time a Team agent starts)")}`);
         return;
       }
-      if (sub === "reset") { T.saveConfig({}); console.log(`  ${c.green(ui.sym.ok)} team models back to automatic`); return; }
-      if (sub) die("usage: arcflare team [set swarm|advisor <model> | reset]");
+      if (sub === "think") {
+        if (!["on", "off"].includes(role)) die("usage: arcflare team think on|off");
+        T.saveConfig({ ...tcfg, think: role === "on" });
+        console.log(`  ${c.green(ui.sym.ok)} advisor reasoning ${role} ${c.dim(role === "on" ? "(deeper, 3-4x slower reviews)" : "(fast reviews, the default)")}`);
+        return;
+      }
+      if (sub === "reset") { T.saveConfig({}); console.log(`  ${c.green(ui.sym.ok)} team settings back to automatic`); return; }
+      if (sub) die("usage: arcflare team [set swarm|advisor <model> | think on|off | reset]");
       const lead = cfg.defaultModel || null;
       const p = T.pick(all, lead, tcfg);
       const gb = (x) => x ? ` ${c.dim(`(${(x.size / 1e9).toFixed(1)} GB${tcfg.swarm === x.id || tcfg.advisor === x.id ? ", set" : ", automatic"})`)}` : "";
@@ -1866,7 +1872,8 @@ async function main() {
       console.log(`    lead     the agent's own model; the only one that edits files and runs commands`);
       console.log(`    swarm    ${p.swarm ? c.accent(p.swarm.id) + gb(p.swarm) : c.red("none: pull a model up to 7 GB")}  read-only jobs, up to 4 at once`);
       console.log(`    advisor  ${p.advisor ? c.accent(p.advisor.id) + gb(p.advisor) : c.red("none")}  plans, reviews before done, never writes code`);
-      console.log(`  ${c.dim("Slower answers: the advisor reads the session before and after each task (about a minute each), and")}`);
+      console.log(`    reasoning ${tcfg.think ? "on (deeper, slower)" : "off (fast; arcflare team think on for deeper reviews)"}`);
+      console.log(`  ${c.dim("Slower answers: the advisor reads the session before and after each task (10-30 s each), and")}`);
       console.log(`  ${c.dim("swarm and advisor take turns in a second model server, 5-15 s per swap. Change: arcflare team set swarm|advisor <model>")}`);
       return;
     }

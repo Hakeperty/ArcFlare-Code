@@ -76,12 +76,14 @@ test("delegate: up to 4 read-only jobs run side by side on the swarm model, answ
 
 test("checkpoints: plan before, advisor on the second identical error only, and a review before done", async () => {
   const asked = [];
+  let lastBody = null;
   let reply = "1. Read Game1.cs first";
   const team = new T.Team({
     helper: fakeHelper(), swarm: m("small", 6), advisor: m("adv", 12), cwd: "/p",
-    chat: async (port, body) => { asked.push(body.messages[1].content); return { content: reply }; },
+    chat: async (port, body) => { lastBody = body; asked.push(body.messages[1].content); return { content: reply }; },
   });
   assert.match(await team.beforeTurn("make tetris", []), /^\[Advisor's plan.*\n1\. Read Game1\.cs/s);
+  assert.deepStrictEqual(lastBody.chat_template_kwargs, { enable_thinking: false }, "the advisor answers without hidden reasoning by default");
   assert.match(asked[0], /about to start this task\. .*\nmake tetris/s);
   const err = [{ name: "edit_file", out: "ERROR: old_string not found" }];
   assert.strictEqual(await team.afterTools(err, []), "", "once is not a pattern");
@@ -118,7 +120,8 @@ function fakeServer(script) {
 
 test("the agent loop: plan goes in with the message, a review sends the lead back once, team tools are offered", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "af-team-"));
-  const { srv, seen, port } = await fakeServer([{ text: "Done!" }, { text: "Fixed it, now done." }]);
+  const { srv, seen, port } = await fakeServer([
+    { tool: "write_file", args: { path: "a.txt", content: "a" } }, { text: "Done!" }, { text: "Fixed it, now done." }]);
   const calls = [];
   const team = {
     schemas: T.SCHEMAS,
@@ -135,11 +138,12 @@ test("the agent loop: plan goes in with the message, a review sends the lead bac
     const names = seen[0].tools.map((t) => t.function.name);
     assert.ok(names.includes("delegate") && names.includes("ask_advisor") && names.includes("write_file"));
     assert.match(seen[0].messages.at(-1).content, /^make tetris\n\n\[Advisor's plan: start small\]$/);
-    assert.match(seen[1].messages.at(-1).content, /the edit failed/);
+    assert.match(seen[2].messages.at(-1).content, /the edit failed/);
     assert.match(seen[0].messages[0].content, /lead of a small team/);
-    // A YOLO "go on" does not plan again.
+    // A YOLO "go on" does not plan again, and an answer that changed nothing is not reviewed.
     await a.send("go on", { plan: false });
     assert.strictEqual(calls.filter((c) => c === "plan").length, 1);
+    assert.strictEqual(calls.filter((c) => c === "done").length, 1, "nothing was written, so no review");
     // A swarm helper: read-only tools only, thinking off, and a write is refused even if asked for.
     const h = new Agent({ port, model: "small", cwd: dir, toolNames: T.READ_ONLY, noThink: true, approve: async () => true });
     assert.deepStrictEqual(h.toolSchemas.map((t) => t.function.name).sort(), [...T.READ_ONLY].sort());
@@ -190,4 +194,54 @@ test("a model server error mid-stream fails the turn instead of passing as an em
     assert.match(r.error, /OutOfDeviceMemory/);
     assert.ok(events.some((e) => e.type === "error"));
   } finally { srv.close(); }
+});
+
+test("small talk gets no plan; a task does", async () => {
+  let asked = 0;
+  const team = new T.Team({ helper: fakeHelper(), swarm: m("talk-s", 6), advisor: m("talk-a", 12), cwd: "/p",
+    chat: async () => { asked++; return { content: "1. do it" }; } });
+  for (const t of ["thanks!", "ok", "Go on.", "hi"]) assert.strictEqual(await team.beforeTurn(t, []), "", t);
+  assert.strictEqual(asked, 0);
+  assert.match(await team.beforeTurn("ok, now add a score counter", []), /Advisor's plan/);
+  assert.strictEqual(asked, 1);
+});
+
+test("swarm answers: paths and line numbers that do not hold are pointed out", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "af-refs-"));
+  try {
+    fs.mkdirSync(path.join(dir, "src"));
+    fs.writeFileSync(path.join(dir, "src", "game.js"), "a\nb\nc\n");
+    assert.strictEqual(T.checkRefs("score is in src/game.js:2 and see https://x.org/a/b.js", dir), "");
+    const note = T.checkRefs("see src/game.js:90, `src/board.js` and src/board.js again", dir);
+    assert.match(note, /not on disk: src\/board.js;/);
+    assert.match(note, /line past the end: src\/game\.js:90 \(the file has 4 lines\)/);
+    assert.strictEqual(T.checkRefs("version 1.2.3, e.g. Game1.cs", dir), "", "bare names are not checked");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the review sees what changed on disk since the task started", async () => {
+  const { execFileSync } = require("child_process");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "af-diff-"));
+  const g = (...a) => execFileSync("git", a, { cwd: dir, stdio: "ignore" });
+  try {
+    g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t");
+    fs.writeFileSync(path.join(dir, "a.js"), "one\n");
+    fs.writeFileSync(path.join(dir, "old.txt"), "left over\n");
+    g("add", "a.js"); g("commit", "-qm", "x");
+    fs.writeFileSync(path.join(dir, "a.js"), "one\nbefore the task\n");
+    let prompt = "";
+    const team = new T.Team({ helper: fakeHelper(), swarm: m("diff-s", 6), advisor: m("diff-a", 12), cwd: dir,
+      chat: async (port, body) => { prompt = body.messages[1].content; return { content: "LGTM" }; } });
+    team.startTurn();
+    fs.writeFileSync(path.join(dir, "a.js"), "one\nbefore the task\nduring the task\n");
+    fs.writeFileSync(path.join(dir, "new.js"), "brand new\n");
+    assert.strictEqual(await team.beforeDone([]), "");
+    assert.match(prompt, /What changed on disk during this task/);
+    assert.match(prompt, /\+during the task/);
+    assert.ok(!prompt.includes("+before the task"), "changes from before the task are not the lead's");
+    assert.match(prompt, /NEW FILE new\.js\nbrand new/);
+    assert.ok(!prompt.includes("old.txt"), "files that were already there are not new");
+    // Outside a git repository there is simply no diff.
+    assert.strictEqual(T.snapshot(os.tmpdir().split(path.sep)[0] + path.sep), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

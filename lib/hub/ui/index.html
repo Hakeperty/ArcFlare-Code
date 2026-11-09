@@ -393,10 +393,10 @@
       </div>
       <div id="team-body" class="yolo-body">
         <p>This agent gets a team, all on your computer: <b>small helper models</b> that search and read the project in parallel, and an <b>advisor</b>, a stronger model that checks the work but never writes code.</p>
-        <p><b>Answers will be slower, often by minutes:</b></p>
+        <p><b>Answers will be slower, often by a minute or more:</b></p>
         <ul>
-          <li>Before it starts, the advisor reads the task and makes a plan: about 20 seconds to a minute.</li>
-          <li>Before it says it is done, the advisor reviews the work, and it may send the agent back to fix things.</li>
+          <li>Before it starts, the advisor reads the task and makes a plan: usually 10 to 30 seconds. Small talk like "thanks" skips it.</li>
+          <li>Before it says it is done, the advisor reviews the work, including the actual changes on disk, and it may send the agent back to fix things. Answers that changed nothing are not reviewed.</li>
           <li>Helpers and advisor take turns in a second model server. Loading one takes 5 to 15 seconds each time they swap.</li>
           <li>It needs GPU memory for the helpers, so the main model gets a shorter memory of the conversation (context), and helper models that do not fit are skipped.</li>
         </ul>
