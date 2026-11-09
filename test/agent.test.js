@@ -697,3 +697,16 @@ test("file tools with missing or empty arguments say so and change nothing", asy
     assert.match(await exec("grep", {}), /^ERROR: pattern is required/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("an MCP server whose command is not installed says so, at once", async () => {
+  const { McpServer } = require("../lib/agent/mcp");
+  const s = new McpServer("ghost", { command: "arcflare-no-such-command-xyz" });
+  const t0 = Date.now();
+  await assert.rejects(s.start(5000), (e) => {
+    if (process.platform !== "win32") assert.match(e.message, /could not start: .*ENOENT/, e.message);
+    assert.match(e.message, /"ghost"/);
+    return true;
+  });
+  assert.ok(Date.now() - t0 < 4000, "no wait for the timeout");
+  s.stop();
+});
