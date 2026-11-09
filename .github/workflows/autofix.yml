@@ -91,6 +91,11 @@ jobs:
        (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')))
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # One fix per issue at a time: the label and a "/autofix" comment on the same issue do not start two.
+    # On the job, not the workflow, so ordinary comments (which skip this job) never displace a waiting fix.
+    concurrency:
+      group: autofix-fix-${{ github.event.issue.number }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:

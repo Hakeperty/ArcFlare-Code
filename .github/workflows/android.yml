@@ -15,8 +15,10 @@ name: android
 on:
   push:
     branches: [main]
-    # Tags are not path-filtered (a tag push must always run the release).
+    # GitHub does not evaluate path filters for tag pushes, so a tag v* always runs (and releases); a push to
+    # main only builds when the app or the phone UI it wraps changed.
     tags: ["v*"]
+    paths: ["android/**", "lib/hub/ui/**", ".github/workflows/android.yml"]
   pull_request:
     paths: ["android/**", "lib/hub/ui/**", ".github/workflows/android.yml"]
   workflow_dispatch:
@@ -49,6 +51,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+          # Gradle's downloaded distribution and dependencies, keyed on the build files. Only this unprivileged
+          # job restores a cache; the signing job below never does.
+          cache: gradle
+          cache-dependency-path: |
+            android/android/**/*.gradle*
+            android/android/gradle/wrapper/gradle-wrapper.properties
 
       # Installs the Android SDK command-line tools and accepts the licences.
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
