@@ -97,7 +97,8 @@ test("the hub process: LAN mailbox on by default, off with --local", async () =>
 
 test("pair puts the RUNNING hub's port in the link, and says when no hub is running", async (t) => {
   const { lanAddresses } = require("../lib/hub/cli");
-  if (!lanAddresses().length) return t.skip("this machine has no LAN address to build a link from");
+  const { isLanHost } = require("../lib/hub/tunnel");
+  if (!lanAddresses().some((a) => isLanHost(a))) return t.skip("this machine has no private LAN address to build a link from");
   const home = mkHome();
   try {
     assert.strictEqual(run(home, ["phone", "user", "add", "alice", "--password-stdin"], "correct-horse-battery\n").status, 0);
@@ -115,5 +116,25 @@ test("pair puts the RUNNING hub's port in the link, and says when no hub is runn
     } finally { await h.stop(); }
     // Stopped hub: the record is gone, the warning is back.
     assert.match(run(home, ["phone", "pair", "--no-wait", "--no-qr"]).stdout, /no hub is running/i);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test("pair on a machine whose only address is not a home-network one: says what to do, not 'must be private'", (t) => {
+  const { lanAddresses } = require("../lib/hub/cli");
+  const { isLanHost } = require("../lib/hub/tunnel");
+  const addrs = lanAddresses();
+  if (!addrs.length || addrs.some((a) => isLanHost(a))) return t.skip("needs a machine with only public (or carrier-NAT) addresses");
+  const home = mkHome();
+  try {
+    assert.strictEqual(run(home, ["phone", "user", "add", "alice", "--password-stdin"], "correct-horse-battery\n").status, 0);
+    const p = run(home, ["phone", "pair", "--no-wait", "--no-qr"]);
+    assert.strictEqual(p.status, 1);
+    assert.match(p.stdout + p.stderr, /no network address found \(give one with --lan-url/);
+    assert.doesNotMatch(p.stdout + p.stderr, /must be a private IPv4/);
+    // With the relay on there is a way in, so pair works and simply leaves the LAN path out.
+    run(home, ["phone", "relay", "on", "https://arcflare.net"]);
+    const ok = run(home, ["phone", "pair", "--no-wait", "--no-qr"]);
+    assert.strictEqual(ok.status, 0, ok.stdout + ok.stderr);
+    assert.strictEqual(linkOf(ok.stdout).searchParams.get("l"), null);
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
