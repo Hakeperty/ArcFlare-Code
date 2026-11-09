@@ -155,3 +155,10 @@ test("notes are separated without colour too", async () => {
   if (!ui.useColor) assert.ok(out.includes("- 30.4 GB"));
   else assert.ok(out.includes("30.4 GB"));
 });
+
+test("fmtMs never shows 60 seconds: the remainder rounds up into the minute", () => {
+  assert.strictEqual(ui.fmtMs(59940), "59.9s");
+  assert.strictEqual(ui.fmtMs(59960), "1m 00s");
+  assert.strictEqual(ui.fmtMs(119600), "2m 00s");
+  assert.strictEqual(ui.fmtMs(124000), "2m 04s");
+});

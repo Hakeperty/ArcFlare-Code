@@ -370,3 +370,10 @@ test("a model still going after the retry is reported truncated, not passing", a
   assert.strictEqual(row.probes.truncated, 5);
   assert.ok(row.probes.detail.every((d) => d.retried), "each one got its second chance");
 });
+
+test("durations never show 60 seconds: 59.96 s and 1m 59.6 s round up into the minute", () => {
+  assert.strictEqual(fit.fmtDuration(59940), "59.9 s");
+  assert.strictEqual(fit.fmtDuration(59960), "1m 00s");
+  assert.strictEqual(fit.fmtDuration(119600), "2m 00s");
+  assert.strictEqual(fit.fmtDuration(3599999), "60m 00s");
+});
