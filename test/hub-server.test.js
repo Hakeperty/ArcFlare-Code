@@ -966,6 +966,8 @@ test("account routes: details, wrong password refused, CSRF required, delete sig
     assert.ok(!JSON.stringify(me).includes("hash"), "no password hashes");
     assert.strictEqual((await jsonPost(s, a, "/api/accounts/bob/delete", { password: "x" }, { "X-CSRF-Token": "bad" })).status, 403, "CSRF");
     assert.strictEqual((await jsonPost(s, a, "/api/accounts/bob/delete", { password: "wrong-password" })).status, 403);
+    // A broken percent-escape in the name is "no such account", not a 500.
+    assert.strictEqual((await jsonPost(s, a, "/api/accounts/%E0%A4%A/delete", { password: "correct-horse-1" })).status, 404);
     assert.strictEqual((await jsonPost(s, a, "/api/account/delete", { password: "correct-horse-1" })).status, 409, "last owner");
     assert.strictEqual((await jsonPost(s, a, "/api/accounts/bob/delete", { password: "correct-horse-1" })).status, 200);
     const del = await jsonPost(s, a, "/api/account/delete", { password: "correct-horse-1" });
