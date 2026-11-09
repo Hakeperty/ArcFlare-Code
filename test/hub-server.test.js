@@ -1046,6 +1046,12 @@ test("YOLO mode can only be switched by an owner, with a true/false body", async
     for (const v of s.auth.sessions.values()) v.user.role = "user";
     assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/yolo", { on: true })).status, 403);
     assert.deepStrictEqual(calls, [["a1", true]]);
+    // Nor can a second account hand work to an agent an owner put in YOLO mode.
+    const real = s.supervisor.get.bind(s.supervisor);
+    s.supervisor.get = (id) => { const g = real(id); return g && { ...g, yolo: true }; };
+    for (const [act, body] of [["wake", { text: "rm -rf ~" }], ["queue", { text: "x" }], ["start", {}]]) {
+      assert.strictEqual((await jsonPost(s, a, `/api/agents/a1/${act}`, body)).status, 403, act);
+    }
   } finally { await s.close(); }
 });
 

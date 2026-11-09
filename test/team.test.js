@@ -245,3 +245,33 @@ test("the review sees what changed on disk since the task started", async () => 
     assert.strictEqual(T.snapshot(os.tmpdir().split(path.sep)[0] + path.sep), null);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("security: a repository cannot make Team mode's automatic git run programs", () => {
+  const { execFileSync } = require("child_process");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "af-evil-"));
+  const g = (...a) => execFileSync("git", a, { cwd: dir, stdio: "ignore" });
+  try {
+    g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t");
+    fs.writeFileSync(path.join(dir, "a.txt"), "a\n");
+    g("add", "a.txt"); g("commit", "-qm", "x");
+    const node = JSON.stringify(process.execPath).replace(/\\\\/g, "/");
+    const mark = (n) => `${node} -e "require('fs').writeFileSync('${n}','x')"`;
+    g("config", "core.fsmonitor", mark("pwned-fsmonitor"));
+    fs.writeFileSync(path.join(dir, ".gitattributes"), "*.txt diff=x filter=y\n");
+    g("config", "diff.x.textconv", mark("pwned-textconv"));
+    g("config", "filter.y.clean", mark("pwned-filter"));
+    const snap = T.snapshot(dir);
+    fs.writeFileSync(path.join(dir, "a.txt"), "b\n");
+    assert.match(T.changesSince(dir, snap), /diff is left out.*runs programs/);
+    for (const n of ["pwned-fsmonitor", "pwned-textconv", "pwned-filter"]) assert.ok(!fs.existsSync(path.join(dir, n)), n);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("security: helper answers only make ArcFlare look inside the project", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "af-roots-"));
+  try {
+    const outside = path.join(os.homedir(), "definitely-not-here-af", "secret.txt").replace(/\\/g, "/");
+    assert.strictEqual(T.checkRefs(`see ${outside}:3 and ../x/y.js`, dir, [dir]), "", "paths outside are not probed");
+    assert.match(T.checkRefs("see src/nope.js", dir, [dir]), /not on disk: src\/nope\.js/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
