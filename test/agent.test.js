@@ -674,3 +674,26 @@ test("remote approval refuses a command too long to show in full", async () => {
   assert.ok(!events.some((e) => e.type === "approval"), "nothing truncated was shown for approval");
   assert.match(events[0].reason, /too long/);
 });
+
+test("file tools with missing or empty arguments say so and change nothing", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "af-args-"));
+  try {
+    fs.writeFileSync(path.join(dir, "a.txt"), "abc");
+    const exec = tools.makeExecutor({ cwd: dir });
+    const read = () => fs.readFileSync(path.join(dir, "a.txt"), "utf8");
+    // An empty old_string with replace_all used to put new_string between every two characters ("aXbXc").
+    assert.match(await exec("edit_file", { path: "a.txt", old_string: "", new_string: "X", replace_all: true }), /^ERROR: old_string must be/);
+    assert.match(await exec("edit_file", { path: "a.txt", new_string: "X" }), /^ERROR: old_string must be/);
+    assert.strictEqual(read(), "abc");
+    // No new_string means delete the text, not write the word "undefined" (or a comma, with replace_all).
+    assert.match(await exec("edit_file", { path: "a.txt", old_string: "b", replace_all: true }), /^edited .*1 replacement\)/);
+    assert.strictEqual(read(), "ac");
+    assert.match(await exec("edit_file", { path: "a.txt", old_string: "c" }), /^edited /);
+    assert.strictEqual(read(), "a");
+    assert.match(await exec("write_file", { path: "o.json", content: { a: 1 } }), /^ERROR: content must be a string/);
+    assert.ok(!fs.existsSync(path.join(dir, "o.json")));
+    assert.match(await exec("read_file", {}), /^ERROR: path is required/);
+    assert.match(await exec("glob", {}), /^ERROR: pattern is required/);
+    assert.match(await exec("grep", {}), /^ERROR: pattern is required/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
