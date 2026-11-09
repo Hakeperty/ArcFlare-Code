@@ -1093,3 +1093,41 @@ test("Team mode route: true/false body, unknown agent is 404", async () => {
     assert.deepStrictEqual(calls, [["a1", true]]);
   } finally { await s.close(); }
 });
+
+test("chat: a failure in the middle of an answer is reported as an error, and the part that arrived is kept", async () => {
+  const { ChatManager } = require("../lib/hub/chat");
+  // A model server that says two words and then fails the way llama-server does: an error object in the stream.
+  const srv = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      if (req.headers["x-refuse"] || srv.refuse) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ error: { message: "the request exceeds the available context size" } }));
+      }
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "Half an " } }] })}\n\n`);
+      res.end(`data: ${JSON.stringify({ error: { message: "out of memory" } })}\n\ndata: [DONE]\n\n`);
+    });
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hub-chat-"));
+  const chats = new ChatManager({ dir, backend: async () => ({ port: srv.address().port, model: "served", nCtx: 8192, modelRef: "default-model" }), models: () => [{ id: "default-model" }] });
+  const events = [];
+  chats.on("event", (e) => events.push(e));
+  try {
+    const c = chats.create({});
+    await chats.send(c.id, "Hi");
+    await chatWait(() => events.find((e) => e.kind === "error" || e.kind === "done"));
+    const end = events.find((e) => e.kind === "error" || e.kind === "done");
+    assert.strictEqual(end.kind, "error", "not reported as a finished answer");
+    assert.match(end.error, /out of memory/);
+    assert.strictEqual(chats.get(c.id).messages[1].content, "Half an ");
+
+    // A refusal before any text: the reason from the body reaches the person.
+    srv.refuse = true;
+    events.length = 0;
+    await chats.send(c.id, "Again");
+    await chatWait(() => events.find((e) => e.kind === "error"));
+    assert.match(events.find((e) => e.kind === "error").error, /400.*exceeds the available context/);
+  } finally { srv.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});

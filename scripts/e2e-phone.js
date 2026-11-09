@@ -247,7 +247,7 @@ async function openAgentView(P, page, name) {
 
 async function send(page, text) {
   await page.locator("#compose-text").fill(text);
-  await page.locator("#compose button[type=submit]").tap();
+  await page.locator("#compose-send").tap();
 }
 
 /** Layout rules, measured in the page. Returns a list of problems. */
@@ -954,10 +954,10 @@ flow(13, "transport seam: all API traffic uses window.ArcFlareTransport, read on
     await visible(page, "#view-dashboard");
     assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Home network");
     await page.evaluate(() => window.arcflareSetConnection("relay"));
-    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Relay");
+    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Internet");
     await tab(page, "Devices").tap();
     await tab(page, "Agents").tap();
-    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Relay", "the chip keeps Relay across screens");
+    assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Internet", "the chip keeps Internet across screens");
     await page.evaluate(() => window.arcflareSetConnection("home"));
     assert.strictEqual((await textOf(page, "#conn-text")).trim(), "Home network");
   } finally { await second.ctx.close().catch(() => {}); }

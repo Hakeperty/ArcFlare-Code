@@ -660,7 +660,16 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent-ink); bo
 .codeblock { margin: 8px 0; border-radius: 8px; background: var(--code-bg); border: 1px solid var(--border); }
 .codeblock:first-child { margin-top: 0; }
 .codeblock:last-child { margin-bottom: 0; }
-.codeblock .lang { padding: 8px 12px 0; font: 12px/16px var(--mono); color: var(--muted-2); }
+.codeblock .lang { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 0 12px; font: 12px/16px var(--mono); color: var(--muted-2); }
+.code-copy { flex: none; min-height: 28px; min-width: 44px; padding: 0 10px; border: 0; border-radius: 14px; background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
+.code-copy:hover, .code-copy:active { background: var(--surface-2); color: inherit; }
+/* The answer being written ends in a caret, so it reads as typing rather than as text that jumps. */
+.bubble.streaming > p:last-child::after,
+.bubble.streaming > .md-list:last-child > li:last-child::after {
+  content: ""; display: inline-block; width: 0.5em; height: 1em; margin-left: 2px; vertical-align: -0.15em;
+  border-radius: 1px; background: var(--accent-bright); animation: caret 1s steps(2, jump-none) infinite;
+}
+@keyframes caret { from { opacity: 1; } to { opacity: 0.15; } }
 .codeblock .lang + pre { padding-top: 4px; }
 .codeblock pre { margin: 0; padding: 10px 12px; overflow-x: auto; font: 13px/20px var(--mono); white-space: pre; overflow-wrap: normal; tab-size: 2; }
 .codeblock code { padding: 0; border: 0; background: none; font: inherit; }
@@ -1036,3 +1045,18 @@ fieldset.muted-off { opacity: 0.5; }
 .team-line { margin-top: 4px; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--accent); }
 .notice.team { color: var(--accent); }
 .team-advice .tool-result { white-space: pre-wrap; }
+@media (pointer: coarse) { .code-copy { min-height: 44px; } }
+
+/* The agent bar's controls are tapped with a thumb: full 44px targets, and 16px text in the model list so
+   a phone does not zoom the page when it opens. */
+@media (pointer: coarse) {
+  .team-btn, .yolo-btn { min-height: 44px; }
+  .model-select.compact { height: 44px; font-size: 16px; border-radius: 22px; }
+}
+
+/* Status, model, TEAM, YOLO and Stop do not fit one line on a narrow phone ("Needs approval" pushed Stop
+   off the screen). The bar wraps, and Stop keeps to the right edge on whichever line it lands. */
+#agent-statusbar { flex-wrap: wrap; row-gap: 4px; }
+#agent-statusbar .st { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#agent-statusbar .model-select.compact { flex: 1 1 72px; }
+#agent-stop, #agent-start { margin-left: auto; }

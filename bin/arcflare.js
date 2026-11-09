@@ -242,6 +242,11 @@ async function offerEngineInstall() {
 
 // ------------------------------------------------------------------ chat ----
 
+/**
+ * One streamed answer. onDelta(piece, kind) gets every piece, kind "content" or "reasoning". Resolves with
+ * { text, timings }; rejects when the server refuses the request or fails in the middle of the answer
+ * (both used to end as an empty answer with no word of why).
+ */
 function chatOnce(port, model, messages, onDelta) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ model, messages, stream: true });
@@ -253,8 +258,13 @@ function chatOnce(port, model, messages, onDelta) {
       (res) => {
         let buf = "";
         let full = "";
+        let raw = "";
+        let timings = null;
+        let failed = null;
+        res.setEncoding("utf8"); // a multi-byte character split across two chunks stays whole
         res.on("data", (d) => {
-          buf += d.toString();
+          if (res.statusCode >= 400) { if (raw.length < 2000) raw += d; return; }
+          buf += d;
           let i;
           while ((i = buf.indexOf("\n")) >= 0) {
             const line = buf.slice(0, i).trim();
@@ -262,15 +272,25 @@ function chatOnce(port, model, messages, onDelta) {
             if (!line.startsWith("data:")) continue;
             const payload = line.slice(5).trim();
             if (payload === "[DONE]") continue;
-            try {
-              const j = JSON.parse(payload);
-              const d0 = j.choices && j.choices[0] && j.choices[0].delta;
-              const piece = d0 && (d0.content || "");
-              if (piece) { full += piece; onDelta(piece); }
-            } catch {}
+            let j;
+            try { j = JSON.parse(payload); } catch { continue; }
+            if (j.error) { failed = String((j.error && j.error.message) || j.error).slice(0, 300); continue; }
+            if (j.timings) timings = j.timings;
+            const d0 = j.choices && j.choices[0] && j.choices[0].delta;
+            if (!d0) continue;
+            if (d0.reasoning_content) onDelta(d0.reasoning_content, "reasoning");
+            if (d0.content) { full += d0.content; onDelta(d0.content, "content"); }
           }
         });
-        res.on("end", () => resolve(full));
+        res.on("end", () => {
+          if (res.statusCode >= 400) {
+            let why = raw;
+            try { const j = JSON.parse(raw); why = String((j.error && j.error.message) || j.error || raw); } catch { /* not JSON */ }
+            return reject(new Error(`the model server answered ${res.statusCode}${why ? ": " + why.slice(0, 300) : ""}`));
+          }
+          if (failed) return reject(Object.assign(new Error(`the model server failed: ${failed}`), { partial: full }));
+          resolve({ text: full, timings });
+        });
       },
     );
     req.on("error", reject);
@@ -314,12 +334,30 @@ async function repl(port, modelId, opts = {}) {
     history.push({ role: "user", content: line });
     process.stdout.write("\n");
     let out = "";
+    // A reasoning model thinks before it answers. Say so, instead of a cursor that sits still.
+    let thinking = false;
+    const tty = process.stdout.isTTY;
+    const clearThinking = () => { if (thinking && tty) process.stdout.write("\r\x1b[K"); thinking = false; };
     try {
-      out = await chatOnce(port, modelId, history, (p) => {
-        process.stdout.write(p);
-        if (live) live.emit({ type: "delta", kind: "content", text: p });
+      const r = await chatOnce(port, modelId, history, (p, kind) => {
+        if (kind === "reasoning") {
+          if (!thinking && tty) process.stdout.write(c.dim("thinking\u2026"));
+          thinking = true;
+        } else {
+          clearThinking();
+          process.stdout.write(p);
+        }
+        if (live) live.emit({ type: "delta", kind, text: p });
       });
+      clearThinking();
+      out = r.text;
+      const t = r.timings;
+      if (tty && t && t.predicted_per_second && t.predicted_n) {
+        process.stdout.write("\n" + c.dim(`  ${t.predicted_n} tokens \u00b7 ${Math.round(t.predicted_per_second * 10) / 10} tok/s`));
+      }
     } catch (e) {
+      clearThinking();
+      if (e.partial) process.stdout.write("\n");
       console.log(c.red("  request failed: " + e.message));
       if (live) live.emit({ type: "error", text: "request failed: " + e.message });
       if (live) live.emit({ type: "turn_end" });
