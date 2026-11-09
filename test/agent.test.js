@@ -733,3 +733,11 @@ test("a command that printed output and exited non-zero is drawn as a warning, n
     assert.ok(!draw("start\nsee [exit 2] in the log\nall good").includes(` ${ui.sym.warn} `), "only the tool's own last line counts");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("the context bar is always its own width, even past the end of the window", () => {
+  const { contextBar } = require("../lib/agent/run");
+  const cells = (u) => (contextBar(u, 32).split("\n")[0].replace(/\x1b\[[0-9;]*m/g, "").match(/[█░]/g) || []).length;
+  assert.strictEqual(cells({ system: 2000, notes: 0, skills: 0, mcp: 0, tools: 0, conversation: 14000, window: 8000 }), 32, "200% full");
+  assert.strictEqual(cells({ system: 1049, notes: 1049, skills: 1049, mcp: 0, tools: 1049, conversation: 1049, window: 10000 }), 32, "five parts that each round down");
+  assert.strictEqual(cells({ system: 0, notes: 0, skills: 0, mcp: 0, tools: 0, conversation: 0, window: 8000 }), 32, "empty");
+});
