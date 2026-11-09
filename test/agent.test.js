@@ -614,6 +614,21 @@ test("file tools refuse paths outside the allowed roots, including ../ and absol
   assert.match(await run("read_file", { path: "ok.txt" }), /fine/);
   assert.match(await run("read_file", { path: "../secret.txt" }), /^ERROR: .*outside the folders/);
   assert.match(await run("read_file", { path: secret }), /^ERROR: .*outside the folders/);
+  // Network and device paths are refused before anything touches them (a stat alone would send the NTLM hash).
+  const fsm = require("fs");
+  const touched = [];
+  const orig = { lstat: fsm.lstatSync, real: fsm.realpathSync.native, stat: fsm.statSync };
+  fsm.lstatSync = (f, ...r) => { if (/^[\\/]{2}/.test(String(f))) touched.push(f); return orig.lstat(f, ...r); };
+  fsm.realpathSync.native = (f, ...r) => { if (/^[\\/]{2}/.test(String(f))) touched.push(f); return orig.real(f, ...r); };
+  try {
+    for (const unc of ["\\\\attacker.example\\s\\x", "//attacker.example/s/x", "\\\\?\\C:\\x", "\\\\.\\pipe\\x"]) {
+      for (const tool of ["read_file", "list_dir", "grep", "glob"]) {
+        const out = await run(tool, { path: unc, pattern: "x" });
+        assert.match(out, /outside|ERROR|no match|No files/i, `${tool} ${unc}`);
+      }
+    }
+  } finally { fsm.lstatSync = orig.lstat; fsm.realpathSync.native = orig.real; }
+  assert.deepStrictEqual(touched, [], "no network path was touched");
   assert.match(await run("write_file", { path: "../evil.txt", content: "x" }), /^ERROR: .*outside/);
   assert.ok(!fs.existsSync(path.join(base, "evil.txt")), "nothing was written outside");
   assert.match(await run("edit_file", { path: secret, old_string: "TOP", new_string: "x" }), /^ERROR: .*outside/);

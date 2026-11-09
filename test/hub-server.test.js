@@ -1052,6 +1052,10 @@ test("YOLO mode can only be switched by an owner, with a true/false body", async
     for (const [act, body] of [["wake", { text: "rm -rf ~" }], ["queue", { text: "x" }], ["start", {}]]) {
       assert.strictEqual((await jsonPost(s, a, `/api/agents/a1/${act}`, body)).status, 403, act);
     }
+    // And a second account can say no to a request, but never allow one.
+    s.supervisor.approve = async () => true;
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/approve", { approvalId: "x", allow: true })).status, 403);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents/a1/approve", { approvalId: "x", allow: false })).status, 200);
   } finally { await s.close(); }
 });
 
