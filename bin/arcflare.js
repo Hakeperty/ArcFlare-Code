@@ -141,6 +141,11 @@ function arcModel(arc, all, cfg) {
   const arcs = require("../lib/arcs");
   const pick = arcs.pickBase(arc, { local: all, freeGb: freeGbNow(cfg) });
   if (pick.model) return pick.model;
+  if (arc.custom) {
+    console.log(`  ${c.accent(arc.id)} ${c.dim("is built FROM")} ${arc.from}${c.dim(", which is not on this machine")}`);
+    console.log(pick.base.local ? `  ${c.dim("see what is here:")} arcflare ls` : `  ${c.dim("get it:")} ${c.accent(`arcflare pull ${pick.base.ref}`)}`);
+    process.exit(1);
+  }
   console.log(`  ${c.accent(arc.name)} ${c.dim("runs on")} ${pick.base.slug} ${c.dim(`(${pick.base.license}, about ${pick.base.gb} GB)`)}${c.dim(", which is not on this machine yet")}`);
   console.log(`  ${c.dim("get it:")} ${c.accent(`arcflare arcs pull ${arc.id}`)}`);
   process.exit(1);
@@ -173,6 +178,38 @@ async function arcsCommand(cfg, argv) {
     console.log(`  ${c.green(ui.sym.ok)} ${c.accent(a.name)} ${c.dim("for every chat and agent, on whichever model you run")} ${c.dim(`${ui.sym.dot} arcflare arcs use off`)}`);
     return;
   }
+  if (sub === "create") {
+    // arcflare create <name> [-f Modelfile]: a model of your own, from a file in Ollama's Modelfile format.
+    const name = argv[2];
+    if (!name || name.startsWith("-")) die("usage: arcflare create <name> [-f Modelfile]");
+    const fi = argv.indexOf("-f") > 0 ? argv.indexOf("-f") : argv.indexOf("--file");
+    const file = path.resolve(fi > 0 ? argv[fi + 1] || "" : "Modelfile");
+    let text;
+    try { text = fs.readFileSync(file, "utf8"); } catch { die(`no Modelfile at ${file} (give one with -f <file>)`); }
+    let made;
+    try { made = arcs.create(name, text); } catch (e) { die(e.message); }
+    for (const w of made.warnings) console.log(`  ${c.accent(ui.sym.warn)} ${w}`);
+    const pick = arcs.pickBase(made.arc, { local: all, freeGb });
+    console.log(`  ${c.green(ui.sym.ok)} created ${c.accent(made.arc.id)} ${c.dim("from")} ${made.arc.from} ${c.dim(made.file)}`);
+    if (pick.model) console.log(`  ${c.dim("run it:")} arcflare run ${made.arc.id}   ${c.dim("as an agent:")} arcflare agent ${made.arc.id}`);
+    else if (pick.base.local) console.log(`  ${c.accent(ui.sym.warn)} no model on this machine matches "${made.arc.from}" yet ${c.dim("(arcflare ls shows what is here)")}`);
+    else console.log(`  ${c.dim("its model is not here yet:")} arcflare pull ${pick.base.ref}   ${c.dim("then")} arcflare run ${made.arc.id}`);
+    return;
+  }
+  if (sub === "rm" || sub === "remove" || sub === "delete") {
+    const a = arcs.find(argv[2]);
+    if (a && !a.custom) die(`${a.name} is one of ArcFlare's own Arcs and stays; the ones you made are deleted with this`);
+    console.log(arcs.remove(argv[2])
+      ? `  ${c.green(ui.sym.ok)} deleted ${argv[2]} ${c.dim("(its model file is untouched)")}`
+      : `  ${c.dim(ui.sym.dot)} nothing of yours is called "${argv[2] || ""}"`);
+    return;
+  }
+  if (sub === "show") {
+    const a = arcs.find(argv[2]);
+    if (!a) die(`no Arc named "${argv[2] || ""}" · see: arcflare arcs`);
+    process.stdout.write(arcs.toModelfile(a));
+    return;
+  }
   if (sub === "pull") {
     const a = arcs.find(argv[2]);
     if (!a) die(`no Arc named "${argv[2] || ""}" · see: arcflare arcs`);
@@ -201,6 +238,7 @@ async function arcsCommand(cfg, argv) {
     }
     console.log("");
     console.log(`  ${c.dim("chat:")} arcflare run ${a.id}   ${c.dim("agent:")} arcflare agent ${a.id}${pick.installed ? "" : `   ${c.dim("first:")} arcflare arcs pull ${a.id}`}`);
+    console.log(`  ${c.dim("its Modelfile:")} arcflare arcs show ${a.id}`);
     return;
   }
 
@@ -211,20 +249,24 @@ async function arcsCommand(cfg, argv) {
   console.log("");
   console.log(ui.section("arcs", "ArcFlare's own models"));
   const groups = [["standard", "general", "general"], ["standard", "task", "for one job"], ["standard", "security", "cybersecurity"],
-    ["abliterated", null, "on abliterated bases"]];
+    ["abliterated", null, "on abliterated bases"], ["yours", null, "yours (arcflare create)"]];
   for (const [side, group, title] of groups) {
-    const rows = list.filter((a) => a.side === side && (!group || a.group === group));
+    const rows = side === "yours" ? list.filter((a) => a.custom)
+      : list.filter((a) => !a.custom && a.side === side && (!group || a.group === group));
     if (!rows.length) continue;
     console.log(`  ${c.dim(title)}`);
     for (const a of rows) {
       const pick = arcs.pickBase(a, { local: all, freeGb });
-      const state = pick.installed ? c.green("ready") : pick.fits ? c.dim(`needs ${pick.base.gb} GB`) : c.dim(`needs ${pick.base.gb} GB, more than is free`);
+      const state = pick.installed ? c.green("ready")
+        : a.custom ? c.dim(`needs ${a.from}`)
+          : pick.fits ? c.dim(`needs ${pick.base.gb} GB`) : c.dim(`needs ${pick.base.gb} GB, more than is free`);
       console.log(`  ${ui.pad(c.accent(a.id), 20)}${ui.pad(a.focus, 34)}${state}${cfg.arc === a.id ? c.accent("  default") : ""}`);
     }
     console.log("");
   }
   console.log(`  ${c.dim("arcflare arcs <name>")} ${c.dim("details")} ${c.dim(ui.sym.dot)} ${c.dim("arcflare arcs pull <name>")} ${c.dim("get its base model")} ${c.dim(ui.sym.dot)} ${c.dim("arcflare run <name>")}`);
-  console.log(`  ${c.dim("Each Arc is an open model (Apache-2.0 or MIT) running under ArcFlare's instructions.")}`);
+  console.log(`  ${c.dim("Each Arc is an open model (Apache-2.0 or MIT) with a Modelfile: its base, its sampling and ArcFlare's instructions.")}`);
+  console.log(`  ${c.dim("Make your own from a Modelfile:")} ${c.dim("arcflare create <name> -f Modelfile")}`);
   console.log("");
 }
 
@@ -366,9 +408,10 @@ async function offerEngineInstall() {
 
 // ------------------------------------------------------------------ chat ----
 
-function chatOnce(port, model, messages, onDelta) {
+function chatOnce(port, model, messages, onDelta, sampling = null) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ model, messages, stream: true });
+    // A Modelfile's PARAMETER lines, when the chat is with an Arc.
+    const body = JSON.stringify({ model, messages, stream: true, ...(sampling || {}) });
     const req = http.request(
       {
         host: "127.0.0.1", port, path: "/v1/chat/completions", method: "POST",
@@ -443,7 +486,7 @@ async function repl(port, modelId, opts = {}) {
       out = await chatOnce(port, modelId, history, (p) => {
         process.stdout.write(p);
         if (live) live.emit({ type: "delta", kind: "content", text: p });
-      });
+      }, opts.sampling || null);
     } catch (e) {
       console.log(c.red("  request failed: " + e.message));
       if (live) live.emit({ type: "error", text: "request failed: " + e.message });
@@ -641,6 +684,8 @@ const HELP_GROUPS = [
     ["arcflare arcs pull", "<name>", "download the base model that fits this GPU"],
     ["arcflare run", "arc-code", "chat with an Arc (arcflare agent arc-code: as an agent)"],
     ["arcflare arcs use", "<name>|off", "use an Arc's instructions on every model you run"],
+    ["arcflare create", "<name> -f Modelfile", "a model of your own: FROM, PARAMETER, SYSTEM (Ollama's format)"],
+    ["arcflare show", "<name>", "an Arc's Modelfile (arcflare arcs rm <name> deletes one of yours)"],
   ]],
   ["agent & harnesses", [
     ["arcflare agent", "[model]", "coding agent: tools, MCP, skills"],
@@ -1786,8 +1831,9 @@ async function main() {
       console.log(`  ${c.green(ui.sym.ok)} ${got ? `${c.accent(got.arc.name)} ${c.dim("on")} ` : ""}${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
       await repl(port, id, {
         rc: argv.includes("--rc"),
-        system: got ? require("../lib/arcs").compose(got.arc, { surface: "chat" }) : null,
+        system: got ? require("../lib/arcs").compose(got.arc, { surface: "chat" }) || null : null,
         label: got ? got.arc.name : null,
+        sampling: got ? got.arc.sampling : null,
       });
       return;
     }
@@ -2239,6 +2285,11 @@ async function main() {
     case "arcs":
     case "arc":
       return arcsCommand(cfg, argv);
+    // The names Ollama uses for the same things.
+    case "create":
+      return arcsCommand(cfg, ["arcs", "create", ...argv.slice(1)]);
+    case "show":
+      return arcsCommand(cfg, ["arcs", "show", ...argv.slice(1)]);
 
     case "shop":
     case "hub":
