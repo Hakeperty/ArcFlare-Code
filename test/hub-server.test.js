@@ -1093,3 +1093,43 @@ test("Team mode route: true/false body, unknown agent is 404", async () => {
     assert.deepStrictEqual(calls, [["a1", true]]);
   } finally { await s.close(); }
 });
+
+// ---- One-time agents and chats: the request fields reach the manager, and bad values are refused.
+
+test("POST /api/agents passes oneTime and ttlMinutes through, and refuses wrong types", async () => {
+  const s = await start();
+  try {
+    const a = await login(s);
+    const ok = await jsonPost(s, a, "/api/agents", { name: "once", cwd: "/tmp", oneTime: true, ttlMinutes: 5 });
+    assert.strictEqual(ok.status, 201);
+    assert.strictEqual(ok.json.oneTime, true);
+    assert.strictEqual(ok.json.ttlMinutes, 5);
+    const plain = await jsonPost(s, a, "/api/agents", { name: "plain", cwd: "/tmp" });
+    assert.strictEqual(plain.json.oneTime, false, "off unless asked for");
+    assert.strictEqual((await jsonPost(s, a, "/api/agents", { name: "x", cwd: "/tmp", oneTime: "yes" })).status, 400);
+    assert.strictEqual((await jsonPost(s, a, "/api/agents", { name: "x", cwd: "/tmp", oneTime: true, ttlMinutes: "5" })).status, 400);
+  } finally { await s.close(); }
+});
+
+test("one-time chat: created in memory only, listed, refused bad ttl, deleted on request", async () => {
+  const llama = await fakeLlama();
+  const { s, a, chats, dir } = await chatHub(llama);
+  try {
+    const get = (p) => req(s.port, { path: p, headers: { Cookie: a.cookie } });
+    const c = (await jsonPost(s, a, "/api/chats", { oneTime: true, ttlMinutes: 5 })).json;
+    assert.strictEqual(c.oneTime, true);
+    assert.strictEqual(c.ttlMinutes, 5);
+    assert.strictEqual((await jsonPost(s, a, "/api/chats", { oneTime: "yes" })).status, 400);
+    assert.strictEqual((await jsonPost(s, a, "/api/chats", { oneTime: true, ttlMinutes: 0 })).status, 400);
+    await jsonPost(s, a, `/api/chats/${c.id}/send`, { text: "keep this off the disk" });
+    await chatWait(async () => { const g = (await get(`/api/chats/${c.id}`)).json; return g.status === "idle" && g.messages.length === 2; });
+    assert.strictEqual((await get("/api/chats")).json.some((x) => x.id === c.id && x.oneTime), true);
+    let onDisk = [];
+    try { onDisk = fs.readdirSync(path.join(dir, "chats")); } catch { /* no folder at all: also fine */ }
+    assert.deepStrictEqual(onDisk, [], "nothing of a one-time chat is written");
+    const del = await req(s.port, { method: "DELETE", path: `/api/chats/${c.id}`, headers: { Cookie: a.cookie, "X-CSRF-Token": a.csrf } });
+    assert.strictEqual(del.status, 200);
+    assert.strictEqual((await get(`/api/chats/${c.id}`)).status, 404);
+    assert.strictEqual(chats.mem.size, 0);
+  } finally { await s.close(); llama.srv.close(); }
+});
