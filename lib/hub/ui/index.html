@@ -195,8 +195,14 @@
       <!-- Devices -->
       <section id="view-tools" class="view" hidden>
         <h1 class="view-title">Tools</h1>
-        <p class="lead">MCP servers on the computer. Switch one on and agents you start get its tools; every call still asks you first.</p>
         <p id="tools-error" class="banner error" role="alert" hidden></p>
+        <div id="arc-card" class="card arc-card" hidden>
+          <label class="dev-name" for="arc-select">Arc</label>
+          <p class="dev-meta sub">ArcFlare&#39;s own instructions for the model, in new chats and agents. Remembered on the computer.</p>
+          <select id="arc-select" class="model-select field-select"></select>
+          <p id="arc-note" class="dev-meta sub" hidden></p>
+        </div>
+        <p class="lead">MCP servers on the computer. Switch one on and agents you start get its tools; every call still asks you first.</p>
         <p id="tools-note" class="dev-meta sub tools-note" hidden></p>
         <ul id="tools-skeleton" class="stack" aria-hidden="true" hidden>
           <li class="card skel"><span class="bar w60"></span><span class="bar w90"></span></li>
@@ -204,7 +210,7 @@
         </ul>
         <div id="tools-empty" class="empty" hidden>
           <p class="dev-name">No MCP servers yet</p>
-          <p class="dev-meta">Add them on the computer in <code>~/.arcflare/mcp.json</code> (or Claude&#39;s config), then come back here.</p>
+          <p class="dev-meta">Add them on the computer in <code>~/.arcflare/mcp.json</code> (or Claude&#39;s config), then come back here. Updating ArcFlare on the computer adds its own web and desktop servers.</p>
         </div>
         <ul id="mcp-list" class="stack"></ul>
       </section>

@@ -1038,3 +1038,7 @@ fieldset.muted-off { opacity: 0.5; }
 .team-line { margin-top: 4px; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--accent); }
 .notice.team { color: var(--accent); }
 .team-advice .tool-result { white-space: pre-wrap; }
+
+/* Tools: the Arc picker sits above the server list. */
+.arc-card { display: grid; gap: 6px; margin: 4px var(--pr) 16px var(--pl); padding: 14px 16px 16px; }
+.arc-card .field-select { width: 100%; }

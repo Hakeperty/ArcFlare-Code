@@ -160,7 +160,8 @@ async function serve(role) {
   sup.list = () => [];
   const auth = fakeAuth(role);
   const mcp = hub();
-  const s = createHubServer({ auth, supervisor: sup, helpers, mcp, uiDir: tmp() });
+  const settings = new (require("../lib/hub/settings").HubSettings)({ dir: tmp() });
+  const s = createHubServer({ auth, supervisor: sup, helpers, mcp, settings, uiDir: tmp() });
   const { port } = await s.listen({ port: 0, host: "127.0.0.1" });
   await auth.login();
   return { s, port, mcp };
@@ -191,4 +192,25 @@ test("API: a non-owner can look but not switch", async () => {
   assert.strictEqual((await call(port, "POST", "/api/mcp/blender/restart", {})).status, 403);
   assert.strictEqual(mcp.reg.added.length, 0);
   await s.close();
+});
+
+test("API: the Arc setting is the owner's to change, and an Arc's instructions are never sent", async () => {
+  const { s, port } = await serve("owner");
+  const got = await call(port, "GET", "/api/settings");
+  assert.strictEqual(got.status, 200);
+  assert.strictEqual(got.json.arc, null);
+  assert.strictEqual(got.json.canEdit, true);
+  assert.ok(got.json.arcs.some((a) => a.id === "arc-code"));
+  assert.doesNotMatch(JSON.stringify(got.json), /You are Arc|prompt/);
+  assert.strictEqual((await call(port, "POST", "/api/settings", { arc: "arc-code" })).json.arc, "arc-code");
+  assert.strictEqual((await call(port, "GET", "/api/settings")).json.arc, "arc-code");
+  assert.strictEqual((await call(port, "POST", "/api/settings", { arc: "nope" })).status, 400);
+  assert.strictEqual((await call(port, "POST", "/api/settings", { arc: 7 })).status, 400);
+  assert.strictEqual((await call(port, "POST", "/api/settings", { arc: null })).json.arc, null);
+  await s.close();
+
+  const other = await serve("user");
+  assert.strictEqual((await call(other.port, "GET", "/api/settings")).json.canEdit, false);
+  assert.strictEqual((await call(other.port, "POST", "/api/settings", { arc: "arc-code" })).status, 403);
+  await other.s.close();
 });
