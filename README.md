@@ -990,6 +990,38 @@ after 10 idle minutes and exits after 30, so idle generators give VRAM back.
 The CLI still runs one-shot. `generate()` and `speak()` take the pool as a
 `runner`.
 
+## The store
+
+`arcflare store` is one place for the three things you add to ArcFlare: skills, MCP
+servers and models.
+
+```bash
+arcflare store                          # a menu: skills, MCP servers, models, Arcs
+arcflare store skills                   # list; add <name> · add all · show <name> · rm <name>
+arcflare store skills add code-review debug
+arcflare store mcp                      # list; add <name> [arguments] · rm <name>
+arcflare store mcp add filesystem ~/projects
+arcflare store models                   # the hub (arcflare shop)
+```
+
+**Skills** are instructions the agent loads when a task calls for one: `code-review`,
+`write-tests`, `debug`, `refactor`, `explain-codebase`, `git-commit`, `readme`,
+`release-notes`, `security-review`, `web-research`, `check-web-app` and `desktop-task`.
+Adding one copies its `SKILL.md` into `~/.arcflare/skills`, where the agent already looks.
+A skill you wrote yourself under the same name is never overwritten or removed.
+
+**MCP servers** give the agent tools. ArcFlare's own four (`arcflare`, `arcflare-desktop`,
+`arcflare-web`, `arcflare-browser`) are parts of this program. The others (filesystem,
+memory, sequential-thinking, git, time, Playwright, Context7, Blender) are made by other
+people and run with `npx` or `uvx`. Adding one writes its start command into
+`~/.arcflare/mcp.json`, which is where the agent, the phone hub and the desktop app look.
+Before a third-party server is added the store shows who makes it and the exact command
+that will run, and asks; in a script, pass `--yes`.
+
+The catalogue ships with ArcFlare (`lib/store`), so the store works offline, and is
+refreshed from arcflare.net when that answers. What comes from the network is held to a
+launcher and a package name: an entry that wants a shell is dropped.
+
 ## The shop
 
 `arcflare shop` browses the model hub from the terminal. You pick a shelf

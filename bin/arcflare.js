@@ -673,6 +673,7 @@ async function prepareModel(cfg, model, ctx, cacheType) {
 const HELP_GROUPS = [
   ["get started", [
     ["arcflare", "", "open the menu: harness, model, context"],
+    ["arcflare store", "[skills|mcp|models]", "the store: skills and MCP servers for the agent, and models"],
     ["arcflare shop", "[search]", "browse the hub: what fits your GPU, what to get"],
     ["arcflare pull", "<repo>[:Q]", "download a GGUF from Hugging Face"],
     ["arcflare ls", "", "list the models on this machine"],
@@ -1599,6 +1600,199 @@ function shopDetail(m, freeGb, url) {
  *   arcflare shop show <model>    one model in full
  *   --cat <category> --fits --json --refresh · arcflare shop hub <url>
  */
+// ------------------------------------------------------------------ store ----
+//
+// The ArcFlare Store: skills, MCP servers and models (lib/store.js).
+
+const NEEDS_HINT = {
+  npx: "npx comes with Node.js: https://nodejs.org",
+  uvx: "uvx comes with uv: https://docs.astral.sh/uv/",
+  docker: "Docker: https://docs.docker.com/get-docker/",
+};
+
+async function storeCommand(cfg, argv) {
+  const store = require("../lib/store");
+  const rest = argv.slice(1);
+  const shelf = { skill: "skills", skills: "skills", mcp: "mcp", servers: "mcp", tools: "mcp", model: "models", models: "models" }[rest[0]] || null;
+  if (shelf === "models") return shopCommand(cfg, ["shop", ...rest.slice(1)]);
+
+  const { data, source } = await store.load({ cfg, refresh: rest.includes("--refresh") });
+  const from = source === "live" ? c.dim("live from arcflare.net") : source === "cache" ? c.accent("offline · the last saved copy") : c.dim("the copy that ships with ArcFlare");
+  const yes = rest.includes("--yes") || rest.includes("-y");
+  const words = rest.slice(shelf ? 1 : 0).filter((a) => !a.startsWith("-"));
+  const onPath = require("../lib/mcp/apps").onPath;
+
+  const skillRow = (s) => {
+    const st = store.skillState(s);
+    const mark = st.installed ? (st.fromStore ? (st.current ? c.green("added") : c.accent("update")) : c.dim("yours")) : c.dim("·");
+    return `${ui.pad(c.accent(s.id), 20)}${ui.pad(mark, 9)}${s.description}`;
+  };
+  const mcpRow = (m) => {
+    const st = store.mcpState(m);
+    return `${ui.pad(c.accent(m.id), 22)}${ui.pad(st.installed ? c.green("added") : c.dim("·"), 9)}${ui.pad(c.dim(m.ours ? "ArcFlare" : m.by), 26)}${m.description.split(". ")[0]}`;
+  };
+
+  const addSkill = (id) => {
+    const s = data.skills.find((x) => x.id === id);
+    if (!s) die(`no skill "${id}" in the store · see: arcflare store skills`);
+    try {
+      const r = store.addSkill(s);
+      console.log(`  ${c.green(ui.sym.ok)} ${r.updated ? "updated" : "added"} ${c.accent(s.id)} ${c.dim(r.file)}`);
+      if (s.uses && s.uses.length) console.log(`    ${c.dim("it uses ArcFlare's " + s.uses.join(", ") + " tools: arcflare mcp enable " + (s.uses.includes("desktop") ? "desktop" : "web"))}`);
+    } catch (e) { die(e.message); }
+  };
+  const addMcp = async (id, extra) => {
+    const m = data.mcp.find((x) => x.id === id);
+    if (!m) die(`no MCP server "${id}" in the store · see: arcflare store mcp`);
+    if (!m.ours) {
+      if (m.argument && m.argument.required && !extra.length) die(`${m.name} needs ${m.argument.name}: arcflare store mcp add ${m.id} <${m.argument.name}>   (${m.argument.about})`);
+      const spec = store.mcpSpec(m, extra);
+      console.log("");
+      console.log(`  ${c.bold(m.name)} ${c.dim("by " + m.by + " · not made by ArcFlare")}`);
+      console.log(`  ${m.description}`);
+      console.log(`  ${c.accent(ui.sym.warn)} Adding it means the agent runs this program each time it starts, downloading it first if needed:`);
+      console.log(`      ${spec.command} ${spec.args.join(" ")}`);
+      if (m.homepage) console.log(`  ${c.dim("its source:")} ${m.homepage}`);
+      if (m.needs && !onPath(m.needs)) console.log(`  ${c.accent(ui.sym.warn)} ${m.needs} is not on this computer yet. ${NEEDS_HINT[m.needs] || ""}`);
+      if (!yes) {
+        if (!process.stdin.isTTY) die("re-run with --yes to confirm you have read this");
+        const a = await ui.ask("Type yes to add it");
+        if (String(a).trim().toLowerCase() !== "yes") { console.log(`  ${c.dim("cancelled: nothing was added")}`); return; }
+      }
+    }
+    try {
+      const r = store.addMcp(m, { extra });
+      console.log(`  ${c.green(ui.sym.ok)} added ${c.accent(m.id)} ${c.dim("to " + r.file)}`);
+      console.log(`    ${c.dim("the agent connects it from its next session · on the phone: Tools, then switch it on")}`);
+    } catch (e) { die(e.message); }
+  };
+
+  // ---- skills
+  if (shelf === "skills") {
+    const sub = rest[1];
+    if (sub === "add" || sub === "install") {
+      const ids = rest.slice(2).filter((a) => !a.startsWith("-"));
+      if (!ids.length) die("usage: arcflare store skills add <name>...   (or: all)");
+      for (const id of ids[0] === "all" ? data.skills.map((s) => s.id) : ids) addSkill(id);
+      return;
+    }
+    if (sub === "rm" || sub === "remove") {
+      console.log(store.removeSkill(rest[2])
+        ? `  ${c.green(ui.sym.ok)} removed ${rest[2]}`
+        : `  ${c.dim(ui.sym.dot)} no skill from the store is called "${rest[2] || ""}" here ${c.dim("(skills you wrote yourself are left alone)")}`);
+      return;
+    }
+    if (sub === "show") {
+      const s = data.skills.find((x) => x.id === rest[2]);
+      if (!s) die(`no skill "${rest[2] || ""}" in the store`);
+      process.stdout.write(s.text.endsWith("\n") ? s.text : s.text + "\n");
+      return;
+    }
+    const found = store.search(data.skills, words.join(" "));
+    console.log("");
+    console.log(ui.section("store · skills", `${found.length} of ${data.skills.length}`));
+    console.log(`  ${from}\n`);
+    for (const s of found) console.log(`  ${skillRow(s)}`);
+    if (!found.length) console.log(`  ${c.dim("nothing matched")}`);
+    console.log(`\n  ${c.dim("arcflare store skills add <name> · add all · show <name> · rm <name>")}`);
+    console.log(`  ${c.dim("A skill is instructions the agent loads when a task calls for it. They go in ~/.arcflare/skills.")}\n`);
+    return;
+  }
+
+  // ---- mcp
+  if (shelf === "mcp") {
+    const sub = rest[1];
+    if (sub === "add" || sub === "install") {
+      const args = rest.slice(2).filter((a) => !a.startsWith("-"));
+      if (!args.length) die("usage: arcflare store mcp add <name> [arguments]");
+      return addMcp(args[0], args.slice(1));
+    }
+    if (sub === "rm" || sub === "remove") {
+      console.log(store.removeMcp(rest[2])
+        ? `  ${c.green(ui.sym.ok)} removed ${rest[2]} ${c.dim("from ~/.arcflare/mcp.json")}`
+        : `  ${c.dim(ui.sym.dot)} ${rest[2] || "that"} is not in ~/.arcflare/mcp.json`);
+      return;
+    }
+    const found = store.search(data.mcp, words.join(" "));
+    console.log("");
+    console.log(ui.section("store · mcp servers", `${found.length} of ${data.mcp.length}`));
+    console.log(`  ${from}\n`);
+    for (const m of found) console.log(`  ${mcpRow(m)}`);
+    if (!found.length) console.log(`  ${c.dim("nothing matched")}`);
+    console.log(`\n  ${c.dim("arcflare store mcp add <name> [arguments] · rm <name>")}`);
+    console.log(`  ${c.dim("An MCP server gives the agent tools. ArcFlare's own are part of this program; the others are run with npx or uvx.")}\n`);
+    return;
+  }
+
+  // ---- the front of the store
+  if (!process.stdin.isTTY || !process.stdout.isTTY || words.length) {
+    const q = words.join(" ");
+    const skills = store.search(data.skills, q), mcp = store.search(data.mcp, q);
+    console.log("");
+    console.log(ui.section("arcflare store", q ? `matching "${q}"` : "skills · mcp servers · models"));
+    console.log(`  ${from}\n`);
+    console.log(`  ${c.bold("skills")} ${c.dim(`${skills.length}`)}`);
+    for (const s of skills.slice(0, q ? 50 : 6)) console.log(`  ${skillRow(s)}`);
+    if (!q && skills.length > 6) console.log(`  ${c.dim(`… ${skills.length - 6} more: arcflare store skills`)}`);
+    console.log(`\n  ${c.bold("mcp servers")} ${c.dim(`${mcp.length}`)}`);
+    for (const m of mcp.slice(0, q ? 50 : 6)) console.log(`  ${mcpRow(m)}`);
+    if (!q && mcp.length > 6) console.log(`  ${c.dim(`… ${mcp.length - 6} more: arcflare store mcp`)}`);
+    console.log(`\n  ${c.bold("models")}  ${c.dim("arcflare store models   (the hub: what fits your GPU) · arcflare arcs   (ArcFlare's own)")}\n`);
+    return;
+  }
+
+  console.log(ui.banner());
+  console.log(`  ${c.bold("ArcFlare Store")} ${c.dim("·")} ${from}\n`);
+  for (;;) {
+    const pick = await ui.select("What are you looking for?", [
+      { label: "Skills", hint: `${data.skills.length} · instructions the agent loads for a task`, value: "skills" },
+      { label: "MCP servers", hint: `${data.mcp.length} · tools for the agent`, value: "mcp" },
+      { label: "Models", hint: "the hub: what fits your GPU", value: "models" },
+      { label: "Arcs", hint: "ArcFlare's own models", value: "arcs" },
+    ]);
+    if (!pick) return;
+    if (pick === "models") { await shopCommand(cfg, ["shop"]); continue; }
+    if (pick === "arcs") { await arcsCommand(cfg, ["arcs"]); continue; }
+    for (;;) {
+      const items = pick === "skills"
+        ? data.skills.map((s) => { const st = store.skillState(s); return { label: s.id, hint: (st.installed ? "added · " : "") + s.description, value: s.id }; })
+        : data.mcp.map((m) => { const st = store.mcpState(m); return { label: m.name, hint: (st.installed ? "added · " : "") + (m.ours ? "ArcFlare" : m.by), value: m.id }; });
+      const id = await ui.select(pick === "skills" ? "Skills" : "MCP servers", items);
+      if (!id) break;
+      if (pick === "skills") {
+        const s = data.skills.find((x) => x.id === id);
+        const st = store.skillState(s);
+        console.log(`\n  ${c.bold(s.id)}  ${s.description}\n`);
+        const act = await ui.select(s.id, [
+          { label: st.installed && st.fromStore ? "Add again (update)" : "Add it", hint: "to ~/.arcflare/skills", value: "add" },
+          { label: "Read it", value: "show" },
+          ...(st.installed && st.fromStore ? [{ label: "Remove it", value: "rm" }] : []),
+        ]);
+        if (act === "add") addSkill(id);
+        else if (act === "show") console.log("\n" + s.text.split("\n").map((l) => "  " + l).join("\n") + "\n");
+        else if (act === "rm") console.log(store.removeSkill(id) ? `  ${c.green(ui.sym.ok)} removed ${id}` : `  ${c.dim("not removed")}`);
+      } else {
+        const m = data.mcp.find((x) => x.id === id);
+        const st = store.mcpState(m);
+        console.log(`\n  ${c.bold(m.name)} ${c.dim("by " + (m.ours ? "ArcFlare" : m.by))}\n  ${m.description}\n`);
+        const act = await ui.select(m.name, [
+          { label: st.installed ? "Add again" : "Add it", hint: "to ~/.arcflare/mcp.json", value: "add" },
+          ...(st.installed ? [{ label: "Remove it", value: "rm" }] : []),
+        ]);
+        if (act === "add") {
+          let extra = [];
+          if (!m.ours && m.argument) {
+            const a = await ui.ask(`${m.argument.name} (${m.argument.about})`);
+            extra = String(a || "").trim() ? [String(a).trim()] : [];
+            if (m.argument.required && !extra.length) { console.log(`  ${c.dim("cancelled: it needs " + m.argument.name)}`); continue; }
+          }
+          await addMcp(id, extra);
+        } else if (act === "rm") console.log(store.removeMcp(id) ? `  ${c.green(ui.sym.ok)} removed ${id}` : `  ${c.dim("not removed")}`);
+      }
+    }
+  }
+}
+
 async function shopCommand(cfg, argv) {
   const hub = require("../lib/hub");
   const rest = argv.slice(1);
@@ -2290,6 +2484,9 @@ async function main() {
       return arcsCommand(cfg, ["arcs", "create", ...argv.slice(1)]);
     case "show":
       return arcsCommand(cfg, ["arcs", "show", ...argv.slice(1)]);
+
+    case "store":
+      return storeCommand(cfg, argv);
 
     case "shop":
     case "hub":
