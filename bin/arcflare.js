@@ -245,7 +245,9 @@ async function engineInstall(argv = []) {
       console.log(`  ${c.dim("No GPU build matched this machine, so this is the CPU build. If you have a GPU, try")} ` +
         `${c.accent("arcflare engine install --vulkan")}`);
     }
-    if (use) console.log(`  ${c.dim("find this machine's fastest settings:")} ${c.accent("arcflare tune")}`);
+    if (use && !argv.includes("--quiet-hint")) {
+      console.log(`  ${c.dim("set everything up for this computer:")} ${c.accent("arcflare auto")}`);
+    }
     return use ? r.server : prev;
   } catch (e) {
     spin.stop(`${c.red(ui.sym.fail)} ${e.message}`);
@@ -532,6 +534,9 @@ async function prepareModel(cfg, model, ctx, cacheType, opts = {}) {
  * again. Returns what prepareModel does.
  */
 async function loadBest(cfg, model) {
+  if (require("../lib/machine").madeElsewhere(cfg)) {
+    console.log(`  ${c.accent("!")} ${c.dim("these settings were made for a different computer ·")} ${c.accent("arcflare auto")} ${c.dim("sets them up for this one")}`);
+  }
   const again = await serve.reuseLoaded(cfg, model);
   if (again) {
     console.log(`  ${c.green(ui.sym.ok)} ${displayName(model)} is already loaded ` +
@@ -557,6 +562,7 @@ const HELP_GROUPS = [
     ["arcflare ls", "", "list the models on this machine"],
     ["arcflare run", "<model>", "start the server and chat"],
     ["arcflare fit", "[model]", "what fits; --run loads each one and times it"],
+    ["arcflare auto", "", "configure for this computer: its parts, the right engine, measured settings"],
     ["arcflare tune", "[model]", "measure this machine's fastest settings and keep them"],
   ]],
   ["agent & harnesses", [
@@ -2020,6 +2026,85 @@ async function main() {
       return;
     }
 
+    // One command for a new computer: look at its parts, get the engine for them, measure, and keep the result.
+    case "auto":
+    case "autoconfig": {
+      const machine = require("../lib/machine");
+      const hardware = require("../lib/hardware");
+      const backend = require("../lib/backend");
+      const noInstall = argv.includes("--no-install");
+      const noTune = argv.includes("--no-tune");
+      const cacheFile = path.join(HOME, "backends.json");
+      const hw = hardware.survey();
+      const mkey = machine.key();
+
+      console.log(ui.banner(c.dim("auto")));
+      console.log(ui.section("this computer"));
+      console.log(ui.table([
+        [c.dim("cpu"), hardware.cpuLine(hw.cpu)],
+        ...(hw.gpus.length ? hw.gpus.map((g) => [c.dim("gpu"), g.name]) : [[c.dim("gpu"), c.dim("none found")]]),
+        [c.dim("memory"), `${Math.round(os.totalmem() / 1024 ** 3)} GB`],
+      ]));
+      console.log("");
+      if (machine.madeElsewhere(cfg, mkey)) {
+        console.log(`  ${c.dim("the settings here were made for a different computer; making them again for this one")}\n`);
+      }
+
+      // 1. The engine for these parts.
+      console.log(ui.section("engine"));
+      let exe = null;
+      if (usesLmStudio(cfg)) {
+        console.log(`  ${c.dim(ui.sym.dot)} LM Studio is the engine; it picks its own runtime ${c.dim("(arcflare engine runtime)")}`);
+      } else {
+        exe = engine.findServer(cfg.llamaServer, cfg.backend);
+        const seen = backend.survey(cacheFile, { fresh: true });
+        const kind = exe ? (seen.find((b) => b.server === exe) || {}).kind || "unknown" : "none";
+        const step = machine.engineStep(hw, kind, hardware.advice(hw, kind));
+        if (!step) {
+          console.log(`  ${c.green(ui.sym.ok)} ${kind === "unknown" ? "your own llama.cpp build" : "the " + kind + " build"} ${c.dim(exe)}`);
+        } else if (noInstall) {
+          console.log(`  ${c.accent("!")} ${c.dim(step.why)}`);
+          console.log(`    ${c.dim("not installed (--no-install):")} ${c.accent("arcflare engine install" + (step.kind ? " --" + step.kind : ""))}`);
+        } else {
+          console.log(`  ${c.dim(step.why)}`);
+          await engineInstall([...(step.kind ? ["--" + step.kind] : []), "--quiet-hint"]);
+          exe = engine.findServer(loadConfig().llamaServer, loadConfig().backend);
+        }
+      }
+      console.log("");
+
+      // 2. What the parts imply. Only settings nobody chose by hand are written.
+      console.log(ui.section("settings"));
+      const p = machine.plan(hw, os.totalmem());
+      const applied = machine.apply(loadConfig(), p.settings, mkey);
+      saveConfig(applied.cfg);
+      if (applied.kept.includes("memoryProfile")) {
+        console.log(`  ${c.dim(ui.sym.dot)} memory profile ${c.accent(applied.cfg.memoryProfile)} ${c.dim("kept: you chose it")}`);
+      } else {
+        console.log(`  ${c.green(ui.sym.ok)} memory profile ${c.accent(p.settings.memoryProfile)}`);
+        console.log(`    ${c.dim(p.why)}`);
+      }
+      console.log("");
+
+      // 3. What only a measurement can say: batch size, threads, and which backend when there are two.
+      const all = models.discover({ meta: true });
+      const model = models.resolve(all, cfg.lastModel) || all[0];
+      if (usesLmStudio(cfg) || noTune || !exe || !model) {
+        const why = usesLmStudio(cfg) ? "LM Studio chooses its own batch and threads"
+          : noTune ? "skipped (--no-tune)"
+            : !exe ? "no engine yet" : "no model yet: arcflare shop, then arcflare auto again";
+        console.log(ui.section("measuring"));
+        console.log(`  ${c.dim(ui.sym.dot)} ${c.dim(why)}\n`);
+      } else {
+        const working = backend.survey(cacheFile, { fresh: true }).filter((b) => b.ok).length;
+        const ok = runSelf(["tune", model.id, ...(working > 1 ? ["--backends"] : [])]);
+        if (!ok) console.log(`  ${c.red(ui.sym.fail)} ${c.dim("measuring did not finish; the settings above still apply ·")} ${c.accent("arcflare tune")}\n`);
+      }
+
+      console.log(`  ${c.green(ui.sym.ok)} ${c.dim("configured for this computer. After changing a graphics card or moving to another machine:")} ${c.accent("arcflare auto")}\n`);
+      return;
+    }
+
     // Measure the fastest settings for this machine and model, and keep them.
     case "tune": {
       const tune = require("../lib/tune");
@@ -2313,7 +2398,7 @@ async function main() {
         ...(hw.gpus.length ? hw.gpus.map((g) => [true, "gpu", c.dim(g.name)]) : [[null, "gpu", c.dim("none found")]]),
         [tuned ? true : null, "tuning", c.dim(tuned
           ? `measured for ${tuned} model${tuned > 1 ? "s" : ""} · arcflare tune --show`
-          : "defaults in use · arcflare tune measures the fastest settings here")],
+          : "defaults in use · arcflare auto sets this computer up")],
       ]);
       // Said in full under the table, which would cut a long line short.
       if (!usesLmStudio(cfg)) {

@@ -135,6 +135,7 @@ arcflare doctor
 | `arcflare memory [profile]` | `lean` \| `balanced` \| `max` |
 | `arcflare batch [size]` | Physical batch: prefill speed against VRAM |
 | `arcflare fit [model]` | What fits, and with `--run` what actually runs best |
+| `arcflare auto` | Configure for this computer: list its parts, get the engine for them, measure the fastest settings (`--no-install`, `--no-tune`) |
 | `arcflare tune [model]` | Measure this machine's fastest batch size and threads and keep them (`--backends`, `--long`, `--show`, `--clear`) |
 | `arcflare gen` | 3D generation models (Hunyuan3D, TripoSR) and whether they are ready |
 | `arcflare gen setup <model>` | Install a generator (`--torch cuda\|cpu\|rocm`, `--torch-from <python>`, `--texture`) |
@@ -341,6 +342,41 @@ Because the batch also costs VRAM, it is the first thing given up when a model
 does not fit: ArcFlare shrinks the batch and retries at the *same* context
 before it considers halving the window. A few percent of prefill is worth far
 less than the context it would otherwise buy.
+
+## A configuration for each computer
+
+```
+> arcflare auto
+  this computer
+    cpu     13th Gen Intel(R) Core(TM) i7-13700K · 8 P-cores + 8 E-cores
+    gpu     NVIDIA GeForce RTX 4070
+    memory  32 GB
+  engine     the cuda build
+  settings   memory profile balanced
+  measuring  batch 512 / 1024 / 2048 ...
+```
+
+One command, three steps, and the result is kept for this computer:
+
+1. **Its parts.** CPU and how its cores are split, every GPU, the RAM.
+2. **The engine for them.** Installed when there is none, or when the parts
+   call for a plainly faster one (CUDA on an NVIDIA card running Vulkan, a GPU
+   build on a machine running the CPU one). A build you pointed ArcFlare at
+   with `set-engine` is yours and is left alone. `--no-install` only reports.
+3. **Its settings.** From the parts: the memory profile - a small prompt cache
+   where the model is known to share scarce RAM (no GPU, an integrated one,
+   Apple's unified memory under 24 GB), the ordinary one otherwise, and never
+   `max`. By measurement (`arcflare tune`, below): batch size, threads, and
+   which backend when more than one works. `--no-tune` skips the measuring,
+   which is the part that takes minutes.
+
+Only settings nobody chose by hand are written: a profile set with
+`arcflare memory` or an engine set with `set-engine` stays.
+
+The result is tied to the computer (host, CPU, RAM). A `~/.arcflare` copied or
+synced to another machine is noticed: measured settings from the other computer
+are not applied, and loading a model says to run `arcflare auto` here. A swapped
+graphics card is not noticed on its own; run `arcflare auto` again after one.
 
 ## Tuning for this machine
 
@@ -1194,6 +1230,7 @@ lib/gguf.js       GGUF metadata reader + KV cache maths
 lib/fit.js        what fits, and what measurably runs best
 lib/tune.js       arcflare tune: time settings on this machine, keep the fastest
 lib/hardware.js   CPU core split and GPU vendors, from the operating system
+lib/machine.js    arcflare auto: what the parts imply, and which computer a config is for
 lib/models.js     model discovery
 lib/engine.js     llama-server supervision
 lib/lmstudio.js   LM Studio as the engine (lms CLI, import by link)

@@ -256,6 +256,94 @@ test("measuring keeps the faster of two readings", async () => {
   assert.strictEqual(r.gen.tokPerSec, 40);
 });
 
+// ---------------------------------------------------------------- machine ----
+
+const machine = require("../lib/machine");
+const sys = (o = {}) => ({
+  hostname: () => o.host || "desk", platform: () => "linux", arch: () => "x64",
+  cpus: () => cpuList(o.cores || 16, o.cpu || "AMD Ryzen 7 7700X"), totalmem: () => (o.ram || 32) * 1024 ** 3,
+});
+const GPU = (name, vendor, extra = {}) => ({ name, vendor, ...extra });
+
+test("a computer's key is stable, and different for a different computer", () => {
+  assert.strictEqual(machine.key(sys()), machine.key(sys()));
+  assert.notStrictEqual(machine.key(sys()), machine.key(sys({ host: "laptop" })));
+  assert.notStrictEqual(machine.key(sys()), machine.key(sys({ cpu: "Apple M3 Pro" })));
+  assert.notStrictEqual(machine.key(sys()), machine.key(sys({ ram: 64 })));
+  assert.strictEqual(machine.madeElsewhere({ auto: { machine: "x" } }, "y"), true);
+  assert.strictEqual(machine.madeElsewhere({ auto: { machine: "x" } }, "x"), false);
+  assert.strictEqual(machine.madeElsewhere({}, "x"), false, "a config auto never wrote belongs to nobody else");
+});
+
+test("which GPUs have their own memory is read from their names, or left unknown", () => {
+  assert.strictEqual(machine.sharesRam(GPU("NVIDIA GeForce RTX 4070", "nvidia")), false);
+  assert.strictEqual(machine.sharesRam(GPU("AMD Radeon RX 7900 XTX", "amd")), false);
+  assert.strictEqual(machine.sharesRam(GPU("Intel(R) Arc(TM) A770 Graphics", "intel")), false);
+  assert.strictEqual(machine.sharesRam(GPU("Intel(R) Arc(TM) B580 Graphics", "intel")), false);
+  assert.strictEqual(machine.sharesRam(GPU("AMD Radeon(TM) 8060S Graphics", "amd")), true);
+  assert.strictEqual(machine.sharesRam(GPU("AMD Radeon(TM) Graphics", "amd")), true);
+  assert.strictEqual(machine.sharesRam(GPU("Intel(R) UHD Graphics 770", "intel")), true);
+  assert.strictEqual(machine.sharesRam(GPU("Intel(R) Arc(TM) Graphics", "intel")), true);
+  assert.strictEqual(machine.sharesRam(GPU("Apple M3 Pro GPU", "apple", { unified: true })), true);
+  assert.strictEqual(machine.sharesRam(GPU("amd GPU (card0)", "amd")), null, "Linux often gives no model name");
+});
+
+test("the plan: a small prompt cache only where the model is known to share scarce RAM", () => {
+  const G = 1024 ** 3;
+  const profile = (gpus, ram) => machine.plan({ gpus }, ram * G).settings.memoryProfile;
+  assert.strictEqual(profile([GPU("Apple M2 GPU", "apple", { unified: true })], 16), "lean");
+  assert.strictEqual(profile([GPU("Apple M3 Max GPU", "apple", { unified: true })], 64), "balanced");
+  assert.strictEqual(profile([], 16), "lean", "no GPU: the model is in RAM");
+  assert.strictEqual(profile([GPU("NVIDIA GeForce RTX 4070", "nvidia")], 16), "balanced", "the model is on the card");
+  assert.strictEqual(profile([GPU("NVIDIA GeForce RTX 3060", "nvidia")], 8), "lean");
+  // A laptop's two GPUs: the card with its own memory is where the model goes.
+  assert.strictEqual(profile([GPU("Intel(R) UHD Graphics", "intel"), GPU("NVIDIA GeForce RTX 4060", "nvidia")], 16), "balanced");
+  // Not knowing is not a reason to change anything.
+  const unknown = machine.plan({ gpus: [GPU("amd GPU (card0)", "amd")] }, 16 * G);
+  assert.deepStrictEqual([unknown.where, unknown.settings.memoryProfile], ["unknown", "balanced"]);
+  // Never "max": keeping four models resident is a choice, not a fact about the parts.
+  assert.notStrictEqual(profile([GPU("NVIDIA RTX 4090", "nvidia")], 256), "max");
+});
+
+test("auto writes only settings nobody chose by hand", () => {
+  // Unset: written, and remembered as auto's.
+  const a = machine.apply({ port: 1 }, { memoryProfile: "lean" }, "k1", 5);
+  assert.deepStrictEqual(a.cfg, { port: 1, memoryProfile: "lean", auto: { machine: "k1", at: 5, set: { memoryProfile: "lean" } } });
+  assert.deepStrictEqual([a.changed, a.kept], [["memoryProfile"], []]);
+  // Still what auto wrote: a later run on other parts may change it.
+  const b = machine.apply(a.cfg, { memoryProfile: "balanced" }, "k2", 6);
+  assert.deepStrictEqual([b.cfg.memoryProfile, b.cfg.auto.machine, b.changed], ["balanced", "k2", ["memoryProfile"]]);
+  // Changed by hand since (arcflare memory max): kept.
+  const c = machine.apply({ ...a.cfg, memoryProfile: "max" }, { memoryProfile: "balanced" }, "k1", 7);
+  assert.deepStrictEqual([c.cfg.memoryProfile, c.kept, c.cfg.auto.set], ["max", ["memoryProfile"], {}]);
+});
+
+test("auto installs an engine only when there is none or a plainly better one, never over your own build", () => {
+  const nvidia = { platform: "linux", gpus: [GPU("RTX 4070", "nvidia")], vendors: ["nvidia"] };
+  const radeon = { platform: "linux", gpus: [GPU("RX 7900", "amd")], vendors: ["amd"] };
+  const step = (hw, kind) => machine.engineStep(hw, kind, hardware.advice(hw, kind));
+  assert.strictEqual(step(nvidia, "none").kind, null, "nothing installed: let the installer pick");
+  assert.strictEqual(step(nvidia, "vulkan").kind, "cuda");
+  assert.strictEqual(step(nvidia, "cuda"), null);
+  assert.strictEqual(step(radeon, "cpu").kind, "vulkan");
+  assert.strictEqual(step(radeon, "vulkan"), null, "ROCm is worth measuring, not switching to unasked");
+  assert.strictEqual(step(nvidia, "unknown"), null, "a build pointed at by hand is left alone");
+});
+
+test("settings measured on another computer are not applied on this one", () => {
+  const file = path.join(TMP, "tune-machine.json");
+  const exe = path.join(TMP, "engine-m");
+  fs.writeFileSync(exe, "m");
+  const model = { id: "m:q4", size: 100 };
+  tune.save(tune.record(tune.load(file), model, exe, { ubatch: 1024 }), file);
+  assert.deepStrictEqual(tune.tunedFor(model, exe, file), { ubatch: 1024 });
+  // The same file, as it would arrive in a config folder synced from another machine.
+  const db = JSON.parse(fs.readFileSync(file, "utf8"));
+  db.models["m:q4"].machine = "0000000000000000";
+  fs.writeFileSync(file, JSON.stringify(db));
+  assert.strictEqual(tune.tunedFor(model, exe, file), null);
+});
+
 // ---------------------------------------------- loading, against a server ----
 
 const unix = process.platform !== "win32";
@@ -395,5 +483,46 @@ test("arcflare tune finds this machine's fastest batch and the next load uses it
   assert.strictEqual(fs.readFileSync(log, "utf8").trim().split("\n").length, before + 1);
 
   assert.match(cli("tune", "--clear").stdout, /forgot/);
+  cli("stop");
+});
+
+test("arcflare auto lists the parts, writes this computer's settings and measures", { skip: !unix }, async () => {
+  const home = path.join(TMP, "auto-home");
+  const modelsDir = path.join(TMP, "cli-models");
+  fs.mkdirSync(home, { recursive: true });
+  const port = await freePort();
+  // A config that arrived from another computer, with a memory profile auto wrote there.
+  fs.writeFileSync(path.join(home, "config.json"), JSON.stringify({ llamaServer: FAKE, port, lastModel: "tiny:q4_k_m",
+    memoryProfile: "lean", auto: { machine: "another-computer", at: 1, set: { memoryProfile: "lean" } } }));
+  const env = { ...process.env, ARCFLARE_HOME: home, ARCFLARE_MODELS: modelsDir, HOME: path.join(TMP, "nohome"),
+    XDG_CACHE_HOME: path.join(TMP, "nocache"), FAKE_LOG: path.join(TMP, "auto-starts.log"), FAKE_BEST_UB: "1024", NO_COLOR: "1" };
+  const cli = (...args) => spawnSync(process.execPath, [path.join(__dirname, "..", "bin", "arcflare.js"), ...args],
+    { env, encoding: "utf8", input: "", timeout: 60000 });
+
+  // Before: a model load says whose settings these are.
+  const dry = cli("auto", "--no-tune", "--no-install");
+  assert.strictEqual(dry.status, 0, dry.stdout + dry.stderr);
+  assert.match(dry.stdout, /made for a different computer/);
+  assert.match(dry.stdout, /cpu\s+\S/);
+  assert.match(dry.stdout, /your own llama\.cpp build/, "an engine set by hand is not replaced");
+  assert.match(dry.stdout, /skipped \(--no-tune\)/);
+  let cfg = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
+  assert.strictEqual(cfg.auto.machine, machine.key());
+  assert.ok(["lean", "balanced"].includes(cfg.memoryProfile));
+  assert.strictEqual(cfg.auto.set.memoryProfile, cfg.memoryProfile);
+  assert.ok(!fs.existsSync(path.join(home, "tune.json")));
+
+  // The full run also measures, for the model in use.
+  const full = cli("auto");
+  assert.strictEqual(full.status, 0, full.stdout + full.stderr);
+  assert.match(full.stdout, /use\s+batch 1024/);
+  assert.match(full.stdout, /configured for this computer/);
+  const db = JSON.parse(fs.readFileSync(path.join(home, "tune.json"), "utf8"));
+  assert.deepStrictEqual([db.models["tiny:q4_k_m"].ubatch, db.models["tiny:q4_k_m"].machine], [1024, machine.key()]);
+
+  // A profile chosen by hand survives the next run.
+  cli("memory", "max");
+  assert.match(cli("auto", "--no-tune").stdout, /memory profile max kept: you chose it/);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8")).memoryProfile, "max");
   cli("stop");
 });
