@@ -1033,6 +1033,8 @@ fieldset.muted-off { opacity: 0.5; }
 /* ---------- Team mode ---------- */
 .team-btn { flex: none; min-height: 32px; padding: 0 10px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--muted); font: 700 12px/1 var(--mono, monospace); letter-spacing: .06em; cursor: pointer; }
 .team-btn[aria-pressed="true"] { background: var(--accent-bright); border-color: var(--accent-bright); color: var(--on-accent); }
+.once-line { margin-top: 4px; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--accent); }
+.once-badge { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .team-line { margin-top: 4px; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--accent); }
 .notice.team { color: var(--accent); }
 .team-advice .tool-result { white-space: pre-wrap; }

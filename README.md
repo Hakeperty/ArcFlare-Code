@@ -1004,6 +1004,18 @@ What it does and does not protect:
   with no internet; away from home it can use the relay, which carries only
   ciphertext: `arcflare phone relay on`. Revoke a phone with
   `arcflare phone devices revoke <id>`.
+- **Deleting.** An agent's ⋯ menu has Delete (tap twice). It stops the agent and erases
+  its saved conversation and undo history from this computer. Files the agent wrote in
+  your project are not touched. Chats have Delete too.
+- **One-time agents and chats.** Tick "One-time agent" when making an agent, or tap
+  "One-time chat". Nothing about it is written to disk: no saved conversation, no entry
+  in `agents.json`, and its undo snapshots live in the OS temp folder. It deletes itself
+  when you stop it, after it sits idle (5 minutes to 1 hour, your choice; 10 by default), when the hub
+  shuts down, and, for a chat, when the model is stopped from the phone. A turn in
+  progress or an approval waiting for you is not idle. Notifications for a one-time
+  agent say that something happened, never what. Limits: it cannot remove files the
+  agent wrote in the project, what you already copied, or anything the model server's
+  own log may hold; and deleting a file is not a forensic wipe.
 - **Status.** The Android app in `android/` is **not released**: it has not been built or
   run on a real phone, and release is blocked on the checklist in
   [SECURITY-LOG.md](SECURITY-LOG.md), which lists every finding, fix and open risk.

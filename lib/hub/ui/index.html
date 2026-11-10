@@ -101,6 +101,7 @@
         <div id="agent-statusbar" class="statusbar">
           <span id="agent-dot" class="dot dot-off" aria-hidden="true"></span>
           <span id="agent-status" class="st" role="status"></span>
+          <span id="agent-onetime" class="badge once-badge" hidden title="Nothing about this agent is saved. Stopping it deletes it.">One-time</span>
           <label class="sr-only" for="agent-model">Model for this agent</label>
           <select id="agent-model" class="model-select compact" title="The model this agent uses"></select>
           <button id="agent-team" class="team-btn" type="button" aria-pressed="false" title="Team mode: helper models and an advisor work with this agent">TEAM</button>
@@ -146,6 +147,7 @@
         </div>
         <p id="chats-error" class="banner error" role="alert" hidden></p>
         <button id="chat-new" class="btn primary block lg" type="button">New chat</button>
+        <button id="chat-new-once" class="btn outline block lg" type="button" title="Never saved. Deletes itself when idle or when the model is unloaded.">One-time chat</button>
         <div class="chat-search-wrap">
           <label class="sr-only" for="chat-search">Search chats</label>
           <input id="chat-search" class="chat-search" type="search" placeholder="Search chats" autocomplete="off" enterkeyhint="search">
@@ -180,6 +182,7 @@
         <p class="chat-empty">Ask anything. The answer comes from the model on your computer.</p>
         <p id="chat-error" class="banner error" role="alert" hidden></p>
         <p id="chat-note" class="dev-meta sub" role="status" hidden></p>
+        <p id="chat-once-note" class="dev-meta sub once-line" role="status" hidden></p>
         <form id="chat-compose" class="compose">
           <label class="sr-only" for="chat-text">Message</label>
           <textarea id="chat-text" rows="1" placeholder="Message" enterkeyhint="enter"></textarea>
@@ -333,6 +336,17 @@
         <label class="field"><span class="lbl">First task <span class="opt">(optional)</span></span>
           <textarea id="new-task" rows="2"></textarea>
         </label>
+        <label class="check"><input id="new-onetime" type="checkbox"> <span>One-time agent: nothing is saved</span></label>
+        <div id="new-once-opts" class="field" hidden>
+          <p id="new-once-hint" class="hint">It deletes itself, with its conversation, the moment you stop it, and after it sits idle for:</p>
+          <select id="new-ttl" class="model-select field-select" aria-label="Delete after idle">
+            <option value="5">5 minutes</option>
+            <option value="10" selected>10 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">1 hour</option>
+          </select>
+          <p class="hint">Files it writes in the project folder stay there. Only the agent's own record is deleted.</p>
+        </div>
         <p id="new-error" class="banner error" role="alert" hidden></p>
         <button id="new-submit" type="submit" class="btn primary block lg">Create agent</button>
       </form>
@@ -350,7 +364,10 @@
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Wake</button></li>
         <li><button id="menu-stop" class="menu-item danger" type="button">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>Stop</button></li>
+        <li><button id="menu-delete" class="menu-item danger" type="button">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg><span id="menu-delete-label">Delete</span></button></li>
       </ul>
+      <p id="menu-delete-hint" class="hint" hidden>Deleting stops the agent and erases its conversation and undo history from this computer. Files it wrote in the project stay.</p>
       <button id="menu-cancel" class="btn outline block" type="button">Cancel</button>
     </div>
   </div>
