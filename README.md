@@ -65,8 +65,16 @@ prebuilt build for your machine in one step (Metal on macOS; Vulkan or CPU on
 Linux; CUDA for NVIDIA or Vulkan on Windows):
 
 ```bash
-arcflare engine install            # or --vulkan / --cuda / --cpu / --rocm
+arcflare engine install            # or --vulkan / --cuda / --rocm / --sycl / --cpu
 ```
+
+With nothing asked for, an NVIDIA card gets the CUDA build (Windows and Linux),
+any other GPU gets Vulkan, a Mac gets Metal, and a machine with no GPU the CPU
+build. A build picked this way that turns out not to start is set aside and the
+next one installed. AMD's ROCm build and Intel's SYCL build are installed only
+when named, because they need the vendor's runtime; one that then sees no GPU
+is reported, and the engine that was working stays selected. Builds install
+side by side, and `arcflare backend` lists them all.
 
 If you already have one, ArcFlare looks for `llama-server` on `PATH`, then in
 `~/llamacpp/{vulkan,cuda,rocm}` and the usual places. If it lives somewhere else:
@@ -127,6 +135,7 @@ arcflare doctor
 | `arcflare memory [profile]` | `lean` \| `balanced` \| `max` |
 | `arcflare batch [size]` | Physical batch: prefill speed against VRAM |
 | `arcflare fit [model]` | What fits, and with `--run` what actually runs best |
+| `arcflare tune [model]` | Measure this machine's fastest batch size and threads and keep them (`--backends`, `--long`, `--show`, `--clear`) |
 | `arcflare gen` | 3D generation models (Hunyuan3D, TripoSR) and whether they are ready |
 | `arcflare gen setup <model>` | Install a generator (`--torch cuda\|cpu\|rocm`, `--torch-from <python>`, `--texture`) |
 | `arcflare gen 3d <image>` | Image → `.glb` mesh; `--prompt "…"` for text → mesh |
@@ -332,6 +341,59 @@ Because the batch also costs VRAM, it is the first thing given up when a model
 does not fit: ArcFlare shrinks the batch and retries at the *same* context
 before it considers halving the window. A few percent of prefill is worth far
 less than the context it would otherwise buy.
+
+## Tuning for this machine
+
+The defaults above were measured on one machine. The batch size that is fastest
+on a Strix Halo is not the fastest on an Intel Arc card, an NVIDIA card, Apple's
+Metal or a CPU, and no table of constants stays true across drivers and
+llama.cpp builds. `arcflare tune` measures instead:
+
+```
+> arcflare tune
+  qwen3.6-35b-a3b:q5_k_m  timed on a typical agent turn: 2K tokens read, 300 written
+      + batch 2048   ...
+      + batch 512    ...
+      + batch 1024   ...
+  > use  batch 1024
+```
+
+It loads the model once per setting, times reading a prompt nothing has cached
+and writing a reply, and keeps the winner for that model on that engine. Later
+loads use it without being told.
+
+- **Only settings that leave the answers alone are tried**: batch size, thread
+  count, which llama.cpp build. They change how fast the same tokens arrive.
+  Nothing that trades quality for speed (a smaller quant, a quantised KV cache,
+  less context) is ever chosen for you.
+- **A setting has to earn its place.** The one in use stays unless another is
+  more than 3% faster; less than that is noise.
+- `--backends` also times every installed build that sees a device and selects
+  the fastest, so Vulkan against ROCm, SYCL or CUDA is a measurement, not a
+  guess. `arcflare engine install --rocm` (or `--sycl`) first, then this.
+- Thread counts are tried for a CPU build, or with `--threads`. On an Intel
+  chip with performance and efficiency cores the two counts worth timing are
+  "performance cores only" and "every core"; which wins depends on the chip.
+- `--long` tunes for 8K-token prompts instead of agent turns. `--show` prints
+  what is stored, `--clear` forgets it.
+- A measurement is dropped when the model file or the engine binary changes.
+  `arcflare batch <n>` still overrides it by hand.
+
+`arcflare doctor` shows the CPU's core split and each GPU, and says so when the
+active build is not the one this hardware usually runs fastest with.
+
+Two things are faster without measuring anything:
+
+- **A model that is already loaded is not loaded again.** `arcflare run`,
+  `agent`, `use`, the phone hub and the desktop app check whether the server
+  already holds exactly what they would load (same file, engine and settings)
+  and use it as it stands. If memory freed since then would now fit a larger
+  context, the model is reloaded to take it.
+- **The agent's compaction keeps the prompt cache.** llama.cpp reuses its cache
+  only for the unchanged start of a prompt. Trimming a full conversation just
+  enough to fit meant trimming again on the next step, and the next, each one a
+  full re-read of the window. It now trims to three quarters of the window in
+  one go, and the steps after that only append.
 
 ## What runs best
 
@@ -1130,6 +1192,8 @@ bin/arcflare.js   CLI and the interactive menu
 lib/ui.js         colours, arrow-key select, spinner
 lib/gguf.js       GGUF metadata reader + KV cache maths
 lib/fit.js        what fits, and what measurably runs best
+lib/tune.js       arcflare tune: time settings on this machine, keep the fastest
+lib/hardware.js   CPU core split and GPU vendors, from the operating system
 lib/models.js     model discovery
 lib/engine.js     llama-server supervision
 lib/lmstudio.js   LM Studio as the engine (lms CLI, import by link)

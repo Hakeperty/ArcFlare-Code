@@ -129,6 +129,40 @@ test("compaction trims the oldest tool results first", () => {
   assert.strictEqual(last.content.length, 8000, "most recent result kept whole");
 });
 
+test("compaction to a target leaves room, so the next steps only append", () => {
+  // Shrinking only to the limit puts the next step over it again, and every
+  // such rewrite of an early message makes llama.cpp re-read the conversation.
+  const m = convo(12, 4000);
+  const limit = Math.floor(ctxmod.totalTokens(m) * 0.9);
+  const toLimit = ctxmod.compact(m, limit);
+  const toTarget = ctxmod.compact(m, limit, { target: limit * ctxmod.COMPACT_TO });
+  assert.ok(toLimit.used <= limit && toTarget.used <= limit * ctxmod.COMPACT_TO);
+  assert.ok(toTarget.used < toLimit.used);
+
+  // Three more steps on each: the one compacted to its target is untouched.
+  let rewritesAtLimit = 0, rewritesAtTarget = 0;
+  let a = toLimit.messages, b = toTarget.messages;
+  for (let i = 0; i < 3; i++) {
+    const step = [
+      { role: "assistant", content: "", tool_calls: [{ id: "n" + i, function: { name: "read_file", arguments: "{}" } }] },
+      { role: "tool", tool_call_id: "n" + i, content: "y".repeat(4000) },
+    ];
+    const ra = ctxmod.compact([...a, ...step], limit);
+    const rb = ctxmod.compact([...b, ...step], limit, { target: limit * ctxmod.COMPACT_TO });
+    if (ra.changed) rewritesAtLimit++;
+    if (rb.changed) rewritesAtTarget++;
+    a = ra.messages; b = rb.messages;
+  }
+  assert.strictEqual(rewritesAtLimit, 3, "compacting to the limit rewrites the prompt on every step");
+  assert.strictEqual(rewritesAtTarget, 0, "compacting to the target leaves the cached prefix alone");
+});
+
+test("a target never applies to a conversation that fits", () => {
+  const m = convo(4, 400);
+  const r = ctxmod.compact(m, ctxmod.totalTokens(m) + 10, { target: 50 });
+  assert.strictEqual(r.changed, false);
+});
+
 test("compaction explains what it did", () => {
   const m = convo(8, 8000);
   const r = ctxmod.compact(m, 500);

@@ -197,11 +197,11 @@ async function ensureServer(cfg, opts = {}) {
 
 // ---------------------------------------------------------------- engine ----
 
-/** `arcflare engine install [--vulkan|--cuda|--cpu|--rocm]`: get llama.cpp. Returns the server path. */
+/** `arcflare engine install [--vulkan|--cuda|--rocm|--sycl|--cpu|...]`: get llama.cpp. Returns the server path. */
 async function engineInstall(argv = []) {
   const ei = require("../lib/engine-install");
   const dl = require("../lib/download");
-  const want = ["vulkan", "cuda", "cpu", "rocm", "metal"].find((v) => argv.includes(`--${v}`));
+  const want = ei.KINDS.find((v) => argv.includes(`--${v}`));
   const spin = ui.spinner("finding the latest llama.cpp build");
   let step = "";
   try {
@@ -211,14 +211,42 @@ async function engineInstall(argv = []) {
       onStep: (t) => { step = t; spin.update(t); },
       onProgress: (p) => spin.update(`${step}  ${dl.progressText(p, ui.fmtBytes)}`),
     });
-    saveConfig({ ...loadConfig(), llamaServer: r.server, backend: undefined });
     spin.stop(`${c.green(ui.sym.ok)} llama.cpp ${c.accent(r.tag)} ${c.dim(`(${r.variant})`)} installed`);
     console.log(`  ${c.dim("engine")}  ${r.server}`);
-    if (r.variant.includes("cpu") && !want) {
+    for (const sk of r.skipped || []) {
+      console.log(`  ${c.dim(`the ${sk.kind} build was tried first and did not start here: ${String(sk.why).slice(0, 120)}`)}`);
+    }
+
+    // A vendor build (ROCm, SYCL, CUDA) can install cleanly and still see no
+    // GPU, when the driver or runtime it needs is not there. Ask it, and do not
+    // swap a working engine for one that would quietly run on the CPU.
+    const before = loadConfig();
+    const prev = engine.findServer(before.llamaServer, before.backend);
+    let use = true;
+    if (["cuda", "rocm", "sycl", "opencl", "openvino"].includes(r.kind)) {
+      const backend = require("../lib/backend");
+      const dir = path.dirname(r.server);
+      const cli = path.join(dir, "llama-cli" + (process.platform === "win32" ? ".exe" : ""));
+      const seen = backend.probe({ dir, server: r.server, cli: fs.existsSync(cli) ? cli : null });
+      if (seen.ok) {
+        console.log(`  ${c.dim("device")}  ${seen.devices.map((d) => d.name).join(", ")}`);
+      } else {
+        console.log(`  ${c.red("!")} this ${r.kind} build sees no GPU here ${c.dim(`(${seen.note || seen.error || "no devices"})`)}`);
+        console.log(`    ${c.dim("it needs the matching " + (r.kind === "rocm" ? "AMD ROCm/HIP" : r.kind === "sycl" ? "Intel oneAPI" : r.kind) + " runtime and a driver that exposes the GPU to it")}`);
+        if (prev && prev !== r.server) {
+          use = false;
+          console.log(`    ${c.dim("keeping the engine that works:")} ${prev}`);
+          console.log(`    ${c.dim("to use the new one anyway:")} ${c.accent("arcflare set-engine " + r.server)}`);
+        }
+      }
+    }
+    if (use) saveConfig({ ...before, llamaServer: r.server, backend: undefined });
+    if (r.kind === "cpu" && !want) {
       console.log(`  ${c.dim("No GPU build matched this machine, so this is the CPU build. If you have a GPU, try")} ` +
         `${c.accent("arcflare engine install --vulkan")}`);
     }
-    return r.server;
+    if (use) console.log(`  ${c.dim("find this machine's fastest settings:")} ${c.accent("arcflare tune")}`);
+    return use ? r.server : prev;
   } catch (e) {
     spin.stop(`${c.red(ui.sym.fail)} ${e.message}`);
     console.log(`  ${c.dim("You can also install llama.cpp yourself (https://github.com/ggml-org/llama.cpp/releases) and run")} ` +
@@ -424,7 +452,8 @@ async function interactive(argv) {
   });
 
   // 5. server, keyed preset, restart
-  const { port, servedId, ctx: loadedCtx } = await prepareModel(cfg, model, ctx, cacheType);
+  const { port, servedId, ctx: loadedCtx } = await prepareModel(cfg, model, ctx, cacheType,
+    { auto: ctx === best.ctx && cacheType === best.cacheType });
 
   // 6. wire the harness up
   const target = { id: servedId, label, file: model.file };
@@ -467,9 +496,10 @@ async function interactive(argv) {
  * Load a model, stepping down if it does not fit (see lib/serve.js), with the
  * CLI's spinners on top.
  */
-async function prepareModel(cfg, model, ctx, cacheType) {
+async function prepareModel(cfg, model, ctx, cacheType, opts = {}) {
   let spin = null;
   const r = await serve.prepareModel(cfg, model, ctx, cacheType, {
+    ...opts,
     onProgress: (p) => {
       if (p.stage === "loading") {
         spin = ui.spinner(`loading ${displayName(model)} @ ${ui.fmtTokens(p.ctx)} ctx…`);
@@ -496,6 +526,23 @@ async function prepareModel(cfg, model, ctx, cacheType) {
 
 
 
+/**
+ * Load a model at the largest context that fits - or, when the server already
+ * holds exactly that, use it as it stands instead of reading the weights in
+ * again. Returns what prepareModel does.
+ */
+async function loadBest(cfg, model) {
+  const again = await serve.reuseLoaded(cfg, model);
+  if (again) {
+    console.log(`  ${c.green(ui.sym.ok)} ${displayName(model)} is already loaded ` +
+      c.dim(`at ${ui.fmtTokens(again.ctx)} context`));
+    return again;
+  }
+  const budget = await planningBudget(cfg);
+  const { best } = contextChoices(model, budget);
+  return prepareModel(cfg, model, best.ctx, best.cacheType, { auto: true });
+}
+
 // ------------------------------------------------------------------ cmds -----
 
 // The help screen, grouped the way people look for things. Each row is
@@ -510,6 +557,7 @@ const HELP_GROUPS = [
     ["arcflare ls", "", "list the models on this machine"],
     ["arcflare run", "<model>", "start the server and chat"],
     ["arcflare fit", "[model]", "what fits; --run loads each one and times it"],
+    ["arcflare tune", "[model]", "measure this machine's fastest settings and keep them"],
   ]],
   ["agent & harnesses", [
     ["arcflare agent", "[model]", "coding agent: tools, MCP, skills"],
@@ -557,7 +605,7 @@ const HELP_GROUPS = [
     ["arcflare batch", "[size]", "physical batch (prefill speed vs VRAM)"],
     ["arcflare spec", "[on|off]", "n-gram speculation (faster repeated code)"],
     ["arcflare team", "[set swarm|advisor <model> | think on|off]", "helper and advisor models for Team mode"],
-    ["arcflare engine install", "", "download llama.cpp for this machine"],
+    ["arcflare engine install", "[--cuda|--rocm|…]", "download llama.cpp for this machine"],
     ["arcflare set-engine", "<path>", "remember where llama-server lives"],
     ["arcflare engine lmstudio", "", "run models in LM Studio (llamacpp: back)"],
     ["arcflare engine runtime", "", "pick LM Studio's runtime, e.g. Vulkan"],
@@ -1644,10 +1692,9 @@ async function main() {
       const want = argv.slice(1).find((x) => !x.startsWith("-"));
       const m = models.resolve(all, want);
       if (!m) die(`no model matching "${want || ""}"`);
-      const budget = await planningBudget(cfg);
-      const { best } = contextChoices(m, budget);
-      const { port, servedId: id } = await prepareModel(cfg, m, best.ctx, best.cacheType);
-      console.log(`  ${c.green(ui.sym.ok)} ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
+      const { port, servedId: id, ctx: loadedCtx, failed } = await loadBest(cfg, m);
+      if (failed) die("could not load the model");
+      console.log(`  ${c.green(ui.sym.ok)} ${c.accent(id)} @ ${ui.fmtTokens(loadedCtx)} ctx\n`);
       await repl(port, id, { rc: argv.includes("--rc") });
       return;
     }
@@ -1676,15 +1723,13 @@ async function main() {
       const extra = rest.slice(want ? 2 : 1);
       const m = models.resolve(all, want || cfg.lastModel) || all[0];
       if (!m) die("no models found");
-      const budget = await planningBudget(cfg);
-      const { best } = contextChoices(m, budget);
-      const { port, servedId: id, ctx: loadedCtx } =
-        await prepareModel(cfg, m, best.ctx, best.cacheType);
-      const r = h.configure({ port, model: { id, label: displayName(m) }, ctx: best.ctx,
+      const { port, servedId: id, ctx: loadedCtx, failed } = await loadBest(cfg, m);
+      if (failed) die("could not load the model");
+      const r = h.configure({ port, model: { id, label: displayName(m) }, ctx: loadedCtx,
         apiKey: "arcflare", bin: det.bin });
       for (const n of r.notes || []) console.log(`  ${c.dim(n)}`);
       const approve = h.auto && wantAuto ? "yolo" : "ask";
-      console.log(`  ${c.green(ui.sym.ok)} ${h.label} → ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx` +
+      console.log(`  ${c.green(ui.sym.ok)} ${h.label} → ${c.accent(id)} @ ${ui.fmtTokens(loadedCtx)} ctx` +
         (h.auto ? c.dim(`  ${approve === "yolo" ? "auto mode" : "approval: ask"}`) : ""));
       saveConfig({ ...cfg, lastHarness: h.id, lastModel: m.id });
       if (noLaunch) return;
@@ -1692,7 +1737,7 @@ async function main() {
       // otherwise fall through to.
       if (h.id === "agent") {
         await require("../lib/agent/run").start({
-          port, model: id, nCtx: loadedCtx || best.ctx,
+          port, model: id, nCtx: loadedCtx,
           sampling: (models.loadMeta(m) || {}).sampling || null,
           cwd: process.cwd(), approve,
         });
@@ -1975,6 +2020,128 @@ async function main() {
       return;
     }
 
+    // Measure the fastest settings for this machine and model, and keep them.
+    case "tune": {
+      const tune = require("../lib/tune");
+      const hardware = require("../lib/hardware");
+      const backend = require("../lib/backend");
+      if (argv.includes("--clear")) {
+        console.log(tune.clear()
+          ? `  ${c.green(ui.sym.ok)} forgot every tuned setting; defaults apply again`
+          : `  ${c.dim("nothing tuned yet")}`);
+        return;
+      }
+      const db = tune.load();
+      if (argv.includes("--show")) {
+        const ids = Object.keys(db.models);
+        if (!ids.length) { console.log(`  ${c.dim("nothing tuned yet — ")}${c.accent("arcflare tune [model]")}`); return; }
+        for (const id of ids) {
+          const r = db.models[id];
+          console.log(`  ${c.accent(id)}  ${c.dim(`batch ${r.ubatch}` + (r.threads ? ` · ${r.threads} threads` : "") +
+            (r.prefill ? ` · ${fit.fmtRate(r.prefill)} reading` : "") + (r.gen ? ` · ${fit.fmtRate(r.gen)} writing` : "") +
+            (r.exe && !fs.existsSync(String(r.exe).replace(/:\d+$/, "")) ? " · engine gone, not applied" : ""))}`);
+        }
+        return;
+      }
+      if (usesLmStudio(cfg)) die("arcflare tune measures ArcFlare's own llama-server; LM Studio chooses its own settings");
+      const all = models.discover({ meta: true });
+      if (!all.length) { listModels(all); return; }
+      const want = argv.slice(1).find((a) => !a.startsWith("-"));
+      const m = want ? models.resolve(all, want) : (models.resolve(all, cfg.lastModel) || all[0]);
+      if (!m) die(`no model matching "${want}"`);
+      const activeExe = engine.findServer(cfg.llamaServer, cfg.backend);
+      if (!activeExe) die(`llama.cpp isn't installed: ${c.accent("arcflare engine install")}`);
+
+      const workload = argv.includes("--long") ? tune.WORKLOADS.long : tune.WORKLOADS.agent;
+      const hw = hardware.survey();
+      const surveyed = backend.survey(path.join(HOME, "backends.json"), { fresh: argv.includes("--backends") });
+      const known = (exe) => surveyed.find((b) => b.server === exe);
+      // The engine in use goes first: it is the one every other has to beat.
+      const builds = [{ server: activeExe, kind: (known(activeExe) || {}).kind || "current", id: (known(activeExe) || {}).id || null }];
+      if (argv.includes("--backends")) {
+        for (const b of surveyed) {
+          if (b.server !== activeExe && (b.ok || b.kind === "cpu")) builds.push({ server: b.server, kind: b.kind, id: b.id });
+        }
+      }
+
+      console.log(ui.banner(c.dim("tune")));
+      console.log(`  ${c.accent(m.id)}  ${c.dim("timed on " + workload.says)}`);
+      console.log(`  ${c.dim("every setting is a full load of the model, so this takes a few minutes. Only settings that")}`);
+      console.log(`  ${c.dim("leave the model's answers unchanged are tried: batch size, threads" + (builds.length > 1 ? ", backend" : "") + ".")}\n`);
+
+      const budget = await planningBudget(cfg);
+      const { best: plan } = contextChoices(m, budget);
+      const results = [];
+      for (const b of builds) {
+        // The settings in use on this build are the baseline; each candidate then names its own.
+        const bcfg = { ...cfg, llamaServer: b.server, backend: undefined };
+        const inUse = serve.settingsFor(bcfg, m);
+        if (builds.length > 1) console.log(`  ${c.bold(b.id || b.kind)} ${c.dim(b.server)}`);
+        const cache = new Map();
+        const loadAndMeasure = async (cand) => {
+          const key = `${cand.ubatch}/${cand.threads || 0}`;
+          if (cache.has(key)) return cache.get(key);
+          const spin = ui.spinner(`${cand.label} — loading…`);
+          try {
+            const prep = await serve.prepareModel(bcfg, m, plan.ctx, plan.cacheType,
+              { ubatch: cand.ubatch, threads: cand.threads || null });
+            if (prep.failed) throw new Error(prep.error || "did not load");
+            spin.update(`${cand.label} — measuring…`);
+            const row = await tune.measure({ port: prep.port, id: prep.servedId, workload });
+            cache.set(key, row);
+            const secs = tune.turnSeconds(row, workload);
+            spin.stop(`    ${c.green(ui.sym.ok)} ${cand.label.padEnd(34)} ${c.dim(
+              `${fit.fmtRate(row.prefill.tokPerSec)} reading · ${fit.fmtRate(row.gen.tokPerSec)} writing` +
+              (secs ? ` · ${secs.toFixed(1)} s a turn` : ""))}`);
+            return row;
+          } catch (e) {
+            spin.stop(`    ${c.red(ui.sym.fail)} ${cand.label.padEnd(34)} ${c.dim(String(e.message).slice(0, 80))}`);
+            throw e;
+          }
+        };
+        const batches = tune.batchCandidates(inUse.ubatch).map((x) => ({ ...x, threads: inUse.threads }));
+        let pick = await tune.runCandidates(batches, loadAndMeasure, { workload });
+        // What this build does with the settings that were in use: the number every gain is measured from.
+        const before = pick.baseline ? tune.turnSeconds(pick.baseline, workload) : null;
+        if (pick.best && (b.kind === "cpu" || argv.includes("--threads"))) {
+          const more = tune.threadCandidates(hw.cpu, pick.best.ubatch).filter((x) => x.threads !== (pick.best.threads || null));
+          if (more.length) pick = await tune.runCandidates([pick.best, ...more], loadAndMeasure, { workload });
+        }
+        if (pick.best) results.push({ build: b, row: pick.best, seconds: tune.turnSeconds(pick.best, workload), before });
+        console.log("");
+      }
+
+      if (!results.length) die("nothing could be measured; see arcflare logs");
+      // Across backends the same rule: the one in use stays unless another is faster by more than the margin.
+      const current = results.find((r) => r.build.server === activeExe);
+      let win = current || results[0];
+      for (const r of results) {
+        if (r !== win && r.seconds < win.seconds * (win.build.server === activeExe ? 1 - tune.MARGIN : 1)) win = r;
+      }
+      tune.save(tune.record(db, m, win.build.server, {
+        ubatch: win.row.ubatch, threads: win.row.threads || null, workload: workload.name,
+        prefill: win.row.prefill.tokPerSec, gen: win.row.gen.tokPerSec, seconds: win.seconds,
+      }));
+      // Settings typed by hand would otherwise outrank what was just measured.
+      const next = { ...loadConfig() };
+      delete next.ubatch; delete next.threads;
+      if (win.build.server !== activeExe) {
+        if (win.build.id) { next.backend = win.build.id; delete next.llamaServer; }
+        else { next.llamaServer = win.build.server; delete next.backend; }
+      }
+      saveConfig(next);
+
+      console.log(`  ${c.green("❯")} ${c.bold("use")}  ${win.build.server !== activeExe ? c.accent(win.build.id || win.build.kind) + " · " : ""}` +
+        `${c.accent("batch " + win.row.ubatch)}${win.row.threads ? " · " + c.accent(win.row.threads + " threads") : ""}`);
+      const was = current && current.before;
+      const gain = was && win.seconds < was ? 1 - win.seconds / was : 0;
+      console.log(`    ${c.dim(gain > 0.005
+        ? `${Math.round(gain * 100)}% less time per turn than the settings that were in use (${was.toFixed(1)} s → ${win.seconds.toFixed(1)} s)`
+        : "the settings already in use are the fastest measured (within 3% counts as a tie)")}`);
+      console.log(`    ${c.dim(`remembered for ${m.id} on this engine · applies the next time it loads · arcflare tune --clear to undo`)}\n`);
+      return;
+    }
+
     case "memory": {
       const want = argv[1];
       if (want) {
@@ -2009,9 +2176,7 @@ async function main() {
       const m = sel.model;
       if (!m) die("no models found");
       const pIdx = argv.indexOf("-p");
-      const budget = await planningBudget(cfg);
-      const { best } = contextChoices(m, budget);
-      const prep = await prepareModel(cfg, m, best.ctx, best.cacheType);
+      const prep = await loadBest(cfg, m);
       if (prep.failed) die("could not load the model");
       saveConfig({ ...cfg, lastModel: m.id });
       const prompt = pIdx > 0 ? argv.slice(pIdx + 1).join(" ") : null;
@@ -2139,6 +2304,28 @@ async function main() {
         [all.length > 0, "models", all.length ? `${all.length} ${c.dim("found")}` : c.dim("none: arcflare shop")],
       ]);
 
+      // What the machine has, and whether the engine in use is the one for it.
+      const hardware = require("../lib/hardware");
+      const hw = hardware.survey();
+      const tuned = Object.keys(require("../lib/tune").load().models).length;
+      block("hardware", [
+        [true, "cpu", c.dim(hardware.cpuLine(hw.cpu))],
+        ...(hw.gpus.length ? hw.gpus.map((g) => [true, "gpu", c.dim(g.name)]) : [[null, "gpu", c.dim("none found")]]),
+        [tuned ? true : null, "tuning", c.dim(tuned
+          ? `measured for ${tuned} model${tuned > 1 ? "s" : ""} · arcflare tune --show`
+          : "defaults in use · arcflare tune measures the fastest settings here")],
+      ]);
+      // Said in full under the table, which would cut a long line short.
+      if (!usesLmStudio(cfg)) {
+        const kind = exe ? (surveyed.find((b) => b.server === exe) || {}).kind || "unknown" : "none";
+        const tips = hardware.advice(hw, kind);
+        for (const t of tips) {
+          console.log(`  ${c.accent("!")} ${c.dim(t.text)}`);
+          console.log(`    ${c.accent(t.command)}`);
+        }
+        if (tips.length) console.log("");
+      }
+
       block("harnesses", harness.list().map((h) => [
         h.installed ? true : null,
         h.label,
@@ -2225,7 +2412,7 @@ async function main() {
       const exe = engine.findServer(cfg.llamaServer, cfg.backend);
       if (exe) console.log(`  ${c.green(ui.sym.ok)} llama-server ${c.dim(exe)}`);
       else console.log(`  ${c.red(ui.sym.fail)} llama.cpp isn't installed: ${c.accent("arcflare engine install")}`);
-      console.log(c.dim("  arcflare engine install [--vulkan|--cuda|--cpu|--rocm]   download llama.cpp for this machine"));
+      console.log(c.dim("  arcflare engine install [--vulkan|--cuda|--rocm|--sycl|--cpu]   download llama.cpp for this machine"));
       console.log(c.dim("  arcflare engine lmstudio [--lms <path>] [--port N]     run models in LM Studio instead"));
       return;
     }
