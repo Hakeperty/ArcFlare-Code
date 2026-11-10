@@ -148,6 +148,10 @@ test("the agent is told which of ArcFlare's tools are on, by exact id", () => {
   assert.match(desk, /## Desktop control is on/);
   assert.match(desk, /arcflare-desktop__screenshot/);
   assert.match(desk, /wait for a yes/);
+  const br = arcs.capabilityNotes(["arcflare__browser_open", "arcflare__browser_click", "arcflare__browser_type", "arcflare__browser_read", "arcflare__web_fetch", "arcflare__web_search"]);
+  assert.match(br, /## The browser is on/);
+  assert.match(br, /arcflare__browser_click {2}\{"target": "12"\}/);
+  assert.match(br, /nearly empty from arcflare__web_fetch/);
   assert.strictEqual(arcs.capabilityNotes([]), "");
   assert.strictEqual(arcs.capabilityNotes(["blender__render"]), "");
 
@@ -171,13 +175,15 @@ test("desktop control and the web switch on and off apart from the machine serve
 
   assert.strictEqual(run.serverParts({}), null);
   assert.deepStrictEqual(run.serverParts({ machine: false }), []);
-  assert.deepStrictEqual(run.serverParts({ machine: false, web: true }), ["web"]);
-  assert.deepStrictEqual(run.serverParts({ machine: false, desktop: true, web: true }), ["desktop", "open", "web"]);
+  // The web switch brings search, fetch and the headless browser together.
+  assert.deepStrictEqual(run.serverParts({ machine: false, web: true }), ["web", "browser"]);
+  assert.deepStrictEqual(run.serverParts({ machine: false, desktop: true, web: true }), ["desktop", "open", "web", "browser"]);
+  assert.ok(!run.serverParts({ machine: true, web: false }).includes("browser"));
   const noDesk = run.serverParts({ machine: true, desktop: false, web: true });
   assert.ok(noDesk.includes("run") && noDesk.includes("web") && !noDesk.includes("desktop"));
 
   const empty = { servers: {} };
-  assert.deepStrictEqual(run.withBuiltinServer(empty, { machine: false, web: true }).servers.arcflare.args.slice(1), ["--only", "web"]);
+  assert.deepStrictEqual(run.withBuiltinServer(empty, { machine: false, web: true }).servers.arcflare.args.slice(1), ["--only", "web,browser"]);
   assert.strictEqual(run.withBuiltinServer(empty, {}).servers.arcflare.args.length, 1);
   assert.strictEqual(Object.keys(run.withBuiltinServer(empty, { machine: false, web: false }).servers).length, 0);
 });

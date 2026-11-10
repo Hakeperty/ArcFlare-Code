@@ -42,11 +42,11 @@ test("ArcFlare's web and desktop servers are offered, off, and a configured serv
   const dir = tmp();
   const hub = new McpHub({ dir, builtins: true, load: () => ({ servers: { mine: { command: "x" } } }) });
   const list = hub.list();
-  assert.deepStrictEqual(list.map((s) => s.name), ["arcflare-desktop", "arcflare-web", "mine"]);
+  assert.deepStrictEqual(list.map((s) => s.name), ["arcflare-browser", "arcflare-desktop", "arcflare-web", "mine"]);
   assert.ok(list.every((s) => s.enabled === false && s.status === "off"));
-  assert.strictEqual(list[1].builtin, true);
-  assert.match(list[1].about, /Search the web/);
-  assert.strictEqual(list[2].builtin, false);
+  assert.strictEqual(list[2].builtin, true);
+  assert.match(list[2].about, /Search the web/);
+  assert.strictEqual(list[3].builtin, false);
   // Nothing about how a server is started reaches the phone.
   assert.doesNotMatch(JSON.stringify(list), /arcflare-mcp\.js|command|args/);
   // Without the option (as the tests of the hub itself run) there are none.
