@@ -1541,6 +1541,7 @@ function shopDetail(m, freeGb, url) {
   console.log("");
   if (plan.kind === "pull") console.log(`  ${c.dim("get it   ")} arcflare pull ${plan.ref}`);
   else if (plan.kind === "gen") console.log(`  ${c.dim("get it   ")} arcflare gen setup ${plan.id}   ${c.dim("then")} ${plan.use}`);
+  else if (plan.kind === "arc") console.log(`  ${c.dim("get it   ")} arcflare arcs pull ${plan.id}   ${c.dim("then")} ${plan.use}`);
   else console.log(`  ${c.dim("get it   ")} ${c.dim("no install command in the hub yet — see the model page")}`);
   console.log("");
 }
@@ -1662,6 +1663,7 @@ async function shopCommand(cfg, argv) {
       const action = await ui.select(m.name, [
         ...(plan.kind === "pull" ? [{ label: "Download it", hint: `arcflare pull ${plan.ref}`, value: "install" }] : []),
         ...(plan.kind === "gen" ? [{ label: "Set it up", hint: `arcflare gen setup ${plan.id}`, value: "install" }] : []),
+        ...(plan.kind === "arc" ? [{ label: "Download its base model", hint: `arcflare arcs pull ${plan.id}`, value: "install" }] : []),
         { label: "Open its page", hint: "in the browser", value: "open" },
         { label: "Back", value: "back" },
       ]);
