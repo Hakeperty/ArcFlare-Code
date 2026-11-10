@@ -19,7 +19,7 @@ test("only GET/POST/OPTIONS on the room's client endpoint reach the mailbox; eve
   // A fake cloudflared that prints an address, so the listener runs; then probe it directly.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-"));
   const fake = path.join(dir, "fake-cloudflared.js");
-  fs.writeFileSync(fake, "console.error('INF | https://abc-def.trycloudflare.com |'); setTimeout(() => {}, 30000);");
+  fs.writeFileSync(fake, "console.error('INF | https://abc-def.trycloudflare.com |'); console.error('INF Registered tunnel connection connIndex=0 protocol=quic'); setTimeout(() => {}, 30000);");
   const seen = [];
   const mailbox = { handle: (req, res, ip) => { seen.push([req.url, ip]); res.end("{}"); } };
   const urlFile = path.join(dir, "url.json");
@@ -75,7 +75,7 @@ test("a kept tunnel survives a hub restart: same address, same cloudflared; a de
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-keep-"));
   const fake = path.join(dir, "fake-cloudflared.js");
   // Each start prints a different address, so reuse is visible.
-  fs.writeFileSync(fake, "console.error('INF | https://run-' + process.pid + '.trycloudflare.com |'); setInterval(() => {}, 1000);");
+  fs.writeFileSync(fake, "console.error('INF | https://run-' + process.pid + '.trycloudflare.com |'); console.error('INF Registered tunnel connection connIndex=0 protocol=quic'); setInterval(() => {}, 1000);");
   const mailbox = { handle: (req, res) => res.end("{}") };
   const keepFile = path.join(dir, "cloudflared.json");
   const opts = { mailbox, roomId: ROOM, file: path.join(dir, "url.json"), keepFile, exe: process.execPath, prefixArgs: [fake], timeoutMs: 15000 };
@@ -99,4 +99,94 @@ test("a kept tunnel survives a hub restart: same address, same cloudflared; a de
   } finally { c.close(); }
   assert.strictEqual(cf.readKeep(keepFile), null, "a full close removes the kept tunnel");
   assert.strictEqual(cf.stopKept(keepFile), false);
+});
+
+// ---- An address is not a tunnel: the hub waits for a connection behind it. -------------------------------------
+// On Linux especially (a firewall that drops UDP, a resolver that will not answer for Cloudflare's tunnel servers),
+// Cloudflare hands out the address and cloudflared then never connects. The hub used to announce that as "on".
+
+const fakeIn = (dir, body) => { const f = path.join(dir, "fake-cloudflared.js"); fs.writeFileSync(f, body); return f; };
+const noReach = async () => ({ status: 530 });      // what Cloudflare answers for an address with no tunnel behind it
+
+test("when QUIC does not get through, cloudflared is started again over HTTP/2, and that is remembered", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-h2-"));
+  // Connects only when asked for HTTP/2, like a network that drops UDP.
+  const fake = fakeIn(dir, `
+    const h2 = process.argv.includes("http2");
+    console.error("INF | https://" + (h2 ? "over-http2" : "over-quic") + ".trycloudflare.com |");
+    if (h2) console.error("INF Registered tunnel connection connIndex=0 protocol=http2");
+    else console.error('ERR Failed to dial a quic connection error="failed to dial to edge with quic: timeout: no recent network activity"');
+    setInterval(() => {}, 1000);`);
+  const keepFile = path.join(dir, "cloudflared.json");
+  const logs = [], urls = [];
+  const opts = { mailbox: { handle: (q, r) => r.end("{}") }, roomId: ROOM, file: path.join(dir, "url.json"), keepFile,
+    exe: process.execPath, prefixArgs: [fake], connectMs: 400, timeoutMs: 20000, fetchImpl: noReach, log: (m) => logs.push(m), onUrl: (u) => urls.push(u) };
+  const t = await cf.startCloudflare(opts);
+  try {
+    assert.strictEqual(t.url, "https://over-http2.trycloudflare.com");
+    assert.strictEqual(t.mode, "http2");
+    // The address that never worked was never told to anyone.
+    assert.deepStrictEqual(urls, ["https://over-http2.trycloudflare.com"]);
+    assert.ok(logs.some((l) => /no connection to Cloudflare over QUIC; trying HTTP2/.test(l)), logs.join(" | "));
+    assert.strictEqual(cf.readKeep(keepFile).url, t.url);
+  } finally { t.close(); }
+  // Next start goes straight to HTTP/2 instead of waiting for QUIC to fail again.
+  const logs2 = [];
+  const again = await cf.startCloudflare({ ...opts, log: (m) => logs2.push(m) });
+  try {
+    assert.strictEqual(again.mode, "http2");
+    assert.ok(!logs2.some((l) => /trying HTTP2/.test(l)), logs2.join(" | "));
+  } finally { again.close(); }
+});
+
+test("when nothing connects, the hub is told why, and no address is published or left running", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-dead-"));
+  const fake = fakeIn(dir, `
+    console.error("INF | https://never-up.trycloudflare.com |");
+    console.error('ERR edge discovery: error looking up Cloudflare edge IPs: the DNS query failed error="lookup _v2-origintunneld._tcp.argotunnel.com on 8.8.8.8:53: no such host"');
+    setInterval(() => {}, 1000);`);
+  const keepFile = path.join(dir, "cloudflared.json");
+  const urlFile = path.join(dir, "url.json");
+  const urls = [];
+  await assert.rejects(
+    cf.startCloudflare({ mailbox: { handle: (q, r) => r.end("{}") }, roomId: ROOM, file: urlFile, keepFile, exe: process.execPath, prefixArgs: [fake],
+      connectMs: 300, timeoutMs: 20000, fetchImpl: noReach, onUrl: (u) => urls.push(u) }),
+    (e) => e.code === "CF_NOT_CONNECTED" && /could not connect to Cloudflare's network/.test(e.message) && /DNS does not answer for Cloudflare's tunnel servers/.test(e.message));
+  assert.deepStrictEqual(urls, []);
+  assert.strictEqual(cf.currentUrl(urlFile), null);
+  assert.strictEqual(cf.readKeep(keepFile), null);
+});
+
+test("a tunnel that works counts as up even if cloudflared words its log differently", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-quiet-"));
+  const fake = fakeIn(dir, `console.error("INF | https://quiet-one.trycloudflare.com |"); setInterval(() => {}, 1000);`);
+  const t = await cf.startCloudflare({ mailbox: { handle: (q, r) => r.end("{}") }, roomId: ROOM, exe: process.execPath, prefixArgs: [fake],
+    connectMs: 300, timeoutMs: 20000, fetchImpl: async () => ({ status: 200 }) });
+  try { assert.strictEqual(t.url, "https://quiet-one.trycloudflare.com"); } finally { t.close(); }
+});
+
+test("cloudflared's log is read for the address, the connection and the reason", () => {
+  // The API host in an error message is not the tunnel's address.
+  const failed = 'ERR failed to request quick Tunnel: Post "https://api.trycloudflare.com/tunnel": dial tcp: lookup api.trycloudflare.com: no such host';
+  assert.strictEqual(cf.readLog(failed).url, null);
+  assert.match(cf.readLog(failed).why, /could not reach Cloudflare to ask for an address/);
+  assert.match(cf.diagnose('failed to request quick Tunnel: 429 Too Many Requests'), /refusing new quick tunnels/);
+  const ok = "INF |  https://a-b-c.trycloudflare.com  |\nINF Registered tunnel connection connIndex=0 ip=198.41.200.13 location=arn02 protocol=quic";
+  assert.deepStrictEqual(cf.readLog(ok), { url: "https://a-b-c.trycloudflare.com", connected: true, why: null });
+  assert.match(cf.diagnose('failed to dial to edge with quic: timeout: no recent network activity'), /port 7844/);
+  assert.strictEqual(cf.diagnose("INF Starting tunnel"), null);
+  // And an address file holding the API host is not believed either.
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "cf-")), "u.json");
+  fs.writeFileSync(f, JSON.stringify({ url: "https://api.trycloudflare.com" }));
+  assert.strictEqual(cf.currentUrl(f), null);
+});
+
+test("a kept process is only reused or stopped if it really is cloudflared", { skip: process.platform !== "linux" }, () => {
+  // After a reboot the saved number belongs to something else: this test process, say.
+  assert.strictEqual(cf.pidAlive(process.pid), true);
+  assert.strictEqual(cf.isCloudflared(process.pid), false);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-pid-"));
+  const keepFile = path.join(dir, "cloudflared.json");
+  fs.writeFileSync(keepFile, JSON.stringify({ pid: process.pid, port: 1, url: "https://old-one.trycloudflare.com" }));
+  assert.strictEqual(cf.stopKept(keepFile), false, "it did not try to stop a process that is not cloudflared");
 });
