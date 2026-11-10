@@ -24,6 +24,9 @@ function parseArgs(argv) {
         i++;
       }
     }
+    else if (a === "desktop" || a === "web") o.preset = a;
+    else if (a === "--only") o.only = String(argv[++i] || "");
+    else if (a === "--without") o.without = String(argv[++i] || "");
     else if (a === "--tools" || a === "--list") o.print = true;
     else if (a === "--help" || a === "-h") o.help = true;
   }
@@ -37,6 +40,13 @@ function parseArgs(argv) {
 
 const HELP = `arcflare mcp — run ArcFlare's machine server on stdio
 
+  arcflare mcp           everything: commands, apps, screen, web, builds, Blender
+  arcflare mcp desktop   only the screen, mouse, keyboard, windows and clipboard
+  arcflare mcp web       only web search and reading pages
+
+  --only <a,b>   keep only these parts: run, open, desktop, web, check, blender,
+                 generate, phone
+  --without <a>  leave these parts out
   --root <dir>   restrict cwd to this directory (repeatable; default: anywhere)
   --cwd <dir>    default working directory for commands
   --no-open      disable the open, launch and desktop tools
@@ -45,6 +55,8 @@ const HELP = `arcflare mcp — run ArcFlare's machine server on stdio
 
   Add it to a client with:
     claude mcp add arcflare -- arcflare mcp
+    claude mcp add arcflare-desktop -- arcflare mcp desktop
+    claude mcp add arcflare-web -- arcflare mcp web
   or in mcp.json:
     { "mcpServers": { "arcflare": { "command": "arcflare", "args": ["mcp"] } } }
 `;

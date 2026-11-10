@@ -392,7 +392,11 @@ test("typed text is escaped so SendKeys syntax cannot fire by accident", () => {
 test("the desktop tools say what this platform supports", () => {
   const s = desktop.support();
   assert.strictEqual(typeof s.how, "string");
-  assert.strictEqual(s.ok, process.platform === "win32");
+  assert.strictEqual(typeof s.ok, "boolean");
+  // Windows always can. Linux can when there is an X display and xdotool; when
+  // it cannot, the reason is a sentence a person can act on.
+  if (process.platform === "win32") assert.strictEqual(s.ok, true);
+  if (!s.ok) assert.match(s.how, /display|xdotool|Wayland/);
 });
 
 // A caller's string becomes part of a PowerShell script, so the question is not
