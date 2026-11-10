@@ -218,3 +218,33 @@ test("the website's install.sh is valid POSIX sh", { skip: (() => {
   const r = spawnSync("sh", ["-n", p], { encoding: "utf8" });
   assert.strictEqual(r.status, 0, r.stderr);
 });
+
+// ---- Which projector, and which copy, a vision repo gives ----
+
+test("pickFiles takes the full-resolution projector, not a downsampled one that sorts first", () => {
+  const sib = (names) => names.map((rfilename) => ({ rfilename }));
+  // openbmb's MiniCPM-V layout: the card recommends mmproj-model-f16, and "-4x" sorts before it.
+  const minicpm = hf.pickFiles(sib(["MiniCPM-V-4_7-35B-A3B-Q4_K_M.gguf", "mmproj-model-f16-4x.gguf", "mmproj-model-f16.gguf"]), "Q4_K_M");
+  assert.strictEqual(minicpm.mmproj.rfilename, "mmproj-model-f16.gguf");
+  // A repo whose only projector is downsampled (MiniCPM-OCR) still gets it.
+  const ocr = hf.pickFiles(sib(["MiniCPM-OCR-1_0-Q4_K_M.gguf", "mmproj-model-f16-4x.gguf"]), "Q4_K_M");
+  assert.strictEqual(ocr.mmproj.rfilename, "mmproj-model-f16-4x.gguf");
+  // The order that held before: BF16, then F16, then F32, then anything.
+  assert.strictEqual(hf.pickFiles(sib(["m-Q4_K_M.gguf", "mmproj-F32.gguf", "mmproj-F16.gguf", "mmproj-BF16.gguf"]), "Q4_K_M").mmproj.rfilename, "mmproj-BF16.gguf");
+  assert.strictEqual(hf.pickFiles(sib(["m-Q4_K_M.gguf", "mmproj-F32.gguf", "mmproj-F16.gguf"]), "Q4_K_M").mmproj.rfilename, "mmproj-F16.gguf");
+  assert.strictEqual(hf.pickFiles(sib(["m-Q4_K_M.gguf", "mmproj-Q8_0.gguf", "mmproj-F32.gguf"]), "Q4_K_M").mmproj.rfilename, "mmproj-F32.gguf");
+  assert.strictEqual(hf.pickFiles(sib(["m-Q4_K_M.gguf", "mmproj-Q8_0.gguf"]), "Q4_K_M").mmproj.rfilename, "mmproj-Q8_0.gguf");
+  assert.strictEqual(hf.pickFiles(sib(["m-Q4_K_M.gguf"]), "Q4_K_M").mmproj, null);
+});
+
+test("pickFiles prefers the copy at the repo root over a copy in a subfolder", () => {
+  const sib = (names) => names.map((rfilename) => ({ rfilename }));
+  // A repo that keeps a thinking-enabled copy of every quant in a folder: listing order must not decide.
+  const r = hf.pickFiles(sib(["thinking/Model-Q4_K_M.gguf", "Model-Q4_K_M.gguf"]), "Q4_K_M");
+  assert.deepStrictEqual(r.files.map((f) => f.rfilename), ["Model-Q4_K_M.gguf"]);
+  const d = hf.pickFiles(sib(["thinking/Model-Q4_K_M.gguf", "Model-Q4_K_M.gguf"]), "");
+  assert.deepStrictEqual(d.files.map((f) => f.rfilename), ["Model-Q4_K_M.gguf"]);
+  // Only in a subfolder: still found (a sharded model kept in its own folder).
+  const s = hf.pickFiles(sib(["Q4_K-GGUF/M-Q4_K-00001-of-00002.gguf", "Q4_K-GGUF/M-Q4_K-00002-of-00002.gguf"]), "Q4_K");
+  assert.strictEqual(s.files.length, 2);
+});
