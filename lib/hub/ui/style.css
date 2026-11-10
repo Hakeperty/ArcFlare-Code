@@ -320,6 +320,8 @@ button { font: inherit; color: inherit; }
   gap: 12px;
 }
 #dash-skeleton, #dev-skeleton, #session-list { padding-bottom: 0; }
+/* Room to scroll the last agent card clear of the round New agent button. */
+#view-dashboard { padding-bottom: 96px; }
 .card {
   position: relative;
   background: var(--surface);
@@ -898,7 +900,8 @@ progress.load-bar::-moz-progress-bar { background: var(--accent-bright); border-
 @keyframes typing { 0%, 60%, 100% { transform: none; opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
 
 .msg-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; font-size: 12px; line-height: 16px; color: var(--muted-2); }
-.msg-meta span + span::before { content: "·"; margin: 0 6px; color: var(--border-strong); }
+/* The dot follows its item, so a wrapped line never starts with one. */
+.msg-meta span:not(:last-child)::after { content: "·"; margin: 0 6px; color: var(--border-strong); }
 .msg-meta .meta-model { color: var(--muted); font-weight: 600; }
 .msg-meta .meta-speed { color: var(--accent-ink); font-family: var(--mono); }
 .msg-meta .meta-stopped { color: var(--danger); }
