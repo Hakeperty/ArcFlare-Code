@@ -737,11 +737,19 @@ model clicks and types by number. The profile is a fresh temporary folder each t
 cookies, no sign-ins. It can open pages on this machine, so it is also how an agent
 looks at the app it just built.
 
-**Desktop control** uses PowerShell and user32 on Windows; `xdotool` plus ImageMagick,
-maim, scrot or gnome-screenshot on Linux (X11; on Wayland only XWayland windows respond);
-and `screencapture` and `osascript` on macOS, which needs Accessibility and Screen
-Recording permission. The Linux path is tested against a real X display; the macOS path
-has not been run on a Mac yet.
+**Desktop control** uses PowerShell and user32 on Windows; on Linux with X11, `xdotool`
+plus ImageMagick, maim, scrot or gnome-screenshot; on Linux with Wayland, `grim`, `wtype`
+and `wlrctl` (plus `swaymsg` or `hyprctl` when you run sway or Hyprland); and
+`screencapture` and `osascript` on macOS, which needs Accessibility and Screen Recording
+permission.
+
+Wayland works on sway, Hyprland and the other wlroots compositors, which let one program
+see and control another. Dragging needs sway; on the others, click, scroll, typing and
+windows work. GNOME and KDE do not allow it on Wayland at all, so there ArcFlare reaches
+only XWayland windows, and `arcflare doctor` says to log in to the X11 session for full
+control. The X11 and sway paths are tested against real sessions; mouse clicks on
+Wayland were not verifiable in a sandbox without a mouse, and the macOS path has not been
+run on a Mac yet.
 
 **A verdict, then the evidence.** Any harness can already run `npm test`. What
 it cannot do is read the result on a small context budget: 900 lines of TAP, of
