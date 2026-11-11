@@ -239,7 +239,7 @@
    "license": "Stellon Labs Community",
    "commercial": true,
    "restriction": null,
-   "licenseNote": "Free for research, non-commercial and limited commercial use. The commercial grant ends above USD 1M in annual revenue or total funding; past that, a separate licence from Stellon Labs is needed. Distributing the weights or a product built on them requires attribution.",
+   "licenseNote": "Free for research, non-commercial and limited commercial use. Commercial use requires registering with Stellon Labs first, and the commercial grant ends above USD 1M in annual revenue or total funding; past that, a separate licence is needed. Distributing the weights or a product built on them requires the licence, a Notice file and \"Powered by KittenML\" shown in the product or its docs.",
    "licenseUrl": "https://huggingface.co/KittenML/kitten-tts-2/blob/main/LICENSE.md",
    "defaultSize": "1.7B",
    "vram": "~4 GB",
@@ -710,7 +710,7 @@
   {
    "slug": "qwen3-coder-abliterated",
    "name": "qwen3-coder-abliterated",
-   "author": "huihui-ai (from Alibaba Qwen)",
+   "author": "huihui-ai (from Alibaba Qwen, quants by mradermacher)",
    "description": "Qwen3-Coder 30B-A3B, abliterated: Qwen's agentic coding MoE with refusals removed. The same coder, for security research and red-team tooling.",
    "category": "Code",
    "tags": [
@@ -752,7 +752,7 @@
   {
    "slug": "qwen3.5-9b-abliterated",
    "name": "qwen3.5-9b-abliterated",
-   "author": "huihui-ai (from Alibaba Qwen)",
+   "author": "huihui-ai (from Alibaba Qwen, quants by mradermacher)",
    "description": "Qwen3.5-9B, abliterated: Qwen's 9B with refusals removed. Fits an 8 GB card.",
    "category": "Chat",
    "tags": [
@@ -792,7 +792,7 @@
   {
    "slug": "qwen3.5-4b-abliterated",
    "name": "qwen3.5-4b-abliterated",
-   "author": "huihui-ai (from Alibaba Qwen)",
+   "author": "huihui-ai (from Alibaba Qwen, quants by mradermacher)",
    "description": "Qwen3.5-4B, abliterated: Qwen's 4B with refusals removed. Runs on a laptop GPU, or slowly on the CPU.",
    "category": "Chat",
    "tags": [
@@ -1038,7 +1038,7 @@
   {
    "slug": "qwen3-4b-abliterated",
    "name": "qwen3-4b-abliterated",
-   "author": "huihui-ai (from Alibaba Qwen)",
+   "author": "huihui-ai (from Alibaba Qwen, quants by mradermacher)",
    "description": "Qwen3-4B-Instruct-2507, abliterated: Qwen's small non-thinking model with refusals removed. Runs almost anywhere.",
    "category": "Chat",
    "tags": [
@@ -1117,7 +1117,7 @@
   {
    "slug": "mistral-small3.2-abliterated",
    "name": "mistral-small3.2-abliterated",
-   "author": "huihui-ai (from Mistral AI)",
+   "author": "huihui-ai (from Mistral AI, quants by mradermacher)",
    "description": "Mistral Small 3.2 24B, abliterated: Mistral's 24B instruct model with refusals removed. Fits a 16-24 GB card.",
    "category": "Chat",
    "tags": [
@@ -2059,7 +2059,7 @@
   {
    "slug": "deepseek-v4.1-flash",
    "name": "deepseek-v4.1-flash",
-   "author": "DeepSeek",
+   "author": "DeepSeek (quants by ISTA-DASLab)",
    "description": "DeepSeek-V4.1-Flash-1017: DeepSeek's agentic coding MoE with a 1M-token window. Even the expert-pruned 2-bit coder build is 72 GB. MIT.",
    "category": "Code",
    "tags": [
@@ -2470,11 +2470,11 @@
     "multilingual"
    ],
    "updated": "2024-12-05",
-   "license": "MIT",
+   "license": "Apache-2.0",
    "commercial": true,
    "restriction": null,
-   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
-   "licenseUrl": "https://opensource.org/license/mit",
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "1.5B",
    "vram": "~6 GB",
    "run": "arcflare run whisper",
@@ -2599,7 +2599,7 @@
    "license": "Stability AI Community",
    "commercial": true,
    "restriction": null,
-   "licenseNote": "Free for research and for commercial use by smaller organizations; larger organizations need a paid license.",
+   "licenseNote": "Free for research, non-commercial use, and commercial use by individuals and organizations under USD 1M in annual revenue; above that, a paid Stability AI licence is needed.",
    "licenseUrl": "https://stability.ai/license",
    "defaultSize": "8B",
    "vram": "~16 GB",
@@ -5266,7 +5266,7 @@
   {
    "slug": "ripple-65b-preview",
    "name": "ripple-65b-preview",
-   "author": "Ricursive Intelligence",
+   "author": "Ricursive Intelligence (quants by AtomicChat)",
    "description": "Ripple-65B Preview: a 65B dense model trained from scratch on 12T tokens and post-trained for agentic coding. A preview release.",
    "category": "Code",
    "tags": [
@@ -5591,7 +5591,7 @@
   {
    "slug": "minicpm-v-4.7-uncensored",
    "name": "minicpm-v-4.7-uncensored",
-   "author": "AtomicChat (from OpenBMB)",
+   "author": "AtomicChat (uncensored tune of OpenBMB's MiniCPM-V 4.7)",
    "description": "MiniCPM-V 4.7 35B-A3B, uncensored: OpenBMB's vision-language mixture-of-experts model with its refusal direction projected out. About 3B parameters active per token.",
    "category": "Vision",
    "tags": [
@@ -6041,7 +6041,7 @@
   {
    "slug": "cyber-ornith-1.5-9b",
    "name": "cyber-ornith-1.5-9b",
-   "author": "DuoNeural (from Ornith, quants by mradermacher)",
+   "author": "DuoNeural (from Ornith)",
    "description": "Cyber-Ornith 1.5 9B: an abliterated Ornith-1.5 9B tuned on terminal, tool-call and security trajectories, for exploit triage, vulnerability auditing and command-line work. A reasoning model.",
    "category": "Chat",
    "tags": [
@@ -6060,7 +6060,7 @@
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "9B",
    "vram": "~8 GB",
-   "run": "arcflare pull mradermacher/Cyber-Ornith-1.5-9B-OBLITERATED-i1-GGUF:i1-Q4_K_M",
+   "run": "arcflare pull DuoNeural/Cyber-Ornith-1.5-9B-OBLITERATED-GGUF:Q4_K_M",
    "runnable": true,
    "featured": false,
    "homepage": "https://huggingface.co/DuoNeural/Cyber-Ornith-1.5-9B-OBLITERATED",
@@ -6083,7 +6083,7 @@
   {
    "slug": "gpt-oss-cybersecurity-20b-heretic",
    "name": "gpt-oss-cybersecurity-20b-heretic",
-   "author": "piotreknow02 (from OpenAI gpt-oss, quants by mradermacher)",
+   "author": "piotreknow02 (from sainikhiljuluri2015's tune of OpenAI gpt-oss, quants by mradermacher)",
    "description": "GPT-OSS Cybersecurity 20B, heretic: gpt-oss-20b tuned as a cybersecurity assistant (threat analysis, alert triage, incident response, ATT&CK mapping), then de-censored with the Heretic tool. About 3.6B parameters active.",
    "category": "Chat",
    "tags": [
@@ -6184,7 +6184,7 @@
    "run": "arcflare pull IMPERUM/Imperum-CybersecurityLLM-v1.0-GGUF:Q4_K_M",
    "runnable": true,
    "featured": false,
-   "homepage": "https://huggingface.co/IMPERUM/Imperum-CybersecurityLLM-v1.0",
+   "homepage": "https://huggingface.co/IMPERUM/Imperum-CybersecurityLLM-v1.0-GGUF",
    "url": "https://arcflare.net/models/imperum-cybersecurity-v1",
    "versions": [
     {
