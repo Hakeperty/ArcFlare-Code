@@ -151,6 +151,22 @@ test("budget reserves room for the reply", () => {
 
 // ---------------------------------------------------------------- skills ----
 
+test("a skill switched off is not offered, stays on disk, and comes back when switched on", () => {
+  const d = tmpdir("skills-off");
+  const sk = path.join(d, ".arcflare", "skills", "deploy");
+  fs.mkdirSync(sk, { recursive: true });
+  fs.writeFileSync(path.join(sk, "SKILL.md"), "---\nname: deploy\ndescription: How to deploy\n---\nbody\n");
+  const home = path.join(d, "home");
+  const names = (o) => skills.discover(d, { home, ...o }).filter((s) => s.dir.startsWith(d)).map((s) => `${s.name}:${s.enabled}`);
+  assert.deepStrictEqual(names(), ["deploy:true"]);
+  skills.setEnabled("deploy", false, home);
+  assert.deepStrictEqual(names(), []);
+  assert.deepStrictEqual(names({ all: true }), ["deploy:false"]);
+  assert.ok(fs.existsSync(path.join(sk, "SKILL.md")));
+  skills.setEnabled("deploy", true, home);
+  assert.deepStrictEqual(names(), ["deploy:true"]);
+});
+
 test("skills are indexed without reading their bodies", () => {
   const d = tmpdir("skills");
   const sk = path.join(d, ".arcflare", "skills", "deploy");
