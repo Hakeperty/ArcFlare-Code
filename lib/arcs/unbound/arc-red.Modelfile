@@ -3,7 +3,7 @@
 # arcflare: description The offensive-security counterpart of Arc Sentinel, for authorised testing, CTFs and lab work, on a third-party abliterated base. Its refusals were removed by community members, not the original authors.
 # arcflare: side abliterated
 # arcflare: group security
-# arcflare: base cyber-ornith-1.5-9b mradermacher/Cyber-Ornith-1.5-9B-OBLITERATED-i1-GGUF:i1-Q4_K_M 8GB Apache-2.0
+# arcflare: base cyber-ornith-1.5-9b DuoNeural/Cyber-Ornith-1.5-9B-OBLITERATED-GGUF:Q4_K_M 8GB Apache-2.0
 # arcflare: base qwen3.8-27b-abliterated-cyber-preview hotdogs/Qwen3.8-27B-abliterated-cyber-preview-MTP-GGUF:Q4_K_M 20GB Apache-2.0
 # arcflare: base cyberstrike-offsec-35b-abliterated huihui-ai/Huihui-CyberStrike-OffSec-35B-abliterated-GGUF:Q4_K 25GB Apache-2.0
 
