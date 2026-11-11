@@ -2028,7 +2028,8 @@ async function main() {
         rc: argv.includes("--rc"),
         system: got ? require("../lib/arcs").compose(got.arc, { surface: "chat" }) || null : null,
         label: got ? got.arc.name : null,
-        sampling: got ? got.arc.sampling : null,
+        // Same rule as the agent: what the model file declares (its authors' tuning, top_k included) beats the Arc's general setting.
+        sampling: got ? { ...(got.arc.sampling || {}), ...((models.loadMeta(m) || {}).sampling || {}) } : null,
       });
       return;
     }
