@@ -1,0 +1,65 @@
+# Starts the real hub on Linux (the installers workflow only runs `arcflare --version`) and checks that it
+# answers. The ArcFlare Connect part needs Cloudflare to be reachable from the runner, so it may fail
+# without failing the job.
+name: hub-linux
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["lib/hub/**", "bin/**", ".github/workflows/hub-linux.yml"]
+  push:
+    branches: [main]
+    paths: ["lib/hub/**", "bin/**", ".github/workflows/hub-linux.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  hub:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ARCFLARE_HOME: /tmp/arcflare-home
+      HUB_LOG: /tmp/hub.log
+      HUB_PORT: 7878
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Before the hub starts, so it finds cloudflared; a failure here only costs the optional step below.
+      - name: Install cloudflared (optional)
+        continue-on-error: true
+        run: node bin/arcflare.js phone connect install
+
+      - name: Start the hub
+        run: |
+          echo "ci-password-123" | node bin/arcflare.js phone user add ci --password-stdin
+          nohup node bin/arcflare.js phone --port "$HUB_PORT" --no-qr > "$HUB_LOG" 2>&1 &
+          echo $! > "/tmp/hub.pid"
+
+      - name: Hub answers on localhost
+        run: |
+          for i in $(seq 30); do
+            curl -fsS -o /dev/null "http://127.0.0.1:$HUB_PORT/" && { echo "hub answered after ~$i s"; exit 0; }
+            sleep 1
+          done
+          echo "hub did not answer within 30 s; its log:"; cat "$HUB_LOG"; exit 1
+
+      - name: ArcFlare Connect address answers (optional)
+        continue-on-error: true
+        run: |
+          f="$ARCFLARE_HOME/hub/cloudflare-url.json"
+          for i in $(seq 45); do [ -s "$f" ] && break; sleep 2; done
+          url=$(node -p "require('$f').url")
+          echo "ArcFlare Connect address: $url"
+          # Any answer from the hub's phone listener counts (404 for a path it does not serve); 530 means Cloudflare has no tunnel behind it.
+          curl -sS -o /dev/null -m 20 -w "HTTP %{http_code}\n" "$url/"
+
+      - name: Hub log, and stop the hub
+        if: always()
+        run: |
+          cat "$HUB_LOG" || true
+          kill "$(cat "/tmp/hub.pid")" || true
+          node bin/arcflare.js phone connect off || true
