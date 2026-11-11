@@ -1616,8 +1616,8 @@ async function storeCommand(cfg, argv) {
   const shelf = { skill: "skills", skills: "skills", mcp: "mcp", servers: "mcp", tools: "mcp", model: "models", models: "models" }[rest[0]] || null;
   if (shelf === "models") return shopCommand(cfg, ["shop", ...rest.slice(1)]);
 
-  const { data, source } = await store.load({ cfg, refresh: rest.includes("--refresh") });
-  const from = source === "live" ? c.dim("live from arcflare.net") : source === "cache" ? c.accent("offline · the last saved copy") : c.dim("the copy that ships with ArcFlare");
+  const { data, source, url: storeUrl } = await store.load({ cfg, refresh: rest.includes("--refresh") });
+  const from = source === "live" ? c.dim(`live from ${String(storeUrl || "").replace(/^https?:\/\//, "")}`) : source === "cache" ? c.accent("offline · the last saved copy") : c.dim("the copy that ships with ArcFlare");
   const yes = rest.includes("--yes") || rest.includes("-y");
   const words = rest.slice(shelf ? 1 : 0).filter((a) => !a.startsWith("-"));
   const onPath = require("../lib/mcp/apps").onPath;
