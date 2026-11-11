@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "updated": "2026-11-11",
+  "skills": [
+    { "id": "code-review", "category": "code", "uses": [] },
+    { "id": "write-tests", "category": "code", "uses": [] },
+    { "id": "debug", "category": "code", "uses": [] },
+    { "id": "refactor", "category": "code", "uses": [] },
+    { "id": "explain-codebase", "category": "code", "uses": [] },
+    { "id": "git-commit", "category": "project", "uses": [] },
+    { "id": "readme", "category": "project", "uses": [] },
+    { "id": "release-notes", "category": "project", "uses": [] },
+    { "id": "security-review", "category": "security", "uses": [] },
+    { "id": "web-research", "category": "web", "uses": ["web", "browser"] },
+    { "id": "check-web-app", "category": "web", "uses": ["machine", "browser"] },
+    { "id": "desktop-task", "category": "desktop", "uses": ["desktop"] }
+  ],
+  "mcp": [
+    {
+      "id": "arcflare", "name": "ArcFlare machine server", "by": "ArcFlare", "ours": true, "part": null,
+      "description": "Everything: run and supervise commands, build and test with a verdict, open apps, desktop control, the web, the browser, Blender, 3D and speech."
+    },
+    {
+      "id": "arcflare-desktop", "name": "ArcFlare desktop control", "by": "ArcFlare", "ours": true, "part": "desktop",
+      "description": "See the screen and use the mouse and keyboard: screenshot, mouse, type, key, windows, focus, clipboard. Windows, Linux (X11) and macOS."
+    },
+    {
+      "id": "arcflare-web", "name": "ArcFlare web", "by": "ArcFlare", "ours": true, "part": "web",
+      "description": "Search the web and read a page as text. No browser needed; public internet only."
+    },
+    {
+      "id": "arcflare-browser", "name": "ArcFlare browser", "by": "ArcFlare", "ours": true, "part": "browser",
+      "description": "A real browser with no window: pages built by JavaScript, clicks and forms. Uses the Chrome, Chromium, Edge or Brave already on the computer."
+    },
+    {
+      "id": "filesystem", "name": "Filesystem", "by": "Model Context Protocol", "ours": false,
+      "description": "Read, write and search files inside the folders you name. The reference server from the MCP project.",
+      "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem"], "needs": "npx",
+      "argument": { "name": "folder", "about": "the folder it may use (repeat for more)", "required": true },
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem"
+    },
+    {
+      "id": "memory", "name": "Memory", "by": "Model Context Protocol", "ours": false,
+      "description": "A small knowledge graph the model can write to and read back in later sessions. The reference server from the MCP project.",
+      "command": "npx", "args": ["-y", "@modelcontextprotocol/server-memory"], "needs": "npx",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory"
+    },
+    {
+      "id": "sequential-thinking", "name": "Sequential thinking", "by": "Model Context Protocol", "ours": false,
+      "description": "A scratchpad for working a problem through in numbered, revisable steps. The reference server from the MCP project.",
+      "command": "npx", "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"], "needs": "npx",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking"
+    },
+    {
+      "id": "git", "name": "Git", "by": "Model Context Protocol", "ours": false,
+      "description": "Read and search a Git repository: status, diff, log, blame, and commits. The reference server from the MCP project.",
+      "command": "uvx", "args": ["mcp-server-git"], "needs": "uvx",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/git"
+    },
+    {
+      "id": "time", "name": "Time", "by": "Model Context Protocol", "ours": false,
+      "description": "The current time, and conversion between time zones. The reference server from the MCP project.",
+      "command": "uvx", "args": ["mcp-server-time"], "needs": "uvx",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/time"
+    },
+    {
+      "id": "playwright", "name": "Playwright", "by": "Microsoft", "ours": false,
+      "description": "Microsoft's browser automation server: a fuller alternative to ArcFlare's browser, with its own downloaded browsers.",
+      "command": "npx", "args": ["-y", "@playwright/mcp@latest"], "needs": "npx",
+      "homepage": "https://github.com/microsoft/playwright-mcp"
+    },
+    {
+      "id": "context7", "name": "Context7", "by": "Upstash", "ours": false,
+      "description": "Up-to-date documentation and code examples for libraries, fetched from Context7's service.",
+      "command": "npx", "args": ["-y", "@upstash/context7-mcp"], "needs": "npx",
+      "homepage": "https://github.com/upstash/context7"
+    },
+    {
+      "id": "blender", "name": "Blender MCP", "by": "ahujasid", "ours": false,
+      "description": "Model, sculpt and render in a running Blender. Needs Blender open with the blender-mcp addon; ArcFlare's machine server can start it (blender_launch).",
+      "command": "uvx", "args": ["blender-mcp"], "needs": "uvx",
+      "homepage": "https://github.com/ahujasid/blender-mcp"
+    }
+  ]
+}

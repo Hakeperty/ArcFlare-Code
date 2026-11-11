@@ -189,6 +189,63 @@ ArcFlare says so rather than waiting for a server that cannot start.
   qwen3.8-27b:ud-q5_k_m       Q5_K_M · 18.4 GB · 256K ctx
 ```
 
+## Arcs
+
+Arcs are ArcFlare's own models. Each one is a **Modelfile**, in the format Ollama uses: an
+open base model, how to sample from it, and the instructions it works under.
+
+```
+FROM unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M
+PARAMETER temperature 0.4
+PARAMETER top_p 0.9
+SYSTEM """ArcFlare's instructions for this Arc. They are not published."""
+```
+
+```bash
+arcflare arcs                  # the Arcs: which are ready, and what each runs on
+arcflare arcs pull arc-code    # download the base that fits this GPU
+arcflare run arc-code          # chat with it
+arcflare agent arc-code        # or run the coding agent as it
+arcflare show arc-code         # its Modelfile
+arcflare arcs use arc          # put an Arc's instructions on every model you run
+```
+
+| Arc | For |
+| --- | --- |
+| `arc` | Everyday assistant |
+| `arc-think` | Careful reasoning |
+| `arc-code` | Coding agent |
+| `arc-desk` | Operates the desktop, through desktop control |
+| `arc-scout` | Web research, through the web tools and the browser |
+| `arc-studio` | Images, 3D and speech |
+| `arc-sentinel` | Defensive security |
+| `arc-unbound`, `arc-code-unbound`, `arc-red` | On abliterated bases, behind the same notice as every abliterated build |
+
+One name has to work on a laptop and on a workstation, so an Arc lists several bases
+(`# arcflare: base` lines in its Modelfile) and ArcFlare runs the largest that fits the
+memory that is free. Every base is Apache-2.0 or MIT: the licences that allow a model to be
+set up and offered this way. The weights are not changed.
+
+The Modelfiles in `lib/arcs` carry a short set of instructions that works alone. The full
+ones are fetched from arcflare.net, kept packed in `~/.arcflare/arcs.dat`, never printed and
+never saved into a session. The model is told to keep them to itself, and also never to hide
+what it is. That is discretion, not encryption: a model that runs on your machine has its
+instructions on your machine.
+
+### Your own
+
+```bash
+arcflare create pirate -f Modelfile     # FROM, PARAMETER, SYSTEM
+arcflare run pirate
+arcflare arcs rm pirate
+```
+
+`FROM` is a Hugging Face GGUF repo (`owner/repo:QUANT`) or the name of a model already in
+`arcflare ls`. `PARAMETER` takes `temperature`, `top_p`, `top_k`, `min_p`, `repeat_penalty`,
+`presence_penalty`, `frequency_penalty`, `seed`, `num_predict` and `stop`. `TEMPLATE` and
+`ADAPTER` are read and reported as unsupported: the chat template comes from the GGUF.
+Your instructions are used exactly as written, and `arcflare show` prints them.
+
 ## Context sizing
 
 ArcFlare reads each model's GGUF header and works out what a given context
@@ -638,15 +695,53 @@ claude mcp add arcflare -- arcflare mcp      # Claude Code
 arcflare mcp --install                       # or ~/.arcflare/mcp.json
 ```
 
-Twenty-six tools in five groups:
+Its tools, in groups:
 
 | Group | Tools | |
 | --- | --- | --- |
 | Run | `run` `start` `logs` `input` `stop` `ps` | a command that finishes, or one that does not |
 | Open | `open` `launch` `apps` `sysinfo` | a file or URL, an app by name, what the machine has |
-| See and touch | `screenshot` `mouse` `type` `key` `windows` `focus` `clipboard` | eyes and hands on the desktop |
+| See and touch | `screenshot` `mouse` `type` `key` `windows` `focus` `clipboard` | eyes and hands on the desktop (Windows, Linux with X11, macOS) |
+| Web | `web_search` `web_fetch` | search the web, and read one page as text |
+| Browser | `browser_open` `browser_read` `browser_click` `browser_type` `browser_back` `browser_screenshot` `browser_close` | a real browser with no window: pages built by JavaScript, clicks, forms |
 | Test | `project` `build` `test` `smoke` `http` | what a directory is, and whether what it built works |
 | Blender | `blender` `blender_launch` `blender_run` `blender_render` | find it, start it, and work without a window |
+
+**One part at a time.** The whole server is a lot to give a client that only
+needs the screen or the web. Three parts run as servers of their own, and any
+part can be kept or left out by name:
+
+```bash
+arcflare mcp desktop            # arcflare-desktop: screen, mouse, keyboard, windows, clipboard
+arcflare mcp web                # arcflare-web: web_search and web_fetch
+arcflare mcp browser            # arcflare-browser: the headless browser
+arcflare mcp --only run,check   # parts: run open desktop web browser check blender generate phone
+arcflare mcp --without desktop
+```
+
+In ArcFlare's own agent each has a switch (`arcflare mcp enable|disable desktop|web`,
+or `--no-web` / `--no-desktop` for one run; the web switch covers the browser too), and
+the agent's system prompt names the ones that are on with their exact tool ids, so a
+model does not have to discover that it can browse. The phone's Tools screen lists the
+three as servers an owner can switch on.
+
+**The web tools** reach the public internet only: an address on this machine or this
+network is refused, at every redirect. `web_fetch` returns headings, paragraphs, lists
+and code, with links numbered, in parts for a long page. Set `ARCFLARE_SEARCH_URL` to a
+SearXNG instance to send searches to your own server.
+
+**The browser** drives a Chrome, Chromium, Edge or Brave already on the machine over the
+DevTools protocol (Node 22 or newer; `ARCFLARE_CHROME` names one outright). A page comes
+back as its text plus a numbered list of the links, buttons and fields on it, and the
+model clicks and types by number. The profile is a fresh temporary folder each time: no
+cookies, no sign-ins. It can open pages on this machine, so it is also how an agent
+looks at the app it just built.
+
+**Desktop control** uses PowerShell and user32 on Windows; `xdotool` plus ImageMagick,
+maim, scrot or gnome-screenshot on Linux (X11; on Wayland only XWayland windows respond);
+and `screencapture` and `osascript` on macOS, which needs Accessibility and Screen
+Recording permission. The Linux path is tested against a real X display; the macOS path
+has not been run on a Mac yet.
 
 **A verdict, then the evidence.** Any harness can already run `npm test`. What
 it cannot do is read the result on a small context budget: 900 lines of TAP, of
@@ -894,6 +989,38 @@ request skips start-up and loading. It holds one model at a time, unloads
 after 10 idle minutes and exits after 30, so idle generators give VRAM back.
 The CLI still runs one-shot. `generate()` and `speak()` take the pool as a
 `runner`.
+
+## The store
+
+`arcflare store` is one place for the three things you add to ArcFlare: skills, MCP
+servers and models.
+
+```bash
+arcflare store                          # a menu: skills, MCP servers, models, Arcs
+arcflare store skills                   # list; add <name> · add all · show <name> · rm <name>
+arcflare store skills add code-review debug
+arcflare store mcp                      # list; add <name> [arguments] · rm <name>
+arcflare store mcp add filesystem ~/projects
+arcflare store models                   # the hub (arcflare shop)
+```
+
+**Skills** are instructions the agent loads when a task calls for one: `code-review`,
+`write-tests`, `debug`, `refactor`, `explain-codebase`, `git-commit`, `readme`,
+`release-notes`, `security-review`, `web-research`, `check-web-app` and `desktop-task`.
+Adding one copies its `SKILL.md` into `~/.arcflare/skills`, where the agent already looks.
+A skill you wrote yourself under the same name is never overwritten or removed.
+
+**MCP servers** give the agent tools. ArcFlare's own four (`arcflare`, `arcflare-desktop`,
+`arcflare-web`, `arcflare-browser`) are parts of this program. The others (filesystem,
+memory, sequential-thinking, git, time, Playwright, Context7, Blender) are made by other
+people and run with `npx` or `uvx`. Adding one writes its start command into
+`~/.arcflare/mcp.json`, which is where the agent, the phone hub and the desktop app look.
+Before a third-party server is added the store shows who makes it and the exact command
+that will run, and asks; in a script, pass `--yes`.
+
+The catalogue ships with ArcFlare (`lib/store`), so the store works offline, and is
+refreshed from arcflare.net when that answers. What comes from the network is held to a
+launcher and a package name: an entry that wants a shell is dropped.
 
 ## The shop
 

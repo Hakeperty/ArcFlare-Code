@@ -97,7 +97,8 @@ test("the hub process: LAN mailbox on by default, off with --local", async () =>
 
 test("pair puts the RUNNING hub's port in the link, and says when no hub is running", async (t) => {
   const { lanAddresses } = require("../lib/hub/cli");
-  if (!lanAddresses().length) return t.skip("this machine has no LAN address to build a link from");
+  const { isLanHost } = require("../lib/hub/tunnel");
+  if (!lanAddresses().some((a) => isLanHost(a))) return t.skip("this machine has no home-network address to build a link from");
   const home = mkHome();
   try {
     assert.strictEqual(run(home, ["phone", "user", "add", "alice", "--password-stdin"], "correct-horse-battery\n").status, 0);
@@ -115,5 +116,32 @@ test("pair puts the RUNNING hub's port in the link, and says when no hub is runn
     } finally { await h.stop(); }
     // Stopped hub: the record is gone, the warning is back.
     assert.match(run(home, ["phone", "pair", "--no-wait", "--no-qr"]).stdout, /no hub is running/i);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+// A server or a VPS: its own address is public, so there is no home network to pair over. That used to stop
+// `arcflare phone pair` with "the LAN address must be a private IPv4 address", though ArcFlare Connect needs no LAN.
+test("with no home-network address, pair works over ArcFlare Connect alone, and says what is missing without it", async (t) => {
+  const { lanAddresses } = require("../lib/hub/cli");
+  const { isLanHost } = require("../lib/hub/tunnel");
+  if (lanAddresses().some((a) => isLanHost(a))) return t.skip("this machine has a home-network address");
+  const home = mkHome();
+  try {
+    assert.strictEqual(run(home, ["phone", "user", "add", "alice", "--password-stdin"], "correct-horse-battery\n").status, 0);
+    // No hub, so no Cloudflare address, and no LAN: nothing to put in a link. Say so, and what to do.
+    let p = run(home, ["phone", "pair", "--no-wait", "--no-qr"]);
+    assert.notStrictEqual(p.status, 0);
+    assert.match(p.stdout + p.stderr, /no home-network address/);
+    assert.match(p.stdout + p.stderr, /Start the hub first \(arcflare phone\)/);
+    assert.doesNotMatch(p.stdout + p.stderr, /must be a private IPv4 address/);
+    // A running hub publishes its Cloudflare address here; with it, the link carries that and no LAN address.
+    fs.mkdirSync(path.join(home, "hub"), { recursive: true });
+    fs.writeFileSync(path.join(home, "hub", "cloudflare-url.json"), JSON.stringify({ url: "https://some-words-here.trycloudflare.com", at: Date.now() }));
+    p = run(home, ["phone", "pair", "--no-wait", "--no-qr"]);
+    assert.strictEqual(p.status, 0, p.stdout + p.stderr);
+    const link = linkOf(p.stdout);
+    assert.strictEqual(link.searchParams.get("r"), "https://some-words-here.trycloudflare.com");
+    assert.strictEqual(link.searchParams.get("l"), null, "no LAN address in the link");
+    assert.match(p.stdout, /pairs over the internet/);
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });

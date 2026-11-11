@@ -104,6 +104,172 @@ async function wantMachine(cfg, { assume } = {}) {
 
 
 
+// ------------------------------------------------------------------- arcs ----
+//
+// An Arc is one of ArcFlare's own models: an open base model, picked for this
+// GPU, running under ArcFlare's instructions (lib/arcs.js).
+
+const freeGbNow = (cfg) => { try { return freeDeviceBytes(cfg) / 1e9; } catch { return 0; } };
+
+/**
+ * Was an Arc asked for? `--arc <name>` puts one on whatever model is chosen;
+ * a model name that is an Arc's name picks its base too; and `arcflare arcs
+ * use` sets one for every chat and agent. Returns { arc, named } or null.
+ */
+async function arcFor(cfg, argv) {
+  const arcs = require("../lib/arcs");
+  const i = argv.indexOf("--arc");
+  const flagged = i > 0 ? argv[i + 1] : null;
+  if (i > 0) argv.splice(i, 2);
+  if (argv.includes("--no-arc")) { argv.splice(argv.indexOf("--no-arc"), 1); return null; }
+  const pIdx = argv.indexOf("-p");
+  const head = pIdx > 0 ? argv.slice(1, pIdx) : argv.slice(1);
+  const positional = head.find((a) => !a.startsWith("-"));
+  const want = flagged || (positional && arcs.looksLikeArc(positional) ? positional : null) || cfg.arc || null;
+  if (!want) return null;
+  await arcs.sync({ cfg });
+  const arc = arcs.find(want);
+  if (!arc) {
+    if (flagged || (positional && arcs.looksLikeArc(positional))) die(`no Arc named "${want}" · see: arcflare arcs`);
+    return null;
+  }
+  return { arc, named: !flagged && !!positional && arcs.looksLikeArc(positional) ? positional : null };
+}
+
+/** The model on this machine an Arc runs on, or how to get one. */
+function arcModel(arc, all, cfg) {
+  const arcs = require("../lib/arcs");
+  const pick = arcs.pickBase(arc, { local: all, freeGb: freeGbNow(cfg) });
+  if (pick.model) return pick.model;
+  if (arc.custom) {
+    console.log(`  ${c.accent(arc.id)} ${c.dim("is built FROM")} ${arc.from}${c.dim(", which is not on this machine")}`);
+    console.log(pick.base.local ? `  ${c.dim("see what is here:")} arcflare ls` : `  ${c.dim("get it:")} ${c.accent(`arcflare pull ${pick.base.ref}`)}`);
+    process.exit(1);
+  }
+  console.log(`  ${c.accent(arc.name)} ${c.dim("runs on")} ${pick.base.slug} ${c.dim(`(${pick.base.license}, about ${pick.base.gb} GB)`)}${c.dim(", which is not on this machine yet")}`);
+  console.log(`  ${c.dim("get it:")} ${c.accent(`arcflare arcs pull ${arc.id}`)}`);
+  process.exit(1);
+}
+
+async function arcsCommand(cfg, argv) {
+  const arcs = require("../lib/arcs");
+  const sub = argv[1];
+  const synced = await arcs.sync({ cfg, refresh: sub === "sync" });
+  const list = arcs.all();
+  const all = models.discover({ meta: false });
+  const freeGb = freeGbNow(cfg);
+
+  if (sub === "sync") {
+    console.log(synced.source === "live"
+      ? `  ${c.green(ui.sym.ok)} ${synced.count} Arcs from the hub`
+      : `  ${c.dim(ui.sym.dot)} the hub did not answer${synced.error ? c.dim(` (${synced.error})`) : ""}; using ${synced.source === "cache" ? "the last copy" : "the built-in ones"}`);
+    return;
+  }
+  if (sub === "use") {
+    if (!argv[2] || argv[2] === "off" || argv[2] === "none") {
+      const { arc: _gone, ...rest } = loadConfig();
+      saveConfig(rest);
+      console.log(`  ${c.green(ui.sym.ok)} no Arc by default ${c.dim("models run with their own instructions")}`);
+      return;
+    }
+    const a = arcs.find(argv[2]);
+    if (!a) die(`no Arc named "${argv[2]}" · see: arcflare arcs`);
+    saveConfig({ ...loadConfig(), arc: a.id });
+    console.log(`  ${c.green(ui.sym.ok)} ${c.accent(a.name)} ${c.dim("for every chat and agent, on whichever model you run")} ${c.dim(`${ui.sym.dot} arcflare arcs use off`)}`);
+    return;
+  }
+  if (sub === "create") {
+    // arcflare create <name> [-f Modelfile]: a model of your own, from a file in Ollama's Modelfile format.
+    const name = argv[2];
+    if (!name || name.startsWith("-")) die("usage: arcflare create <name> [-f Modelfile]");
+    const fi = argv.indexOf("-f") > 0 ? argv.indexOf("-f") : argv.indexOf("--file");
+    const file = path.resolve(fi > 0 ? argv[fi + 1] || "" : "Modelfile");
+    let text;
+    try { text = fs.readFileSync(file, "utf8"); } catch { die(`no Modelfile at ${file} (give one with -f <file>)`); }
+    let made;
+    try { made = arcs.create(name, text); } catch (e) { die(e.message); }
+    for (const w of made.warnings) console.log(`  ${c.accent(ui.sym.warn)} ${w}`);
+    const pick = arcs.pickBase(made.arc, { local: all, freeGb });
+    console.log(`  ${c.green(ui.sym.ok)} created ${c.accent(made.arc.id)} ${c.dim("from")} ${made.arc.from} ${c.dim(made.file)}`);
+    if (pick.model) console.log(`  ${c.dim("run it:")} arcflare run ${made.arc.id}   ${c.dim("as an agent:")} arcflare agent ${made.arc.id}`);
+    else if (pick.base.local) console.log(`  ${c.accent(ui.sym.warn)} no model on this machine matches "${made.arc.from}" yet ${c.dim("(arcflare ls shows what is here)")}`);
+    else console.log(`  ${c.dim("its model is not here yet:")} arcflare pull ${pick.base.ref}   ${c.dim("then")} arcflare run ${made.arc.id}`);
+    return;
+  }
+  if (sub === "rm" || sub === "remove" || sub === "delete") {
+    const a = arcs.find(argv[2]);
+    if (a && !a.custom) die(`${a.name} is one of ArcFlare's own Arcs and stays; the ones you made are deleted with this`);
+    console.log(arcs.remove(argv[2])
+      ? `  ${c.green(ui.sym.ok)} deleted ${argv[2]} ${c.dim("(its model file is untouched)")}`
+      : `  ${c.dim(ui.sym.dot)} nothing of yours is called "${argv[2] || ""}"`);
+    return;
+  }
+  if (sub === "show") {
+    const a = arcs.find(argv[2]);
+    if (!a) die(`no Arc named "${argv[2] || ""}" · see: arcflare arcs`);
+    process.stdout.write(arcs.toModelfile(a));
+    return;
+  }
+  if (sub === "pull") {
+    const a = arcs.find(argv[2]);
+    if (!a) die(`no Arc named "${argv[2] || ""}" · see: arcflare arcs`);
+    const pick = arcs.pickBase(a, { local: all, freeGb });
+    if (pick.installed && pick.base.slug === pick.recommended.slug) {
+      console.log(`  ${c.green(ui.sym.ok)} ${a.name} is ready ${c.dim(`on ${pick.model.id}`)} ${c.dim(`${ui.sym.dot} arcflare run ${a.id}`)}`);
+      return;
+    }
+    const b = pick.recommended;
+    console.log(`  ${c.accent(a.name)} ${c.dim("on")} ${b.slug} ${c.dim(`(${b.license}, about ${b.gb} GB${freeGb ? `, ${freeGb.toFixed(1)} GB free here` : ""})`)}`);
+    await runSelf(["pull", b.ref, ...argv.slice(3)]);
+    return;
+  }
+  if (sub && sub !== "list" && !sub.startsWith("-")) {
+    const a = arcs.find(sub);
+    if (!a) die(`no Arc named "${sub}" · see: arcflare arcs`);
+    const pick = arcs.pickBase(a, { local: all, freeGb });
+    console.log("");
+    console.log(`  ${c.bold(a.name)}  ${c.dim(a.focus)}`);
+    console.log(`  ${a.description}`);
+    if (a.side === "abliterated") for (const l of require("../lib/hub").UNCENSORED_NOTICE) console.log(`  ${c.accent(ui.sym.warn)} ${l}`);
+    console.log("");
+    for (const b of a.bases) {
+      const here = arcs.matchLocal(b, all);
+      console.log(`  ${here ? c.green(ui.sym.ok) : c.dim(ui.sym.dot)} ${ui.pad(b.slug, 40)} ${c.dim(`${String(b.gb).padStart(3)} GB · ${b.license}`)}${here ? c.dim(" · here") : ""}${b.slug === pick.base.slug ? c.accent("  ← runs on this") : ""}`);
+    }
+    console.log("");
+    console.log(`  ${c.dim("chat:")} arcflare run ${a.id}   ${c.dim("agent:")} arcflare agent ${a.id}${pick.installed ? "" : `   ${c.dim("first:")} arcflare arcs pull ${a.id}`}`);
+    console.log(`  ${c.dim("its Modelfile:")} arcflare arcs show ${a.id}`);
+    return;
+  }
+
+  if (argv.includes("--json")) {
+    process.stdout.write(JSON.stringify(list.map((a) => ({ ...arcs.publicView(a), pick: arcs.pickBase(a, { local: all, freeGb }) })), null, 2) + "\n");
+    return;
+  }
+  console.log("");
+  console.log(ui.section("arcs", "ArcFlare's own models"));
+  const groups = [["standard", "general", "general"], ["standard", "task", "for one job"], ["standard", "security", "cybersecurity"],
+    ["abliterated", null, "on abliterated bases"], ["yours", null, "yours (arcflare create)"]];
+  for (const [side, group, title] of groups) {
+    const rows = side === "yours" ? list.filter((a) => a.custom)
+      : list.filter((a) => !a.custom && a.side === side && (!group || a.group === group));
+    if (!rows.length) continue;
+    console.log(`  ${c.dim(title)}`);
+    for (const a of rows) {
+      const pick = arcs.pickBase(a, { local: all, freeGb });
+      const state = pick.installed ? c.green("ready")
+        : a.custom ? c.dim(`needs ${a.from}`)
+          : pick.fits ? c.dim(`needs ${pick.base.gb} GB`) : c.dim(`needs ${pick.base.gb} GB, more than is free`);
+      console.log(`  ${ui.pad(c.accent(a.id), 20)}${ui.pad(a.focus, 34)}${state}${cfg.arc === a.id ? c.accent("  default") : ""}`);
+    }
+    console.log("");
+  }
+  console.log(`  ${c.dim("arcflare arcs <name>")} ${c.dim("details")} ${c.dim(ui.sym.dot)} ${c.dim("arcflare arcs pull <name>")} ${c.dim("get its base model")} ${c.dim(ui.sym.dot)} ${c.dim("arcflare run <name>")}`);
+  console.log(`  ${c.dim("Each Arc is an open model (Apache-2.0 or MIT) with a Modelfile: its base, its sampling and ArcFlare's instructions.")}`);
+  console.log(`  ${c.dim("Make your own from a Modelfile:")} ${c.dim("arcflare create <name> -f Modelfile")}`);
+  console.log("");
+}
+
 // ------------------------------------------------------------- model list --
 
 function modelLabel(m) {
@@ -242,9 +408,10 @@ async function offerEngineInstall() {
 
 // ------------------------------------------------------------------ chat ----
 
-function chatOnce(port, model, messages, onDelta) {
+function chatOnce(port, model, messages, onDelta, sampling = null) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ model, messages, stream: true });
+    // A Modelfile's PARAMETER lines, when the chat is with an Arc.
+    const body = JSON.stringify({ model, messages, stream: true, ...(sampling || {}) });
     const req = http.request(
       {
         host: "127.0.0.1", port, path: "/v1/chat/completions", method: "POST",
@@ -282,15 +449,16 @@ async function repl(port, modelId, opts = {}) {
   const readline = require("readline");
   const rc = require("../lib/rc");
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const history = [];
-  console.log(`  ${c.dim("chatting with")} ${c.accent(modelId)} ${c.dim("— /rc remote control · /bye to exit")}\n`);
+  // An Arc's instructions go first and stay there; they are never printed.
+  const history = opts.system ? [{ role: "system", content: opts.system }] : [];
+  console.log(`  ${c.dim("chatting with")} ${c.accent(opts.label || modelId)} ${c.dim("— /rc remote control · /bye to exit")}\n`);
   updateBanner(loadConfig());
   // stdin can end under us — piped input running out, or Ctrl-D. readline
   // then never answers the question, and asking again throws
   // ERR_USE_AFTER_CLOSE. InputMux treats a close as an answer of null, and
   // also lets a browser connected with /rc type into the same conversation.
   const input = new rc.InputMux(rl, `${c.accent("❯")} `);
-  const info = () => ({ kind: "chat", model: modelId, host: os.hostname(), cwd: process.cwd(), version: VERSION });
+  const info = () => ({ kind: "chat", model: opts.label || modelId, host: os.hostname(), cwd: process.cwd(), version: VERSION });
   let remote = opts.rc ? await rc.command("/rc", null, { cfg: loadConfig(), info: info() }) : null;
   for (;;) {
     const got = await input.next(remote);
@@ -318,7 +486,7 @@ async function repl(port, modelId, opts = {}) {
       out = await chatOnce(port, modelId, history, (p) => {
         process.stdout.write(p);
         if (live) live.emit({ type: "delta", kind: "content", text: p });
-      });
+      }, opts.sampling || null);
     } catch (e) {
       console.log(c.red("  request failed: " + e.message));
       if (live) live.emit({ type: "error", text: "request failed: " + e.message });
@@ -505,11 +673,20 @@ async function prepareModel(cfg, model, ctx, cacheType) {
 const HELP_GROUPS = [
   ["get started", [
     ["arcflare", "", "open the menu: harness, model, context"],
+    ["arcflare store", "[skills|mcp|models]", "the store: skills and MCP servers for the agent, and models"],
     ["arcflare shop", "[search]", "browse the hub: what fits your GPU, what to get"],
     ["arcflare pull", "<repo>[:Q]", "download a GGUF from Hugging Face"],
     ["arcflare ls", "", "list the models on this machine"],
     ["arcflare run", "<model>", "start the server and chat"],
     ["arcflare fit", "[model]", "what fits; --run loads each one and times it"],
+  ]],
+  ["arcs (arcflare's own models)", [
+    ["arcflare arcs", "[name]", "the Arcs: which are ready, and what each runs on"],
+    ["arcflare arcs pull", "<name>", "download the base model that fits this GPU"],
+    ["arcflare run", "arc-code", "chat with an Arc (arcflare agent arc-code: as an agent)"],
+    ["arcflare arcs use", "<name>|off", "use an Arc's instructions on every model you run"],
+    ["arcflare create", "<name> -f Modelfile", "a model of your own: FROM, PARAMETER, SYSTEM (Ollama's format)"],
+    ["arcflare show", "<name>", "an Arc's Modelfile (arcflare arcs rm <name> deletes one of yours)"],
   ]],
   ["agent & harnesses", [
     ["arcflare agent", "[model]", "coding agent: tools, MCP, skills"],
@@ -520,6 +697,8 @@ const HELP_GROUPS = [
   ["machine server (mcp)", [
     ["arcflare mcp", "[--install]", "run, open, build and test on this computer"],
     ["arcflare mcp", "enable|disable", "install the machine server, or leave it out"],
+    ["arcflare mcp", "desktop | web", "only the screen and input tools, or only the web tools"],
+    ["arcflare mcp enable", "desktop|web", "switch desktop control or the web on for the agent (disable: off)"],
     ["arcflare mcp trust", "", "allow this folder's .mcp.json to start servers"],
     ["arcflare mcp login", "[server]", "sign in to a hosted MCP server"],
     ["arcflare mcp logout", "<s|--all>", "delete stored sign-in tokens"],
@@ -1408,6 +1587,7 @@ function shopDetail(m, freeGb, url) {
   console.log("");
   if (plan.kind === "pull") console.log(`  ${c.dim("get it   ")} arcflare pull ${plan.ref}`);
   else if (plan.kind === "gen") console.log(`  ${c.dim("get it   ")} arcflare gen setup ${plan.id}   ${c.dim("then")} ${plan.use}`);
+  else if (plan.kind === "arc") console.log(`  ${c.dim("get it   ")} arcflare arcs pull ${plan.id}   ${c.dim("then")} ${plan.use}`);
   else console.log(`  ${c.dim("get it   ")} ${c.dim("no install command in the hub yet — see the model page")}`);
   console.log("");
 }
@@ -1420,6 +1600,199 @@ function shopDetail(m, freeGb, url) {
  *   arcflare shop show <model>    one model in full
  *   --cat <category> --fits --json --refresh · arcflare shop hub <url>
  */
+// ------------------------------------------------------------------ store ----
+//
+// The ArcFlare Store: skills, MCP servers and models (lib/store.js).
+
+const NEEDS_HINT = {
+  npx: "npx comes with Node.js: https://nodejs.org",
+  uvx: "uvx comes with uv: https://docs.astral.sh/uv/",
+  docker: "Docker: https://docs.docker.com/get-docker/",
+};
+
+async function storeCommand(cfg, argv) {
+  const store = require("../lib/store");
+  const rest = argv.slice(1);
+  const shelf = { skill: "skills", skills: "skills", mcp: "mcp", servers: "mcp", tools: "mcp", model: "models", models: "models" }[rest[0]] || null;
+  if (shelf === "models") return shopCommand(cfg, ["shop", ...rest.slice(1)]);
+
+  const { data, source, url: storeUrl } = await store.load({ cfg, refresh: rest.includes("--refresh") });
+  const from = source === "live" ? c.dim(`live from ${String(storeUrl || "").replace(/^https?:\/\//, "")}`) : source === "cache" ? c.accent("offline · the last saved copy") : c.dim("the copy that ships with ArcFlare");
+  const yes = rest.includes("--yes") || rest.includes("-y");
+  const words = rest.slice(shelf ? 1 : 0).filter((a) => !a.startsWith("-"));
+  const onPath = require("../lib/mcp/apps").onPath;
+
+  const skillRow = (s) => {
+    const st = store.skillState(s);
+    const mark = st.installed ? (st.fromStore ? (st.current ? c.green("added") : c.accent("update")) : c.dim("yours")) : c.dim("·");
+    return `${ui.pad(c.accent(s.id), 20)}${ui.pad(mark, 9)}${s.description}`;
+  };
+  const mcpRow = (m) => {
+    const st = store.mcpState(m);
+    return `${ui.pad(c.accent(m.id), 22)}${ui.pad(st.installed ? c.green("added") : c.dim("·"), 9)}${ui.pad(c.dim(m.ours ? "ArcFlare" : m.by), 26)}${m.description.split(". ")[0]}`;
+  };
+
+  const addSkill = (id) => {
+    const s = data.skills.find((x) => x.id === id);
+    if (!s) die(`no skill "${id}" in the store · see: arcflare store skills`);
+    try {
+      const r = store.addSkill(s);
+      console.log(`  ${c.green(ui.sym.ok)} ${r.updated ? "updated" : "added"} ${c.accent(s.id)} ${c.dim(r.file)}`);
+      if (s.uses && s.uses.length) console.log(`    ${c.dim("it uses ArcFlare's " + s.uses.join(", ") + " tools: arcflare mcp enable " + (s.uses.includes("desktop") ? "desktop" : "web"))}`);
+    } catch (e) { die(e.message); }
+  };
+  const addMcp = async (id, extra) => {
+    const m = data.mcp.find((x) => x.id === id);
+    if (!m) die(`no MCP server "${id}" in the store · see: arcflare store mcp`);
+    if (!m.ours) {
+      if (m.argument && m.argument.required && !extra.length) die(`${m.name} needs ${m.argument.name}: arcflare store mcp add ${m.id} <${m.argument.name}>   (${m.argument.about})`);
+      const spec = store.mcpSpec(m, extra);
+      console.log("");
+      console.log(`  ${c.bold(m.name)} ${c.dim("by " + m.by + " · not made by ArcFlare")}`);
+      console.log(`  ${m.description}`);
+      console.log(`  ${c.accent(ui.sym.warn)} Adding it means the agent runs this program each time it starts, downloading it first if needed:`);
+      console.log(`      ${spec.command} ${spec.args.join(" ")}`);
+      if (m.homepage) console.log(`  ${c.dim("its source:")} ${m.homepage}`);
+      if (m.needs && !onPath(m.needs)) console.log(`  ${c.accent(ui.sym.warn)} ${m.needs} is not on this computer yet. ${NEEDS_HINT[m.needs] || ""}`);
+      if (!yes) {
+        if (!process.stdin.isTTY) die("re-run with --yes to confirm you have read this");
+        const a = await ui.ask("Type yes to add it");
+        if (String(a).trim().toLowerCase() !== "yes") { console.log(`  ${c.dim("cancelled: nothing was added")}`); return; }
+      }
+    }
+    try {
+      const r = store.addMcp(m, { extra });
+      console.log(`  ${c.green(ui.sym.ok)} added ${c.accent(m.id)} ${c.dim("to " + r.file)}`);
+      console.log(`    ${c.dim("the agent connects it from its next session · on the phone: Tools, then switch it on")}`);
+    } catch (e) { die(e.message); }
+  };
+
+  // ---- skills
+  if (shelf === "skills") {
+    const sub = rest[1];
+    if (sub === "add" || sub === "install") {
+      const ids = rest.slice(2).filter((a) => !a.startsWith("-"));
+      if (!ids.length) die("usage: arcflare store skills add <name>...   (or: all)");
+      for (const id of ids[0] === "all" ? data.skills.map((s) => s.id) : ids) addSkill(id);
+      return;
+    }
+    if (sub === "rm" || sub === "remove") {
+      console.log(store.removeSkill(rest[2])
+        ? `  ${c.green(ui.sym.ok)} removed ${rest[2]}`
+        : `  ${c.dim(ui.sym.dot)} no skill from the store is called "${rest[2] || ""}" here ${c.dim("(skills you wrote yourself are left alone)")}`);
+      return;
+    }
+    if (sub === "show") {
+      const s = data.skills.find((x) => x.id === rest[2]);
+      if (!s) die(`no skill "${rest[2] || ""}" in the store`);
+      process.stdout.write(s.text.endsWith("\n") ? s.text : s.text + "\n");
+      return;
+    }
+    const found = store.search(data.skills, words.join(" "));
+    console.log("");
+    console.log(ui.section("store · skills", `${found.length} of ${data.skills.length}`));
+    console.log(`  ${from}\n`);
+    for (const s of found) console.log(`  ${skillRow(s)}`);
+    if (!found.length) console.log(`  ${c.dim("nothing matched")}`);
+    console.log(`\n  ${c.dim("arcflare store skills add <name> · add all · show <name> · rm <name>")}`);
+    console.log(`  ${c.dim("A skill is instructions the agent loads when a task calls for it. They go in ~/.arcflare/skills.")}\n`);
+    return;
+  }
+
+  // ---- mcp
+  if (shelf === "mcp") {
+    const sub = rest[1];
+    if (sub === "add" || sub === "install") {
+      const args = rest.slice(2).filter((a) => !a.startsWith("-"));
+      if (!args.length) die("usage: arcflare store mcp add <name> [arguments]");
+      return addMcp(args[0], args.slice(1));
+    }
+    if (sub === "rm" || sub === "remove") {
+      console.log(store.removeMcp(rest[2])
+        ? `  ${c.green(ui.sym.ok)} removed ${rest[2]} ${c.dim("from ~/.arcflare/mcp.json")}`
+        : `  ${c.dim(ui.sym.dot)} ${rest[2] || "that"} is not in ~/.arcflare/mcp.json`);
+      return;
+    }
+    const found = store.search(data.mcp, words.join(" "));
+    console.log("");
+    console.log(ui.section("store · mcp servers", `${found.length} of ${data.mcp.length}`));
+    console.log(`  ${from}\n`);
+    for (const m of found) console.log(`  ${mcpRow(m)}`);
+    if (!found.length) console.log(`  ${c.dim("nothing matched")}`);
+    console.log(`\n  ${c.dim("arcflare store mcp add <name> [arguments] · rm <name>")}`);
+    console.log(`  ${c.dim("An MCP server gives the agent tools. ArcFlare's own are part of this program; the others are run with npx or uvx.")}\n`);
+    return;
+  }
+
+  // ---- the front of the store
+  if (!process.stdin.isTTY || !process.stdout.isTTY || words.length) {
+    const q = words.join(" ");
+    const skills = store.search(data.skills, q), mcp = store.search(data.mcp, q);
+    console.log("");
+    console.log(ui.section("arcflare store", q ? `matching "${q}"` : "skills · mcp servers · models"));
+    console.log(`  ${from}\n`);
+    console.log(`  ${c.bold("skills")} ${c.dim(`${skills.length}`)}`);
+    for (const s of skills.slice(0, q ? 50 : 6)) console.log(`  ${skillRow(s)}`);
+    if (!q && skills.length > 6) console.log(`  ${c.dim(`… ${skills.length - 6} more: arcflare store skills`)}`);
+    console.log(`\n  ${c.bold("mcp servers")} ${c.dim(`${mcp.length}`)}`);
+    for (const m of mcp.slice(0, q ? 50 : 6)) console.log(`  ${mcpRow(m)}`);
+    if (!q && mcp.length > 6) console.log(`  ${c.dim(`… ${mcp.length - 6} more: arcflare store mcp`)}`);
+    console.log(`\n  ${c.bold("models")}  ${c.dim("arcflare store models   (the hub: what fits your GPU) · arcflare arcs   (ArcFlare's own)")}\n`);
+    return;
+  }
+
+  console.log(ui.banner());
+  console.log(`  ${c.bold("ArcFlare Store")} ${c.dim("·")} ${from}\n`);
+  for (;;) {
+    const pick = await ui.select("What are you looking for?", [
+      { label: "Skills", hint: `${data.skills.length} · instructions the agent loads for a task`, value: "skills" },
+      { label: "MCP servers", hint: `${data.mcp.length} · tools for the agent`, value: "mcp" },
+      { label: "Models", hint: "the hub: what fits your GPU", value: "models" },
+      { label: "Arcs", hint: "ArcFlare's own models", value: "arcs" },
+    ]);
+    if (!pick) return;
+    if (pick === "models") { await shopCommand(cfg, ["shop"]); continue; }
+    if (pick === "arcs") { await arcsCommand(cfg, ["arcs"]); continue; }
+    for (;;) {
+      const items = pick === "skills"
+        ? data.skills.map((s) => { const st = store.skillState(s); return { label: s.id, hint: (st.installed ? "added · " : "") + s.description, value: s.id }; })
+        : data.mcp.map((m) => { const st = store.mcpState(m); return { label: m.name, hint: (st.installed ? "added · " : "") + (m.ours ? "ArcFlare" : m.by), value: m.id }; });
+      const id = await ui.select(pick === "skills" ? "Skills" : "MCP servers", items);
+      if (!id) break;
+      if (pick === "skills") {
+        const s = data.skills.find((x) => x.id === id);
+        const st = store.skillState(s);
+        console.log(`\n  ${c.bold(s.id)}  ${s.description}\n`);
+        const act = await ui.select(s.id, [
+          { label: st.installed && st.fromStore ? "Add again (update)" : "Add it", hint: "to ~/.arcflare/skills", value: "add" },
+          { label: "Read it", value: "show" },
+          ...(st.installed && st.fromStore ? [{ label: "Remove it", value: "rm" }] : []),
+        ]);
+        if (act === "add") addSkill(id);
+        else if (act === "show") console.log("\n" + s.text.split("\n").map((l) => "  " + l).join("\n") + "\n");
+        else if (act === "rm") console.log(store.removeSkill(id) ? `  ${c.green(ui.sym.ok)} removed ${id}` : `  ${c.dim("not removed")}`);
+      } else {
+        const m = data.mcp.find((x) => x.id === id);
+        const st = store.mcpState(m);
+        console.log(`\n  ${c.bold(m.name)} ${c.dim("by " + (m.ours ? "ArcFlare" : m.by))}\n  ${m.description}\n`);
+        const act = await ui.select(m.name, [
+          { label: st.installed ? "Add again" : "Add it", hint: "to ~/.arcflare/mcp.json", value: "add" },
+          ...(st.installed ? [{ label: "Remove it", value: "rm" }] : []),
+        ]);
+        if (act === "add") {
+          let extra = [];
+          if (!m.ours && m.argument) {
+            const a = await ui.ask(`${m.argument.name} (${m.argument.about})`);
+            extra = String(a || "").trim() ? [String(a).trim()] : [];
+            if (m.argument.required && !extra.length) { console.log(`  ${c.dim("cancelled: it needs " + m.argument.name)}`); continue; }
+          }
+          await addMcp(id, extra);
+        } else if (act === "rm") console.log(store.removeMcp(id) ? `  ${c.green(ui.sym.ok)} removed ${id}` : `  ${c.dim("not removed")}`);
+      }
+    }
+  }
+}
+
 async function shopCommand(cfg, argv) {
   const hub = require("../lib/hub");
   const rest = argv.slice(1);
@@ -1529,6 +1902,7 @@ async function shopCommand(cfg, argv) {
       const action = await ui.select(m.name, [
         ...(plan.kind === "pull" ? [{ label: "Download it", hint: `arcflare pull ${plan.ref}`, value: "install" }] : []),
         ...(plan.kind === "gen" ? [{ label: "Set it up", hint: `arcflare gen setup ${plan.id}`, value: "install" }] : []),
+        ...(plan.kind === "arc" ? [{ label: "Download its base model", hint: `arcflare arcs pull ${plan.id}`, value: "install" }] : []),
         { label: "Open its page", hint: "in the browser", value: "open" },
         { label: "Back", value: "back" },
       ]);
@@ -1641,14 +2015,20 @@ async function main() {
 
     case "run": {
       const all = models.discover({ meta: true });
+      const got = await arcFor(cfg, argv);
       const want = argv.slice(1).find((x) => !x.startsWith("-"));
-      const m = models.resolve(all, want);
+      const m = got && (got.named || !want) ? arcModel(got.arc, all, cfg) : models.resolve(all, want);
       if (!m) die(`no model matching "${want || ""}"`);
       const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
       const { port, servedId: id } = await prepareModel(cfg, m, best.ctx, best.cacheType);
-      console.log(`  ${c.green(ui.sym.ok)} ${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
-      await repl(port, id, { rc: argv.includes("--rc") });
+      console.log(`  ${c.green(ui.sym.ok)} ${got ? `${c.accent(got.arc.name)} ${c.dim("on")} ` : ""}${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
+      await repl(port, id, {
+        rc: argv.includes("--rc"),
+        system: got ? require("../lib/arcs").compose(got.arc, { surface: "chat" }) || null : null,
+        label: got ? got.arc.name : null,
+        sampling: got ? got.arc.sampling : null,
+      });
       return;
     }
 
@@ -2004,7 +2384,10 @@ async function main() {
       if (resumed.none) console.log(`  ${c.dim("no saved sessions for this folder · starting a new one")}`);
       argv.splice(0, argv.length, ...resumed.argv);
       const all = models.discover({ meta: true });
-      const sel = pickModel(all, argv, (resumed.session && resumed.session.modelRef) || cfg.lastModel);
+      const got = await arcFor(cfg, argv);
+      const sel = got && got.named
+        ? { model: arcModel(got.arc, all, cfg) }
+        : pickModel(all, argv, (resumed.session && resumed.session.modelRef) || cfg.lastModel);
       if (sel.error) die(sel.error);
       const m = sel.model;
       if (!m) die("no models found");
@@ -2022,7 +2405,10 @@ async function main() {
         port: prep.port,
         model: prep.servedId,
         nCtx: prep.ctx,
-        sampling: (models.loadMeta(m) || {}).sampling || null,
+        // What the model file declares beats the Arc's general setting: its authors tuned it for these weights.
+        sampling: { ...(got ? got.arc.sampling || {} : {}), ...((models.loadMeta(m) || {}).sampling || {}) },
+        systemPrompt: got ? require("../lib/arcs").compose(got.arc, { surface: "agent" }) : undefined,
+        arcName: got ? got.arc.name : null,
         cwd: process.cwd(),
         prompt,
         approve: auto ? "yolo" : "ask",
@@ -2035,6 +2421,16 @@ async function main() {
         // asked here rather than assumed.
         machine: argv.includes("--no-machine") ? false
           : await wantMachine(cfg, { assume: argv.includes("--machine") ? true : undefined }),
+        // Desktop control and the web each have their own switch (arcflare mcp
+        // enable|disable desktop|web); a flag answers for this run only.
+        ...(() => {
+          const flag = (name) => (argv.includes(`--no-${name}`) ? false : argv.includes(`--${name}`) ? true : undefined);
+          const now = loadConfig();
+          const sw = require("../lib/agent/run").toolSwitches(
+            { ...now, machine: argv.includes("--no-machine") ? false : now.machine },
+            { desktop: flag("desktop"), web: flag("web") });
+          return { desktop: sw.desktop, web: sw.web };
+        })(),
       });
       return;
     }
@@ -2047,6 +2443,15 @@ async function main() {
       if (["trust", "untrust", "trusted"].includes(argv[1])) return mcpTrust(argv);
       if (argv[1] === "enable" || argv[1] === "disable") {
         const on = argv[1] === "enable";
+        const part = argv[2];
+        if (part === "desktop" || part === "web") {
+          saveConfig({ ...cfg, [part]: on });
+          const what = part === "web" ? "web search and page reading" : "desktop control";
+          const note = part === "web" ? "searches the web · reads pages · public internet only" : "sees the screen · moves the mouse · types";
+          console.log(`  ${c.green(ui.sym.ok)} ${what} ${on ? "on" : "off"} ${c.dim(on ? note : "for the agent, from the next session")}`);
+          return;
+        }
+        if (part && part !== "machine") die("usage: arcflare mcp enable|disable [machine|desktop|web]");
         saveConfig({ ...cfg, machine: on });
         console.log(on
           ? `  ${c.green(ui.sym.ok)} machine server on ${c.dim(MACHINE_NOTE)}`
@@ -2070,6 +2475,18 @@ async function main() {
     case "update":
     case "upgrade":
       return updateCommand(cfg, argv);
+
+    case "arcs":
+    case "arc":
+      return arcsCommand(cfg, argv);
+    // The names Ollama uses for the same things.
+    case "create":
+      return arcsCommand(cfg, ["arcs", "create", ...argv.slice(1)]);
+    case "show":
+      return arcsCommand(cfg, ["arcs", "show", ...argv.slice(1)]);
+
+    case "store":
+      return storeCommand(cfg, argv);
 
     case "shop":
     case "hub":
