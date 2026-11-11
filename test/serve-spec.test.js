@@ -28,3 +28,10 @@ test("a model with its own MTP draft head keeps draft-mtp", () => {
   assert.match(t, /spec-type = draft-mtp/);
   assert.ok(!/ngram-mod/.test(t));
 });
+
+test("a draft head inside the model file turns on draft-mtp without a draft file", () => {
+  serve.writePresetFor({ id: "m:q6", file: "/x/m.gguf", meta: { nextnLayers: 1 } }, 8192, "f16", 2048, true);
+  const t = read();
+  assert.match(t, /spec-type = draft-mtp/);
+  assert.ok(!/model-draft|ngram/.test(t));
+});
