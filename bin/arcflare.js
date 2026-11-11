@@ -691,6 +691,7 @@ const HELP_GROUPS = [
   ["agent & harnesses", [
     ["arcflare agent", "[model]", "coding agent: tools, MCP, skills"],
     ["arcflare agent", "--resume", "pick up a saved session (--continue: the latest)"],
+    ["arcflare skills", "[on|off <name>]", "list agent skills, or switch one on or off"],
     ["arcflare use", "<harness> [m]", "configure + launch (--no-launch, --yolo, --ask)"],
     ["arcflare harness update", "[id]", "update Codex, OpenCode, Hermes, DeepSeek agents, Claude Code"],
   ]],
@@ -2222,6 +2223,26 @@ async function main() {
       console.log(`  ${c.dim("Drafts tokens from text already in the conversation, with no extra model. Measured on Flint:")}`);
       console.log(`  ${c.dim("+14% on code from the start, +45% once it has seen it, no change on fresh text. Models with their own")}`);
       console.log(`  ${c.dim("Models with an MTP draft head (a mtp-*.gguf beside them, or built into the file) use that instead.")}`);
+      return;
+    }
+
+    // Agent skills: list them, or switch one on or off.
+    case "skills": {
+      const sk = require("../lib/agent/skills");
+      const [, sub, name] = argv;
+      if (sub === "on" || sub === "off") {
+        if (!name) die(`usage: arcflare skills [on|off <name>]`);
+        if (!sk.toggle(name, sub === "on")) die(`no installed skill called "${name}" (see: arcflare skills)`);
+        console.log(`  ${c.green(ui.sym.ok)} skill ${c.accent(name)} ${sub} ${c.dim("(applies the next time an agent starts)")}`);
+        return;
+      }
+      if (sub) die(`usage: arcflare skills [on|off <name>]`);
+      const all = sk.discover(process.cwd(), { all: true });
+      if (!all.length) console.log(`  ${c.dim("no skills installed (see: arcflare store skills)")}`);
+      for (const s of all) {
+        const d = s.description.replace(/\s+/g, " ").slice(0, 70);
+        console.log(`  ${s.name.padEnd(24)} ${s.enabled ? c.accent("on ") : "off"} ${c.dim(d)}`);
+      }
       return;
     }
 

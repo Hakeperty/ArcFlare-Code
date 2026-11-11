@@ -174,6 +174,20 @@ test("a skill switched off is not offered, stays on disk, and comes back when sw
   assert.deepStrictEqual(names(), ["deploy:true"]);
 });
 
+test("skills.toggle switches an installed skill and refuses an unknown name", () => {
+  const d = tmpdir("skills-toggle");
+  const sk = path.join(d, ".arcflare", "skills", "deploy");
+  fs.mkdirSync(sk, { recursive: true });
+  fs.writeFileSync(path.join(sk, "SKILL.md"), "---\nname: deploy\ndescription: How to deploy\n---\nbody\n");
+  const home = path.join(d, "home");
+  assert.strictEqual(skills.toggle("deploy", false, d, home), true);
+  assert.deepStrictEqual(skills.off(home), ["deploy"]);
+  assert.strictEqual(skills.toggle("nope", false, d, home), false);
+  assert.deepStrictEqual(skills.off(home), ["deploy"]);
+  assert.strictEqual(skills.toggle("deploy", true, d, home), true);
+  assert.deepStrictEqual(skills.off(home), []);
+});
+
 test("skills are indexed without reading their bodies", () => {
   const d = tmpdir("skills");
   const sk = path.join(d, ".arcflare", "skills", "deploy");
