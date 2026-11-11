@@ -161,6 +161,11 @@ It understands the Hugging Face cache layout, groups multi-part shards, and
 picks up `mmproj-*.gguf` (vision) and `mtp-*.gguf` (speculative decoding)
 sidecars sitting next to a model.
 
+A model file with a draft head built into it (no `mtp-*.gguf` needed) gets
+`draft-mtp` automatically. Measured on one machine (Strix Halo, Vulkan, b12110):
+Qwen3.8-27B Q6_K went from 9.9 to 20.5 t/s, and Qwen3.6-35B-A3B Q5_K_XL from
+57.5-64.9 to 77.8-85.9 t/s.
+
 Drafts are also matched across repos. The HF cache splits one model over two of
 them - the Qwen3.8-27B draft ships from `ggml-org` while the weights come from
 `unsloth` - so a strictly same-directory scan finds no draft and speculative
