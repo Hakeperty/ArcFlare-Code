@@ -620,7 +620,7 @@ async function interactive(argv) {
     await repl(port, servedId);
     return;
   }
-  const child = chosen.launch({ bin: det.bin, model: target, port, args: argv.slice(1), approve });
+  const child = await chosen.launch({ bin: det.bin, model: target, port, args: argv.slice(1), approve });
   if (child) {
     child.on("exit", (code) => process.exit(code || 0));
     await new Promise(() => {});
@@ -2080,7 +2080,7 @@ async function main() {
         return;
       }
       if (h.builtin) { await repl(port, id); return; }
-      const child = h.launch({ bin: det.bin, model: { id }, port, args: extra, approve });
+      const child = await h.launch({ bin: det.bin, model: { id }, port, args: extra, approve });
       if (child) child.on("exit", (code) => process.exit(code || 0));
       return;
     }
