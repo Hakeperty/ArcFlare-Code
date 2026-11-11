@@ -151,6 +151,13 @@ test("budget reserves room for the reply", () => {
 
 // ---------------------------------------------------------------- skills ----
 
+test("a description folded over several lines is read whole", () => {
+  const { meta, body } = skills.parseFrontmatter("---\nname: lazy\ndescription: >\n  First line,\n  second line.\nlicense: MIT\n---\nbody\n");
+  assert.strictEqual(meta.description, "First line, second line.");
+  assert.strictEqual(meta.license, "MIT");
+  assert.strictEqual(body, "body\n");
+});
+
 test("a skill switched off is not offered, stays on disk, and comes back when switched on", () => {
   const d = tmpdir("skills-off");
   const sk = path.join(d, ".arcflare", "skills", "deploy");
