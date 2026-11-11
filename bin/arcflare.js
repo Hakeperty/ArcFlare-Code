@@ -2221,7 +2221,7 @@ async function main() {
       console.log(`  n-gram speculation: ${on ? c.accent("on") : "off"} ${c.dim(`(--spec-type ${require("../lib/serve").SPEC_TYPE})`)}`);
       console.log(`  ${c.dim("Drafts tokens from text already in the conversation, with no extra model. Measured on Flint:")}`);
       console.log(`  ${c.dim("+14% on code from the start, +45% once it has seen it, no change on fresh text. Models with their own")}`);
-      console.log(`  ${c.dim("MTP draft heads keep using those instead.")}`);
+      console.log(`  ${c.dim("Models with an MTP draft head (a mtp-*.gguf beside them, or built into the file) use that instead.")}`);
       return;
     }
 
