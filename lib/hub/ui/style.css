@@ -843,7 +843,7 @@ body.kbd .bottomnav, body.kbd .fab { display: none; }
 
 /* ---- Chat ---------------------------------------------------------------- */
 .ai-card { display: flex; flex-direction: column; gap: 8px; margin: 0 var(--pr) 16px var(--pl); padding: 16px; }
-#chat-new { margin: 0 var(--pr) 16px var(--pl); width: calc(100% - var(--pl) - var(--pr)); }
+#chat-new, #chat-new-once { margin: 0 var(--pr) 16px var(--pl); width: calc(100% - var(--pl) - var(--pr)); }
 a.dev-top { color: inherit; text-decoration: none; }
 .model-select {
   flex: 1; min-width: 0; height: 36px; padding: 0 12px; border-radius: 18px;
@@ -1012,7 +1012,8 @@ fieldset.muted-off { opacity: 0.5; }
 .shield.warn { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
 .notice.yolo, .transcript .yolo { color: var(--danger); }
 .statusbar .st { flex: none; white-space: nowrap; }
-#agent-statusbar .model-select.compact { flex: 1 1 auto; min-width: 72px; }
+#agent-statusbar .model-select.compact { flex: 1 1 0; min-width: 72px; }
+#agent-statusbar { flex-wrap: wrap; } /* narrow phones: Start/Stop would be cut off the right edge */
 
 /* ---------- Queue ---------- */
 .queue { margin: 0 12px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
