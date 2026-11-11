@@ -1084,7 +1084,8 @@ function playAudio(file) {
   const tries = process.platform === "win32"
     ? [["powershell", ["-NoProfile", "-Command", `(New-Object Media.SoundPlayer ${JSON.stringify(file).replace(/"/g, "'")}).PlaySync()`]]]
     : process.platform === "darwin" ? [["afplay", [file]]]
-    : [["paplay", [file]], ["aplay", ["-q", file]], ["ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", file]]];
+    // PipeWire is the sound server on current distributions; PulseAudio and ALSA cover the rest.
+    : [["pw-play", [file]], ["paplay", [file]], ["aplay", ["-q", file]], ["ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", file]], ["mpv", ["--no-video", "--really-quiet", file]]];
   for (const [cmd, args] of tries) {
     const r = spawnSync(cmd, args, { stdio: "ignore", windowsHide: true });
     if (r.status === 0) return true;
@@ -2578,6 +2579,19 @@ async function main() {
       } else {
         toolRows.push([null, "blender", c.dim("not found")]);
       }
+      // Desktop control and the browser lean on programs outside ArcFlare, and on Linux those are not a
+      // given: say which are here and exactly what to install for the ones that are not.
+      const desk = require("../lib/mcp/desktop");
+      const ds = desk.support();
+      const helpers = ds.ok ? desk.helpers() : null;
+      const lacking = helpers ? [
+        !helpers.screenshot && "screenshots need ImageMagick, maim, scrot or gnome-screenshot",
+        !helpers.clipboard && "the clipboard needs xclip, xsel or wl-clipboard",
+      ].filter(Boolean) : [];
+      toolRows.push([ds.ok ? (lacking.length ? null : true) : null, "desktop control",
+        c.dim(ds.ok ? [ds.how, ds.note, ...lacking].filter(Boolean).join(` ${ui.sym.dot} `) : ds.how)]);
+      const bs = new (require("../lib/mcp/browser").Browser)().support();
+      toolRows.push([bs.ok ? true : null, "browser", c.dim(bs.how)]);
       block("tools", toolRows);
 
       const up = usesLmStudio(cfg) ? lmsUp : (await engine.status(cfg.port || DEFAULT_PORT)).running;
