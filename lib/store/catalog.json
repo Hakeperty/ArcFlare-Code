@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-11-11",
+  "updated": "2026-11-12",
   "skills": [
     { "id": "code-review", "category": "code", "uses": [] },
     { "id": "write-tests", "category": "code", "uses": [] },
@@ -13,7 +13,12 @@
     { "id": "security-review", "category": "security", "uses": [] },
     { "id": "web-research", "category": "web", "uses": ["web", "browser"] },
     { "id": "check-web-app", "category": "web", "uses": ["machine", "browser"] },
-    { "id": "desktop-task", "category": "desktop", "uses": ["desktop"] }
+    { "id": "desktop-task", "category": "desktop", "uses": ["desktop"] },
+    { "id": "arc-commit", "category": "arc", "uses": [] },
+    { "id": "arc-review-diff", "category": "arc", "uses": [] },
+    { "id": "arc-fix-failing-test", "category": "arc", "uses": [] },
+    { "id": "arc-read-codebase", "category": "arc", "uses": [] },
+    { "id": "arc-write-tests", "category": "arc", "uses": [] }
   ],
   "mcp": [
     {
