@@ -1,14 +1,14 @@
 {
  "schema": 1,
  "site": "https://arcflare.net",
- "count": 56,
- "updated": "2026-04-01",
+ "count": 173,
+ "updated": "2026-11-10",
  "models": [
   {
    "slug": "qwen3-tts",
    "name": "qwen3-tts",
    "author": "Alibaba Qwen",
-   "description": "Qwen3-TTS: Qwen's open speech model. Preset voices, 10 languages, tone control from a text instruction, and a variant that clones a voice from 3 seconds of audio.",
+   "description": "Qwen3-TTS: Qwen's open speech model. Preset voices, 10 languages, tone control from a text instruction, a variant that clones a voice from 3 seconds of audio, and one that designs a voice from a description.",
    "category": "Audio",
    "tags": [
     "tts",
@@ -19,11 +19,12 @@
    "updated": "2026-01-21",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "1.7B",
    "vram": "~6 GB",
-   "run": "arcflare gen tts \"Hello from ArcFlare\" -m qwen3-tts",
+   "run": "arcflare say \"Hello from ArcFlare\" -m qwen3-tts",
    "runnable": true,
    "featured": true,
    "homepage": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
@@ -52,6 +53,12 @@
      "size": "~4GB",
      "context": "—",
      "updated": "2026-01-21"
+    },
+    {
+     "tag": "1.7b-design",
+     "size": "~4GB",
+     "context": "—",
+     "updated": "2026-01-21"
     }
    ]
   },
@@ -70,11 +77,12 @@
    "updated": "2024-12-01",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "82M",
    "vram": "~1 GB",
-   "run": "arcflare gen tts \"Hello from ArcFlare\" -m kokoro",
+   "run": "arcflare say \"Hello from ArcFlare\" -m kokoro",
    "runnable": true,
    "featured": false,
    "homepage": "https://huggingface.co/hexgrad/Kokoro-82M",
@@ -109,11 +117,12 @@
    "updated": "2025-04-01",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "0.5B",
    "vram": "~4 GB",
-   "run": "arcflare gen tts \"Hello from ArcFlare\" -m chatterbox",
+   "run": "arcflare say \"Hello from ArcFlare\" -m chatterbox",
    "runnable": true,
    "featured": false,
    "homepage": "https://huggingface.co/ResembleAI/chatterbox",
@@ -145,14 +154,15 @@
     "high-quality",
     "multilingual"
    ],
-   "updated": "2026-04-01",
+   "updated": "2026-07-03",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "2B",
    "vram": "~8 GB",
-   "run": "arcflare gen tts \"Hello from ArcFlare\" -m voxcpm2",
+   "run": "arcflare say \"Hello from ArcFlare\" -m voxcpm2",
    "runnable": true,
    "featured": false,
    "homepage": "https://huggingface.co/openbmb/VoxCPM2",
@@ -162,13 +172,13 @@
      "tag": "latest",
      "size": "—",
      "context": "—",
-     "updated": "2026-04-01"
+     "updated": "2026-07-03"
     },
     {
      "tag": "2b",
      "size": "—",
      "context": "—",
-     "updated": "2026-04-01"
+     "updated": "2026-07-03"
     }
    ]
   },
@@ -187,11 +197,12 @@
    "updated": "2025-05-01",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "0.6B",
    "vram": "~2 GB",
-   "run": "arcflare gen tts \"Hello from ArcFlare\" -m outetts",
+   "run": "arcflare say \"Hello from ArcFlare\" -m outetts",
    "runnable": true,
    "featured": false,
    "homepage": "https://huggingface.co/OuteAI/OuteTTS-1.0-0.6B",
@@ -212,6 +223,88 @@
    ]
   },
   {
+   "slug": "kitten-tts-2",
+   "name": "kitten-tts-2",
+   "author": "KittenML",
+   "description": "Kitten TTS 2: a 1.7B speech model that clones a voice from 5-30 seconds of audio, with 47 built-in voices, emotion tags and a 0.95 GB ternary download that runs on the CPU too.",
+   "category": "Audio",
+   "tags": [
+    "tts",
+    "speech",
+    "voice-cloning",
+    "multilingual",
+    "cpu"
+   ],
+   "updated": "2026-10-07",
+   "license": "Stellon Labs Community",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Free for research, non-commercial and limited commercial use. The commercial grant ends above USD 1M in annual revenue or total funding; past that, a separate licence from Stellon Labs is needed. Distributing the weights or a product built on them requires attribution.",
+   "licenseUrl": "https://huggingface.co/KittenML/kitten-tts-2/blob/main/LICENSE.md",
+   "defaultSize": "1.7B",
+   "vram": "~4 GB",
+   "run": "arcflare say \"Hello from ArcFlare\" -m kitten-tts-2",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/KittenML/kitten-tts-2",
+   "url": "https://arcflare.net/models/kitten-tts-2",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.95GB",
+     "context": "—",
+     "updated": "2026-10-07"
+    },
+    {
+     "tag": "1.7b",
+     "size": "0.95GB",
+     "context": "—",
+     "updated": "2026-10-07"
+    }
+   ]
+  },
+  {
+   "slug": "omnivoice",
+   "name": "omnivoice",
+   "author": "k2-fsa",
+   "description": "OmniVoice: speech in 600+ languages from one 0.6B model. Clones a voice from a few seconds of audio (transcript optional), or designs one from attributes like \"female, low pitch, british accent\". Non-commercial weights.",
+   "category": "Audio",
+   "tags": [
+    "tts",
+    "speech",
+    "multilingual",
+    "voice-cloning",
+    "voice-design"
+   ],
+   "updated": "2026-07-03",
+   "license": "CC-BY-NC-4.0",
+   "commercial": false,
+   "restriction": null,
+   "licenseNote": "Non-commercial only: free to use, share and adapt with attribution, but not for commercial purposes. Paid client work, a product you sell, or use inside a business needs another licence or another model.",
+   "licenseUrl": "https://creativecommons.org/licenses/by-nc/4.0/",
+   "defaultSize": "0.6B",
+   "vram": "~4 GB",
+   "run": "arcflare say \"Hello from ArcFlare\" -m omnivoice",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/k2-fsa/OmniVoice",
+   "url": "https://arcflare.net/models/omnivoice",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "2.5GB",
+     "context": "—",
+     "updated": "2026-07-03"
+    },
+    {
+     "tag": "0.6b",
+     "size": "2.5GB",
+     "context": "—",
+     "updated": "2026-07-03"
+    }
+   ]
+  },
+  {
    "slug": "mellum",
    "name": "mellum",
    "author": "JetBrains",
@@ -226,6 +319,7 @@
    "updated": "2025-04-28",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "4B",
@@ -264,6 +358,7 @@
    "updated": "2025-04-27",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "8B",
@@ -302,6 +397,7 @@
    "updated": "2024-06-17",
    "license": "DeepSeek License",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "DeepSeek's own model licence: commercial use is permitted, subject to use-based restrictions listed in the licence.",
    "licenseUrl": "https://github.com/deepseek-ai/DeepSeek-Coder-V2/blob/main/LICENSE-MODEL",
    "defaultSize": "16B",
@@ -340,6 +436,7 @@
    "updated": "2024-05-29",
    "license": "Mistral Non-Production",
    "commercial": false,
+   "restriction": null,
    "licenseNote": "MNPL-0.1: research, testing and personal use only. Not for production or any commercial activity.",
    "licenseUrl": "https://mistral.ai/licenses/MNPL-0.1.md",
    "defaultSize": "22B",
@@ -379,6 +476,7 @@
    "updated": "2025-12-10",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "24B",
@@ -418,6 +516,7 @@
    "updated": "2026-01-19",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "30B-A3B",
@@ -443,6 +542,702 @@
    ]
   },
   {
+   "slug": "flint",
+   "name": "flint",
+   "author": "Recursive",
+   "description": "Flint: Recursive's 40B-A2.5B mixture-of-experts model for coding agents. About 2.5B parameters active per token, with reasoning and multi-turn tool use.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "agentic",
+    "moe",
+    "reasoning",
+    "tools",
+    "long-context"
+   ],
+   "updated": "2026-10-21",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "40B-A2.5B",
+   "vram": "~28 GB",
+   "run": "arcflare pull unsloth/flint-GGUF:UD-Q4_K_XL",
+   "runnable": true,
+   "featured": true,
+   "homepage": "https://huggingface.co/RecursiveSI/flint",
+   "url": "https://arcflare.net/models/flint",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "25.1GB",
+     "context": "256K",
+     "updated": "2026-10-21"
+    },
+    {
+     "tag": "40b-a2.5b",
+     "size": "25.1GB",
+     "context": "256K",
+     "updated": "2026-10-21"
+    }
+   ]
+  },
+  {
+   "slug": "flint-abliterated",
+   "name": "flint-abliterated",
+   "author": "dima6312 (from Recursive's Flint)",
+   "description": "Flint 40B-A2.5B with its refusal direction removed (abliterated). The same coding-agent model, without the refusals, for security research, CTFs and red-team tooling.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "agentic",
+    "moe",
+    "abliterated",
+    "uncensored",
+    "security"
+   ],
+   "updated": "2026-11-01",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "40B-A2.5B",
+   "vram": "~28 GB",
+   "run": "arcflare pull dima6312/Flint-40B-A2.5B-abliterated-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/dima6312/Flint-40B-A2.5B-abliterated",
+   "url": "https://arcflare.net/models/flint-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "24.2GB",
+     "context": "256K",
+     "updated": "2026-11-01"
+    },
+    {
+     "tag": "40b-a2.5b",
+     "size": "24.2GB",
+     "context": "256K",
+     "updated": "2026-11-01"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.6-abliterated",
+   "name": "qwen3.6-abliterated",
+   "author": "huihui-ai (from Alibaba Qwen)",
+   "description": "Qwen3.6-35B-A3B, abliterated: Qwen's 35B-A3B MoE with refusals removed. Ships a vision projector and MTP heads.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "moe",
+    "vision",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-05-19",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "35B-A3B",
+   "vram": "~24 GB",
+   "run": "arcflare pull huihui-ai/Huihui-Qwen3.6-35B-A3B-abliterated-MTP-GGUF:Q4_K",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-Qwen3.6-35B-A3B-abliterated-MTP-GGUF",
+   "url": "https://arcflare.net/models/qwen3.6-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "21.7GB",
+     "context": "256K",
+     "updated": "2026-05-19"
+    },
+    {
+     "tag": "35b-a3b",
+     "size": "21.7GB",
+     "context": "256K",
+     "updated": "2026-05-19"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.8-abliterated",
+   "name": "qwen3.8-abliterated",
+   "author": "huihui-ai (from Alibaba Qwen)",
+   "description": "Qwen3.8-27B, abliterated: Qwen's dense 27B with refusals removed. Ships a vision projector.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "dense",
+    "vision",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-08-16",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "27B",
+   "vram": "~20 GB",
+   "run": "arcflare pull huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF:UD-Q4_K_XL",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF",
+   "url": "https://arcflare.net/models/qwen3.8-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "17.4GB",
+     "context": "256K",
+     "updated": "2026-08-16"
+    },
+    {
+     "tag": "27b",
+     "size": "17.4GB",
+     "context": "256K",
+     "updated": "2026-08-16"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-coder-abliterated",
+   "name": "qwen3-coder-abliterated",
+   "author": "huihui-ai (from Alibaba Qwen)",
+   "description": "Qwen3-Coder 30B-A3B, abliterated: Qwen's agentic coding MoE with refusals removed. The same coder, for security research and red-team tooling.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "agentic",
+    "moe",
+    "abliterated",
+    "uncensored",
+    "security"
+   ],
+   "updated": "2025-08-02",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "30B-A3B",
+   "vram": "~20 GB",
+   "run": "arcflare pull mradermacher/Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated",
+   "url": "https://arcflare.net/models/qwen3-coder-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "18.6GB",
+     "context": "256K",
+     "updated": "2025-08-02"
+    },
+    {
+     "tag": "30b-a3b",
+     "size": "18.6GB",
+     "context": "256K",
+     "updated": "2025-08-02"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.5-9b-abliterated",
+   "name": "qwen3.5-9b-abliterated",
+   "author": "huihui-ai (from Alibaba Qwen)",
+   "description": "Qwen3.5-9B, abliterated: Qwen's 9B with refusals removed. Fits an 8 GB card.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "dense",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-03-09",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "9B",
+   "vram": "~7 GB",
+   "run": "arcflare pull mradermacher/Huihui-Qwen3.5-9B-abliterated-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-Qwen3.5-9B-abliterated",
+   "url": "https://arcflare.net/models/qwen3.5-9b-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5.6GB",
+     "context": "256K",
+     "updated": "2026-03-09"
+    },
+    {
+     "tag": "9b",
+     "size": "5.6GB",
+     "context": "256K",
+     "updated": "2026-03-09"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.5-4b-abliterated",
+   "name": "qwen3.5-4b-abliterated",
+   "author": "huihui-ai (from Alibaba Qwen)",
+   "description": "Qwen3.5-4B, abliterated: Qwen's 4B with refusals removed. Runs on a laptop GPU, or slowly on the CPU.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "dense",
+    "small",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-03-07",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B",
+   "vram": "~4 GB",
+   "run": "arcflare pull mradermacher/Huihui-Qwen3.5-4B-abliterated-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-Qwen3.5-4B-abliterated",
+   "url": "https://arcflare.net/models/qwen3.5-4b-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "2.7GB",
+     "context": "256K",
+     "updated": "2026-03-07"
+    },
+    {
+     "tag": "4b",
+     "size": "2.7GB",
+     "context": "256K",
+     "updated": "2026-03-07"
+    }
+   ]
+  },
+  {
+   "slug": "gemma4-e4b-abliterated",
+   "name": "gemma4-e4b-abliterated",
+   "author": "huihui-ai (from Google)",
+   "description": "Gemma 4 E4B, abliterated: Google's on-device Gemma 4 with refusals removed. Reads images; the projector downloads with it.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "vision",
+    "small",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-06-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "E4B",
+   "vram": "~7 GB",
+   "run": "arcflare pull huihui-ai/Huihui-gemma-4-E4B-it-qat-q4_0-unquantized-abliterated-GGUF:Q4_K",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-gemma-4-E4B-it-qat-q4_0-unquantized-abliterated-GGUF",
+   "url": "https://arcflare.net/models/gemma4-e4b-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5.3GB",
+     "context": "128K",
+     "updated": "2026-06-10"
+    },
+    {
+     "tag": "e4b",
+     "size": "5.3GB",
+     "context": "128K",
+     "updated": "2026-06-10"
+    }
+   ]
+  },
+  {
+   "slug": "gemma4-12b-abliterated",
+   "name": "gemma4-12b-abliterated",
+   "author": "huihui-ai (from Google)",
+   "description": "Gemma 4 12B, abliterated: Google's dense 12B with refusals removed. Fits a 12 GB card, and reads images.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "dense",
+    "vision",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-06-08",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "12B",
+   "vram": "~9 GB",
+   "run": "arcflare pull huihui-ai/Huihui-gemma-4-12B-it-qat-q4_0-unquantized-abliterated-GGUF:Q4_K",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-gemma-4-12B-it-qat-q4_0-unquantized-abliterated-GGUF",
+   "url": "https://arcflare.net/models/gemma4-12b-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "7.4GB",
+     "context": "256K",
+     "updated": "2026-06-08"
+    },
+    {
+     "tag": "12b",
+     "size": "7.4GB",
+     "context": "256K",
+     "updated": "2026-06-08"
+    }
+   ]
+  },
+  {
+   "slug": "gemma4-abliterated",
+   "name": "gemma4-abliterated",
+   "author": "huihui-ai (from Google)",
+   "description": "Gemma 4 26B-A4B, abliterated: Google's mixture-of-experts Gemma 4 with refusals removed. About 4B active per token, and it reads images.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "moe",
+    "vision",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-06-11",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "26B-A4B",
+   "vram": "~20 GB",
+   "run": "arcflare pull huihui-ai/Huihui-gemma-4-26B-A4B-it-qat-q4_0-unquantized-abliterated-GGUF:Q4_K",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-gemma-4-26B-A4B-it-qat-q4_0-unquantized-abliterated-GGUF",
+   "url": "https://arcflare.net/models/gemma4-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "16.8GB",
+     "context": "256K",
+     "updated": "2026-06-11"
+    },
+    {
+     "tag": "26b-a4b",
+     "size": "16.8GB",
+     "context": "256K",
+     "updated": "2026-06-11"
+    }
+   ]
+  },
+  {
+   "slug": "gemma4-31b-abliterated",
+   "name": "gemma4-31b-abliterated",
+   "author": "huihui-ai (from Google)",
+   "description": "Gemma 4 31B, abliterated: the largest dense Gemma 4 with refusals removed. Reads images.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "dense",
+    "vision",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-06-11",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "31B",
+   "vram": "~22 GB",
+   "run": "arcflare pull huihui-ai/Huihui-gemma-4-31B-it-qat-q4_0-unquantized-abliterated-GGUF:Q4_K",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-gemma-4-31B-it-qat-q4_0-unquantized-abliterated-GGUF",
+   "url": "https://arcflare.net/models/gemma4-31b-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "18.7GB",
+     "context": "256K",
+     "updated": "2026-06-11"
+    },
+    {
+     "tag": "31b",
+     "size": "18.7GB",
+     "context": "256K",
+     "updated": "2026-06-11"
+    }
+   ]
+  },
+  {
+   "slug": "gpt-oss-abliterated",
+   "name": "gpt-oss-abliterated",
+   "author": "huihui-ai (from OpenAI)",
+   "description": "gpt-oss 20B, abliterated: OpenAI's open-weight reasoning MoE with refusals removed. Runs in ~14 GB.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning",
+    "moe",
+    "tools",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2025-08-07",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "20B",
+   "vram": "~14 GB",
+   "run": "arcflare pull bartowski/huihui-ai_Huihui-gpt-oss-20b-BF16-abliterated-GGUF:MXFP4_MOE",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-gpt-oss-20b-BF16-abliterated",
+   "url": "https://arcflare.net/models/gpt-oss-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "12.1GB",
+     "context": "128K",
+     "updated": "2025-08-07"
+    },
+    {
+     "tag": "20b",
+     "size": "12.1GB",
+     "context": "128K",
+     "updated": "2025-08-07"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-4b-abliterated",
+   "name": "qwen3-4b-abliterated",
+   "author": "huihui-ai (from Alibaba Qwen)",
+   "description": "Qwen3-4B-Instruct-2507, abliterated: Qwen's small non-thinking model with refusals removed. Runs almost anywhere.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "small",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2025-08-08",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B",
+   "vram": "~4 GB",
+   "run": "arcflare pull mradermacher/Huihui-Qwen3-4B-Instruct-2507-abliterated-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-Qwen3-4B-Instruct-2507-abliterated",
+   "url": "https://arcflare.net/models/qwen3-4b-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "2.5GB",
+     "context": "256K",
+     "updated": "2025-08-08"
+    },
+    {
+     "tag": "4b",
+     "size": "2.5GB",
+     "context": "256K",
+     "updated": "2025-08-08"
+    }
+   ]
+  },
+  {
+   "slug": "llama3.1-abliterated",
+   "name": "llama3.1-abliterated",
+   "author": "mlabonne (from Meta)",
+   "description": "Llama 3.1 8B Instruct, abliterated: Maxime Labonne's widely used uncensored Llama 3.1 8B. Fits an 8 GB card.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2024-07-24",
+   "license": "Llama 3.1 Community",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
+   "licenseUrl": "https://www.llama.com/llama3_1/license/",
+   "defaultSize": "8B",
+   "vram": "~6 GB",
+   "run": "arcflare pull mlabonne/Meta-Llama-3.1-8B-Instruct-abliterated-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/mlabonne/Meta-Llama-3.1-8B-Instruct-abliterated",
+   "url": "https://arcflare.net/models/llama3.1-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2024-07-24"
+    },
+    {
+     "tag": "8b",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2024-07-24"
+    }
+   ]
+  },
+  {
+   "slug": "mistral-small3.2-abliterated",
+   "name": "mistral-small3.2-abliterated",
+   "author": "huihui-ai (from Mistral AI)",
+   "description": "Mistral Small 3.2 24B, abliterated: Mistral's 24B instruct model with refusals removed. Fits a 16-24 GB card.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "dense",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2025-07-07",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "24B",
+   "vram": "~16 GB",
+   "run": "arcflare pull mradermacher/Huihui-Mistral-Small-3.2-24B-Instruct-2506-abliterated-llamacppfixed-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-Mistral-Small-3.2-24B-Instruct-2506-abliterated",
+   "url": "https://arcflare.net/models/mistral-small3.2-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "14.3GB",
+     "context": "128K",
+     "updated": "2025-07-07"
+    },
+    {
+     "tag": "24b",
+     "size": "14.3GB",
+     "context": "128K",
+     "updated": "2025-07-07"
+    }
+   ]
+  },
+  {
+   "slug": "llama3.3-abliterated",
+   "name": "llama3.3-abliterated",
+   "author": "huihui-ai (from Meta)",
+   "description": "Llama 3.3 70B Instruct, abliterated: Meta's 70B with refusals removed. Needs ~45 GB: two 24 GB cards or a 64 GB unified-memory machine.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "large",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2024-12-23",
+   "license": "Llama 3.3 Community",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
+   "licenseUrl": "https://www.llama.com/llama3_3/license/",
+   "defaultSize": "70B",
+   "vram": "~45 GB",
+   "run": "arcflare pull bartowski/Llama-3.3-70B-Instruct-abliterated-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Llama-3.3-70B-Instruct-abliterated",
+   "url": "https://arcflare.net/models/llama3.3-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "42.5GB",
+     "context": "128K",
+     "updated": "2024-12-23"
+    },
+    {
+     "tag": "70b",
+     "size": "42.5GB",
+     "context": "128K",
+     "updated": "2024-12-23"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-coder-next-abliterated",
+   "name": "qwen3-coder-next-abliterated",
+   "author": "huihui-ai (from Alibaba Qwen)",
+   "description": "Qwen3-Coder-Next, abliterated: Qwen's 80B-A3B agentic coder with refusals removed, for security research and red-team tooling.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "agentic",
+    "moe",
+    "long-context",
+    "abliterated",
+    "uncensored",
+    "security"
+   ],
+   "updated": "2026-02-09",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "80B-A3B",
+   "vram": "~52 GB",
+   "run": "arcflare pull bartowski/huihui-ai_Qwen3-Coder-Next-abliterated-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-Qwen3-Coder-Next-abliterated",
+   "url": "https://arcflare.net/models/qwen3-coder-next-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "48.6GB",
+     "context": "256K",
+     "updated": "2026-02-09"
+    },
+    {
+     "tag": "80b-a3b",
+     "size": "48.6GB",
+     "context": "256K",
+     "updated": "2026-02-09"
+    }
+   ]
+  },
+  {
    "slug": "olympiccoder",
    "name": "olympiccoder",
    "author": "Hugging Face (open-r1)",
@@ -456,6 +1251,7 @@
    "updated": "2025-03-11",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "32B",
@@ -494,6 +1290,7 @@
    "updated": "2025-07-10",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "32B",
@@ -533,6 +1330,7 @@
    "updated": "2026-02-24",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "27B",
@@ -595,6 +1393,7 @@
    "updated": "2025-06-16",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "72B",
@@ -634,6 +1433,7 @@
    "updated": "2026-01-30",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "80B-A3B",
@@ -673,6 +1473,7 @@
    "updated": "2025-09-30",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "357B",
@@ -712,6 +1513,7 @@
    "updated": "2025-08-14",
    "license": "Gemma",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Open weights under Google's Gemma Terms of Use and a prohibited-use policy.",
    "licenseUrl": "https://ai.google.dev/gemma/terms",
    "defaultSize": "270M",
@@ -751,6 +1553,7 @@
    "updated": "2025-07-08",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "3B",
@@ -790,6 +1593,7 @@
    "updated": "2025-02-26",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "3.8B",
@@ -830,6 +1634,7 @@
    "updated": "2025-04-29",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "8B",
@@ -911,6 +1716,7 @@
    "updated": "2025-03-12",
    "license": "Gemma",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Open weights under Google's Gemma Terms of Use and a prohibited-use policy.",
    "licenseUrl": "https://ai.google.dev/gemma/terms",
    "defaultSize": "12B",
@@ -968,6 +1774,7 @@
    "updated": "2025-08-05",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "20B",
@@ -1013,6 +1820,7 @@
    "updated": "2025-03-17",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "24B",
@@ -1052,6 +1860,7 @@
    "updated": "2025-05-21",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "24B",
@@ -1091,6 +1900,7 @@
    "updated": "2025-07-31",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "30B-A3B",
@@ -1136,6 +1946,7 @@
    "updated": "2025-07-28",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "106B-A12B",
@@ -1174,7 +1985,8 @@
    "updated": "2025-04-05",
    "license": "Llama 4 Community",
    "commercial": true,
-   "licenseNote": "Open weights with conditions: a separate licence is needed above ~700M monthly active users, plus Meta's acceptable-use policy.",
+   "restriction": "Llama 4 is multimodal, and Meta's licence does not grant the multimodal rights to people or companies based in the EU.",
+   "licenseNote": "Open weights with conditions: a separate licence is needed above ~700M monthly active users, plus Meta's acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
    "licenseUrl": "https://www.llama.com/llama4/license/",
    "defaultSize": "109B-A17B",
    "vram": "~64 GB",
@@ -1213,6 +2025,7 @@
    "updated": "2025-05-28",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "8B",
@@ -1244,6 +2057,93 @@
    ]
   },
   {
+   "slug": "deepseek-v4.1-flash",
+   "name": "deepseek-v4.1-flash",
+   "author": "DeepSeek",
+   "description": "DeepSeek-V4.1-Flash-1017: DeepSeek's agentic coding MoE with a 1M-token window. Even the expert-pruned 2-bit coder build is 72 GB. MIT.",
+   "category": "Code",
+   "tags": [
+    "moe",
+    "agentic",
+    "code",
+    "frontier",
+    "long-context"
+   ],
+   "updated": "2026-10-17",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "coder-iq2",
+   "vram": "~80 GB",
+   "run": "arcflare pull ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-Coder-GGUF:IQ2_XXS",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+   "url": "https://arcflare.net/models/deepseek-v4.1-flash",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "72GB",
+     "context": "1M",
+     "updated": "2026-10-17"
+    },
+    {
+     "tag": "coder-iq2",
+     "size": "72GB",
+     "context": "1M",
+     "updated": "2026-10-17"
+    },
+    {
+     "tag": "full-iq1",
+     "size": "233GB+",
+     "context": "1M",
+     "updated": "2026-10-17"
+    }
+   ]
+  },
+  {
+   "slug": "deepseek-v4-pro-distill",
+   "name": "deepseek-v4-pro-distill",
+   "author": "Jackrong",
+   "description": "A 9B Qwen3.5 fine-tuned on DeepSeek-V4-Pro reasoning traces. Not made by DeepSeek, but it fits any gaming GPU. Apache-2.0.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning",
+    "distill",
+    "tool-use",
+    "small"
+   ],
+   "updated": "2026-08-01",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "9B",
+   "vram": "~8 GB",
+   "run": "arcflare pull Jackrong/DeepSeek-V4-Pro-Qwen3.5-9B-MTP-GGUF:Q6_K",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Jackrong/DeepSeek-V4-Pro-Qwen3.5-9B-MTP-GGUF",
+   "url": "https://arcflare.net/models/deepseek-v4-pro-distill",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "7.6GB",
+     "context": "256K",
+     "updated": "2026-08-01"
+    },
+    {
+     "tag": "9b",
+     "size": "7.6GB",
+     "context": "256K",
+     "updated": "2026-08-01"
+    }
+   ]
+  },
+  {
    "slug": "kimi-k2",
    "name": "kimi-k2",
    "author": "Moonshot AI",
@@ -1258,6 +2158,7 @@
    "updated": "2025-07-11",
    "license": "Modified MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "MIT, plus one condition: very large commercial products must credit the model in their UI.",
    "licenseUrl": "https://huggingface.co/moonshotai/Kimi-K2-Instruct/blob/main/LICENSE",
    "defaultSize": "1T-A32B",
@@ -1297,6 +2198,7 @@
    "updated": "2025-01-28",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "7B",
@@ -1314,12 +2216,6 @@
      "updated": "2025-01-28"
     },
     {
-     "tag": "3b",
-     "size": "2.0GB",
-     "context": "32K",
-     "updated": "2025-01-28"
-    },
-    {
      "tag": "7b",
      "size": "4.7GB",
      "context": "32K",
@@ -1328,12 +2224,6 @@
     {
      "tag": "32b",
      "size": "20GB",
-     "context": "32K",
-     "updated": "2025-01-28"
-    },
-    {
-     "tag": "72b",
-     "size": "47GB",
      "context": "32K",
      "updated": "2025-01-28"
     }
@@ -1354,6 +2244,7 @@
    "updated": "2025-06-05",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "0.6B",
@@ -1405,7 +2296,8 @@
    "updated": "2025-03-19",
    "license": "Tencent Hunyuan Community",
    "commercial": true,
-   "licenseNote": "Open weights. Commercial use is allowed below 1M monthly active users; above that, request a licence from Tencent. Does not apply in the EU, UK or South Korea, and distribution is limited to the licensed territory. Acceptable-use policy applies.",
+   "restriction": "Not licensed in the EU, the UK or South Korea. If you are there, you may not use it: pick TripoSR (MIT) instead.",
+   "licenseNote": "Open weights. Commercial use is allowed below 1M monthly active users; above that, request a licence from Tencent. Distribution is limited to the licensed territory. Acceptable-use policy applies.",
    "licenseUrl": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2/blob/main/LICENSE",
    "defaultSize": "1.1B",
    "vram": "~6 GB",
@@ -1438,7 +2330,8 @@
    "updated": "2025-03-18",
    "license": "Tencent Hunyuan Community",
    "commercial": true,
-   "licenseNote": "Open weights. Commercial use is allowed below 1M monthly active users; above that, request a licence from Tencent. Does not apply in the EU, UK or South Korea, and distribution is limited to the licensed territory. Acceptable-use policy applies.",
+   "restriction": "Not licensed in the EU, the UK or South Korea. If you are there, you may not use it: pick TripoSR (MIT) instead.",
+   "licenseNote": "Open weights. Commercial use is allowed below 1M monthly active users; above that, request a licence from Tencent. Distribution is limited to the licensed territory. Acceptable-use policy applies.",
    "licenseUrl": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2/blob/main/LICENSE",
    "defaultSize": "0.6B",
    "vram": "~5 GB",
@@ -1450,252 +2343,9 @@
    "versions": [
     {
      "tag": "latest",
-     "size": "2.3GB",
+     "size": "3.8GB",
      "context": "—",
      "updated": "2025-03-18"
-    }
-   ]
-  },
-  {
-   "slug": "qwen2.5",
-   "name": "qwen2.5",
-   "author": "Alibaba Qwen",
-   "description": "Qwen2.5 is Alibaba's latest series of multilingual LLMs with strong instruction following, long context, and tool use.",
-   "category": "Chat",
-   "tags": [
-    "chat",
-    "multilingual",
-    "tools",
-    "long-context"
-   ],
-   "updated": "2025-09-19",
-   "license": "Apache-2.0",
-   "commercial": true,
-   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
-   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
-   "defaultSize": "7B",
-   "vram": "~6 GB",
-   "run": "arcflare run qwen2.5",
-   "runnable": false,
-   "featured": false,
-   "homepage": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct",
-   "url": "https://arcflare.net/models/qwen2.5",
-   "versions": [
-    {
-     "tag": "latest",
-     "size": "4.7GB",
-     "context": "128K",
-     "updated": "2025-09-19"
-    },
-    {
-     "tag": "0.5b",
-     "size": "398MB",
-     "context": "32K",
-     "updated": "2025-09-19"
-    },
-    {
-     "tag": "1.5b",
-     "size": "986MB",
-     "context": "32K",
-     "updated": "2025-09-19"
-    },
-    {
-     "tag": "7b",
-     "size": "4.7GB",
-     "context": "128K",
-     "updated": "2025-09-19"
-    },
-    {
-     "tag": "14b",
-     "size": "9.0GB",
-     "context": "128K",
-     "updated": "2025-09-19"
-    },
-    {
-     "tag": "32b",
-     "size": "20GB",
-     "context": "128K",
-     "updated": "2025-09-19"
-    }
-   ]
-  },
-  {
-   "slug": "qwen2.5-coder",
-   "name": "qwen2.5-coder",
-   "author": "Alibaba Qwen",
-   "description": "Code-specialized Qwen2.5 with state-of-the-art code generation, reasoning, and fixing across many languages.",
-   "category": "Code",
-   "tags": [
-    "code",
-    "completion",
-    "fim",
-    "multilingual"
-   ],
-   "updated": "2025-11-12",
-   "license": "Apache-2.0",
-   "commercial": true,
-   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
-   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
-   "defaultSize": "7B",
-   "vram": "~6 GB",
-   "run": "arcflare run qwen2.5-coder",
-   "runnable": false,
-   "featured": false,
-   "homepage": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
-   "url": "https://arcflare.net/models/qwen2.5-coder",
-   "versions": [
-    {
-     "tag": "latest",
-     "size": "4.7GB",
-     "context": "128K",
-     "updated": "2025-11-12"
-    },
-    {
-     "tag": "1.5b",
-     "size": "986MB",
-     "context": "32K",
-     "updated": "2025-11-12"
-    },
-    {
-     "tag": "7b",
-     "size": "4.7GB",
-     "context": "128K",
-     "updated": "2025-11-12"
-    },
-    {
-     "tag": "32b",
-     "size": "20GB",
-     "context": "128K",
-     "updated": "2025-11-12"
-    }
-   ]
-  },
-  {
-   "slug": "llama3.2",
-   "name": "llama3.2",
-   "author": "Meta",
-   "description": "Meta's compact Llama 3.2 models (1B and 3B) — efficient, on-device-friendly assistants.",
-   "category": "Chat",
-   "tags": [
-    "chat",
-    "small",
-    "edge",
-    "multilingual"
-   ],
-   "updated": "2025-09-25",
-   "license": "Llama 3.2 Community",
-   "commercial": true,
-   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy.",
-   "licenseUrl": "https://www.llama.com/llama3_2/license/",
-   "defaultSize": "3B",
-   "vram": "~4 GB",
-   "run": "arcflare run llama3.2",
-   "runnable": false,
-   "featured": false,
-   "homepage": "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct",
-   "url": "https://arcflare.net/models/llama3.2",
-   "versions": [
-    {
-     "tag": "latest",
-     "size": "2.0GB",
-     "context": "128K",
-     "updated": "2025-09-25"
-    },
-    {
-     "tag": "1b",
-     "size": "1.3GB",
-     "context": "128K",
-     "updated": "2025-09-25"
-    },
-    {
-     "tag": "3b",
-     "size": "2.0GB",
-     "context": "128K",
-     "updated": "2025-09-25"
-    }
-   ]
-  },
-  {
-   "slug": "llama3.1",
-   "name": "llama3.1",
-   "author": "Meta",
-   "description": "Meta's Llama 3.1 — a strong, widely-used open model family (8B / 70B / 405B) with a 128K context.",
-   "category": "Chat",
-   "tags": [
-    "chat",
-    "instruct",
-    "tools",
-    "128K"
-   ],
-   "updated": "2025-07-23",
-   "license": "Llama 3.1 Community",
-   "commercial": true,
-   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy.",
-   "licenseUrl": "https://www.llama.com/llama3_1/license/",
-   "defaultSize": "8B",
-   "vram": "~8 GB",
-   "run": "arcflare run llama3.1",
-   "runnable": false,
-   "featured": false,
-   "homepage": "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct",
-   "url": "https://arcflare.net/models/llama3.1",
-   "versions": [
-    {
-     "tag": "latest",
-     "size": "4.9GB",
-     "context": "128K",
-     "updated": "2025-07-23"
-    },
-    {
-     "tag": "8b",
-     "size": "4.9GB",
-     "context": "128K",
-     "updated": "2025-07-23"
-    },
-    {
-     "tag": "70b",
-     "size": "40GB",
-     "context": "128K",
-     "updated": "2025-07-23"
-    }
-   ]
-  },
-  {
-   "slug": "mistral",
-   "name": "mistral",
-   "author": "Mistral AI",
-   "description": "Mistral 7B — a fast, efficient, fully open (Apache-2.0) model that punches well above its size.",
-   "category": "Chat",
-   "tags": [
-    "chat",
-    "instruct",
-    "7B",
-    "fast"
-   ],
-   "updated": "2025-05-30",
-   "license": "Apache-2.0",
-   "commercial": true,
-   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
-   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
-   "defaultSize": "7B",
-   "vram": "~6 GB",
-   "run": "arcflare run mistral",
-   "runnable": false,
-   "featured": false,
-   "homepage": "https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3",
-   "url": "https://arcflare.net/models/mistral",
-   "versions": [
-    {
-     "tag": "latest",
-     "size": "4.1GB",
-     "context": "32K",
-     "updated": "2025-05-30"
-    },
-    {
-     "tag": "7b",
-     "size": "4.1GB",
-     "context": "32K",
-     "updated": "2025-05-30"
     }
    ]
   },
@@ -1714,6 +2364,7 @@
    "updated": "2025-04-15",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "8x7B",
@@ -1739,192 +2390,6 @@
    ]
   },
   {
-   "slug": "gemma2",
-   "name": "gemma2",
-   "author": "Google",
-   "description": "Gemma 2 — Google's open models (2B / 9B / 27B) built from the same research as Gemini.",
-   "category": "Chat",
-   "tags": [
-    "chat",
-    "instruct",
-    "google",
-    "9B"
-   ],
-   "updated": "2025-06-27",
-   "license": "Gemma",
-   "commercial": true,
-   "licenseNote": "Open weights under Google's Gemma Terms of Use and a prohibited-use policy.",
-   "licenseUrl": "https://ai.google.dev/gemma/terms",
-   "defaultSize": "9B",
-   "vram": "~8 GB",
-   "run": "arcflare run gemma2",
-   "runnable": false,
-   "featured": false,
-   "homepage": "https://huggingface.co/google/gemma-2-9b-it",
-   "url": "https://arcflare.net/models/gemma2",
-   "versions": [
-    {
-     "tag": "latest",
-     "size": "5.4GB",
-     "context": "8K",
-     "updated": "2025-06-27"
-    },
-    {
-     "tag": "2b",
-     "size": "1.6GB",
-     "context": "8K",
-     "updated": "2025-06-27"
-    },
-    {
-     "tag": "9b",
-     "size": "5.4GB",
-     "context": "8K",
-     "updated": "2025-06-27"
-    },
-    {
-     "tag": "27b",
-     "size": "16GB",
-     "context": "8K",
-     "updated": "2025-06-27"
-    }
-   ]
-  },
-  {
-   "slug": "phi4",
-   "name": "phi4",
-   "author": "Microsoft",
-   "description": "Phi-4 — Microsoft's 14B model with outsized reasoning ability for its size, MIT-licensed.",
-   "category": "Reasoning",
-   "tags": [
-    "reasoning",
-    "math",
-    "small",
-    "MIT"
-   ],
-   "updated": "2025-01-08",
-   "license": "MIT",
-   "commercial": true,
-   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
-   "licenseUrl": "https://opensource.org/license/mit",
-   "defaultSize": "14B",
-   "vram": "~12 GB",
-   "run": "arcflare run phi4",
-   "runnable": false,
-   "featured": false,
-   "homepage": "https://huggingface.co/microsoft/phi-4",
-   "url": "https://arcflare.net/models/phi4",
-   "versions": [
-    {
-     "tag": "latest",
-     "size": "9.1GB",
-     "context": "16K",
-     "updated": "2025-01-08"
-    },
-    {
-     "tag": "14b",
-     "size": "9.1GB",
-     "context": "16K",
-     "updated": "2025-01-08"
-    }
-   ]
-  },
-  {
-   "slug": "deepseek-r1",
-   "name": "deepseek-r1",
-   "author": "DeepSeek",
-   "description": "DeepSeek-R1 — an open reasoning model trained with reinforcement learning, with strong math and coding.",
-   "category": "Reasoning",
-   "tags": [
-    "reasoning",
-    "chain-of-thought",
-    "math",
-    "MIT"
-   ],
-   "updated": "2025-01-20",
-   "license": "MIT",
-   "commercial": true,
-   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
-   "licenseUrl": "https://opensource.org/license/mit",
-   "defaultSize": "7B",
-   "vram": "~6 GB",
-   "run": "arcflare run deepseek-r1",
-   "runnable": false,
-   "featured": false,
-   "homepage": "https://huggingface.co/deepseek-ai/DeepSeek-R1",
-   "url": "https://arcflare.net/models/deepseek-r1",
-   "versions": [
-    {
-     "tag": "latest",
-     "size": "4.7GB",
-     "context": "128K",
-     "updated": "2025-01-20"
-    },
-    {
-     "tag": "1.5b",
-     "size": "1.1GB",
-     "context": "128K",
-     "updated": "2025-01-20"
-    },
-    {
-     "tag": "7b",
-     "size": "4.7GB",
-     "context": "128K",
-     "updated": "2025-01-20"
-    },
-    {
-     "tag": "8b",
-     "size": "4.9GB",
-     "context": "128K",
-     "updated": "2025-01-20"
-    },
-    {
-     "tag": "14b",
-     "size": "9.0GB",
-     "context": "128K",
-     "updated": "2025-01-20"
-    },
-    {
-     "tag": "32b",
-     "size": "20GB",
-     "context": "128K",
-     "updated": "2025-01-20"
-    }
-   ]
-  },
-  {
-   "slug": "nomic-embed-text",
-   "name": "nomic-embed-text",
-   "author": "Nomic AI",
-   "description": "A high-performing open text embedding model with a large context window, fully open (Apache-2.0).",
-   "category": "Embedding",
-   "tags": [
-    "embedding",
-    "rag",
-    "search",
-    "long-context"
-   ],
-   "updated": "2025-02-15",
-   "license": "Apache-2.0",
-   "commercial": true,
-   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
-   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
-   "defaultSize": "137M",
-   "vram": "~1 GB",
-   "run": "arcflare run nomic-embed-text",
-   "runnable": false,
-   "featured": false,
-   "homepage": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
-   "url": "https://arcflare.net/models/nomic-embed-text",
-   "versions": [
-    {
-     "tag": "latest",
-     "size": "274MB",
-     "context": "8K",
-     "updated": "2025-02-15"
-    }
-   ]
-  },
-  {
    "slug": "mxbai-embed-large",
    "name": "mxbai-embed-large",
    "author": "Mixedbread AI",
@@ -1939,6 +2404,7 @@
    "updated": "2025-03-10",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "335M",
@@ -1972,6 +2438,7 @@
    "updated": "2025-04-02",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "1.8B",
@@ -1991,57 +2458,6 @@
    ]
   },
   {
-   "slug": "starcoder2",
-   "name": "starcoder2",
-   "author": "BigCode",
-   "description": "StarCoder2 — open code models trained on permissively-licensed source across 600+ languages.",
-   "category": "Code",
-   "tags": [
-    "code",
-    "completion",
-    "fim",
-    "multilingual"
-   ],
-   "updated": "2025-02-28",
-   "license": "BigCode OpenRAIL-M",
-   "commercial": true,
-   "licenseNote": "Open and royalty-free with use-based (responsible-AI) restrictions.",
-   "licenseUrl": "https://www.bigcode-project.org/docs/pages/bigcode-openrail/",
-   "defaultSize": "15B",
-   "vram": "~12 GB",
-   "run": "arcflare run starcoder2",
-   "runnable": false,
-   "featured": false,
-   "homepage": "https://huggingface.co/bigcode/starcoder2-15b",
-   "url": "https://arcflare.net/models/starcoder2",
-   "versions": [
-    {
-     "tag": "latest",
-     "size": "9.1GB",
-     "context": "16K",
-     "updated": "2025-02-28"
-    },
-    {
-     "tag": "3b",
-     "size": "1.7GB",
-     "context": "16K",
-     "updated": "2025-02-28"
-    },
-    {
-     "tag": "7b",
-     "size": "4.0GB",
-     "context": "16K",
-     "updated": "2025-02-28"
-    },
-    {
-     "tag": "15b",
-     "size": "9.1GB",
-     "context": "16K",
-     "updated": "2025-02-28"
-    }
-   ]
-  },
-  {
    "slug": "whisper",
    "name": "whisper",
    "author": "OpenAI",
@@ -2056,6 +2472,7 @@
    "updated": "2024-12-05",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "1.5B",
@@ -2101,6 +2518,7 @@
    "updated": "2024-08-01",
    "license": "Apache-2.0",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
    "defaultSize": "12B",
@@ -2140,6 +2558,7 @@
    "updated": "2024-08-01",
    "license": "FLUX.1 [dev] Non-Commercial",
    "commercial": false,
+   "restriction": null,
    "licenseNote": "Weights are free for research and personal use only — NOT for commercial use (use FLUX.1 [schnell] for that).",
    "licenseUrl": "https://huggingface.co/black-forest-labs/FLUX.1-dev/blob/main/LICENSE.md",
    "defaultSize": "12B",
@@ -2179,6 +2598,7 @@
    "updated": "2024-10-22",
    "license": "Stability AI Community",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Free for research and for commercial use by smaller organizations; larger organizations need a paid license.",
    "licenseUrl": "https://stability.ai/license",
    "defaultSize": "8B",
@@ -2224,6 +2644,7 @@
    "updated": "2024-07-26",
    "license": "OpenRAIL++-M",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Open and royalty-free with responsible-AI use restrictions.",
    "licenseUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/LICENSE.md",
    "defaultSize": "3.5B",
@@ -2263,7 +2684,8 @@
    "updated": "2025-03-18",
    "license": "Tencent Hunyuan Community",
    "commercial": true,
-   "licenseNote": "Open weights. Commercial use is allowed below 1M monthly active users; above that, request a licence from Tencent. Does not apply in the EU, UK or South Korea, and distribution is limited to the licensed territory. Acceptable-use policy applies.",
+   "restriction": "Not licensed in the EU, the UK or South Korea. If you are there, you may not use it: pick TripoSR (MIT) instead.",
+   "licenseNote": "Open weights. Commercial use is allowed below 1M monthly active users; above that, request a licence from Tencent. Distribution is limited to the licensed territory. Acceptable-use policy applies.",
    "licenseUrl": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2/blob/main/LICENSE",
    "defaultSize": "0.6B",
    "vram": "~5 GB",
@@ -2275,13 +2697,13 @@
    "versions": [
     {
      "tag": "latest",
-     "size": "2.3GB",
+     "size": "3.8GB",
      "context": "—",
      "updated": "2025-03-18"
     },
     {
      "tag": "turbo",
-     "size": "2.3GB",
+     "size": "3.8GB",
      "context": "—",
      "updated": "2025-03-18"
     }
@@ -2302,7 +2724,8 @@
    "updated": "2025-01-21",
    "license": "Tencent Hunyuan Community",
    "commercial": true,
-   "licenseNote": "Open weights. Commercial use is allowed below 1M monthly active users; above that, request a licence from Tencent. Does not apply in the EU, UK or South Korea, and distribution is limited to the licensed territory. Acceptable-use policy applies.",
+   "restriction": "Not licensed in the EU, the UK or South Korea. If you are there, you may not use it: pick TripoSR (MIT) instead.",
+   "licenseNote": "Open weights. Commercial use is allowed below 1M monthly active users; above that, request a licence from Tencent. Distribution is limited to the licensed territory. Acceptable-use policy applies.",
    "licenseUrl": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2/blob/main/LICENSE",
    "defaultSize": "1.1B",
    "vram": "~6 GB",
@@ -2320,7 +2743,7 @@
     },
     {
      "tag": "textured",
-     "size": "11GB",
+     "size": "14GB",
      "context": "—",
      "updated": "2025-01-21"
     }
@@ -2341,7 +2764,8 @@
    "updated": "2025-06-13",
    "license": "Tencent Hunyuan Community",
    "commercial": true,
-   "licenseNote": "Open weights. Commercial use is allowed below 1M monthly active users; above that, request a licence from Tencent. Does not apply in the EU, UK or South Korea, and distribution is limited to the licensed territory. Acceptable-use policy applies.",
+   "restriction": "Not licensed in the EU, the UK or South Korea. If you are there, you may not use it: pick TripoSR (MIT) instead.",
+   "licenseNote": "Open weights. Commercial use is allowed below 1M monthly active users; above that, request a licence from Tencent. Distribution is limited to the licensed territory. Acceptable-use policy applies.",
    "licenseUrl": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2/blob/main/LICENSE",
    "defaultSize": "3.3B",
    "vram": "~10 GB",
@@ -2374,6 +2798,7 @@
    "updated": "2024-03-04",
    "license": "MIT",
    "commercial": true,
+   "restriction": null,
    "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
    "licenseUrl": "https://opensource.org/license/mit",
    "defaultSize": "0.4B",
@@ -2389,6 +2814,4248 @@
      "size": "1.7GB",
      "context": "—",
      "updated": "2024-03-04"
+    }
+   ]
+  },
+  {
+   "slug": "llama3.2",
+   "name": "llama3.2",
+   "author": "Meta",
+   "description": "Meta's 3B multilingual instruction-tuned text model, optimized for dialogue, agentic retrieval and summarization tasks.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "small"
+   ],
+   "updated": "2024-09-25",
+   "license": "Llama 3.2 Community",
+   "commercial": true,
+   "restriction": "The multimodal (vision) Llama 3.2 models are not licensed to people or companies based in the EU. The text-only models are.",
+   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
+   "licenseUrl": "https://www.llama.com/llama3_2/license/",
+   "defaultSize": "3B",
+   "vram": "~3 GB",
+   "run": "arcflare pull unsloth/Llama-3.2-3B-Instruct-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct",
+   "url": "https://arcflare.net/models/llama3.2",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "2GB",
+     "context": "128K",
+     "updated": "2024-09-25"
+    },
+    {
+     "tag": "3b",
+     "size": "2GB",
+     "context": "128K",
+     "updated": "2024-09-25"
+    }
+   ]
+  },
+  {
+   "slug": "llama3.2-1b",
+   "name": "llama3.2-1b",
+   "author": "Meta",
+   "description": "Meta's 1B multilingual instruction-tuned text model, optimized for dialogue, agentic retrieval and summarization tasks.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "small"
+   ],
+   "updated": "2024-09-25",
+   "license": "Llama 3.2 Community",
+   "commercial": true,
+   "restriction": "The multimodal (vision) Llama 3.2 models are not licensed to people or companies based in the EU. The text-only models are.",
+   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
+   "licenseUrl": "https://www.llama.com/llama3_2/license/",
+   "defaultSize": "1B",
+   "vram": "~2 GB",
+   "run": "arcflare pull unsloth/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct",
+   "url": "https://arcflare.net/models/llama3.2-1b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.8GB",
+     "context": "128K",
+     "updated": "2024-09-25"
+    },
+    {
+     "tag": "1b",
+     "size": "0.8GB",
+     "context": "128K",
+     "updated": "2024-09-25"
+    }
+   ]
+  },
+  {
+   "slug": "llama3.1",
+   "name": "llama3.1",
+   "author": "Meta",
+   "description": "Meta's 8B multilingual instruction-tuned text model with 128k context, optimized for assistant-like chat.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct"
+   ],
+   "updated": "2024-07-23",
+   "license": "Llama 3.1 Community",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
+   "licenseUrl": "https://www.llama.com/llama3_1/license/",
+   "defaultSize": "8B",
+   "vram": "~6 GB",
+   "run": "arcflare pull unsloth/Llama-3.1-8B-Instruct-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct",
+   "url": "https://arcflare.net/models/llama3.1",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2024-07-23"
+    },
+    {
+     "tag": "8b",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2024-07-23"
+    }
+   ]
+  },
+  {
+   "slug": "llama3.3-70b",
+   "name": "llama3.3-70b",
+   "author": "Meta",
+   "description": "Meta's 70B multilingual instruction-tuned text model with 128k context, optimized for multilingual dialogue use cases.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "large"
+   ],
+   "updated": "2024-12-06",
+   "license": "Llama 3.3 Community",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
+   "licenseUrl": "https://www.llama.com/llama3_3/license/",
+   "defaultSize": "70B",
+   "vram": "~44 GB",
+   "run": "arcflare pull unsloth/Llama-3.3-70B-Instruct-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct",
+   "url": "https://arcflare.net/models/llama3.3-70b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "42.5GB",
+     "context": "128K",
+     "updated": "2024-12-06"
+    },
+    {
+     "tag": "70b",
+     "size": "42.5GB",
+     "context": "128K",
+     "updated": "2024-12-06"
+    }
+   ]
+  },
+  {
+   "slug": "qwen2.5",
+   "name": "qwen2.5",
+   "author": "Alibaba Qwen",
+   "description": "Instruction-tuned 7B Qwen2.5 model with improved coding, maths, instruction following and JSON output; 29+ languages.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct"
+   ],
+   "updated": "2024-09-17",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "7B",
+   "vram": "~6 GB",
+   "run": "arcflare pull Qwen/Qwen2.5-7B-Instruct-GGUF:q4_k_m",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct",
+   "url": "https://arcflare.net/models/qwen2.5",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.7GB",
+     "context": "32K",
+     "updated": "2024-09-17"
+    },
+    {
+     "tag": "7b",
+     "size": "4.7GB",
+     "context": "32K",
+     "updated": "2024-09-17"
+    }
+   ]
+  },
+  {
+   "slug": "qwen2.5-coder",
+   "name": "qwen2.5-coder",
+   "author": "Alibaba Qwen",
+   "description": "Code-specific instruction-tuned 7B Qwen2.5-Coder model, improved at code generation, code reasoning and code fixing.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "instruct"
+   ],
+   "updated": "2024-09-18",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "7B",
+   "vram": "~6 GB",
+   "run": "arcflare pull Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:q4_k_m",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+   "url": "https://arcflare.net/models/qwen2.5-coder",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.7GB",
+     "context": "32K",
+     "updated": "2024-09-18"
+    },
+    {
+     "tag": "7b",
+     "size": "4.7GB",
+     "context": "32K",
+     "updated": "2024-09-18"
+    }
+   ]
+  },
+  {
+   "slug": "qwen2.5-coder-32b",
+   "name": "qwen2.5-coder-32b",
+   "author": "Alibaba Qwen",
+   "description": "Code-specific instruction-tuned 32B Qwen2.5-Coder model, improved at code generation, code reasoning and code fixing.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "instruct",
+    "large"
+   ],
+   "updated": "2024-11-09",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "32B",
+   "vram": "~21 GB",
+   "run": "arcflare pull Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:q4_k_m",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct",
+   "url": "https://arcflare.net/models/qwen2.5-coder-32b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "19.9GB",
+     "context": "32K",
+     "updated": "2024-11-09"
+    },
+    {
+     "tag": "32b",
+     "size": "19.9GB",
+     "context": "32K",
+     "updated": "2024-11-09"
+    }
+   ]
+  },
+  {
+   "slug": "mistral",
+   "name": "mistral",
+   "author": "Mistral AI",
+   "description": "Instruct fine-tuned Mistral-7B-v0.3 with extended 32768-token vocabulary, v3 tokenizer and function calling support.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct"
+   ],
+   "updated": "2024-05-22",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "7B",
+   "vram": "~6 GB",
+   "run": "arcflare pull bartowski/Mistral-7B-Instruct-v0.3-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3",
+   "url": "https://arcflare.net/models/mistral",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.4GB",
+     "context": "32K",
+     "updated": "2024-05-22"
+    },
+    {
+     "tag": "7b",
+     "size": "4.4GB",
+     "context": "32K",
+     "updated": "2024-05-22"
+    }
+   ]
+  },
+  {
+   "slug": "mistral-nemo-12b",
+   "name": "mistral-nemo-12b",
+   "author": "Mistral AI / NVIDIA",
+   "description": "12B instruct model trained jointly by Mistral AI and NVIDIA with a 128k context window on multilingual and code data.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct"
+   ],
+   "updated": "2024-07-20",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "12B",
+   "vram": "~9 GB",
+   "run": "arcflare pull unsloth/Mistral-Nemo-Instruct-2407-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407",
+   "url": "https://arcflare.net/models/mistral-nemo-12b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "7.5GB",
+     "context": "128K",
+     "updated": "2024-07-20"
+    },
+    {
+     "tag": "12b",
+     "size": "7.5GB",
+     "context": "128K",
+     "updated": "2024-07-20"
+    }
+   ]
+  },
+  {
+   "slug": "mistral-small-3.2-24b",
+   "name": "mistral-small-3.2-24b",
+   "author": "Mistral AI",
+   "description": "Mistral Small 3.1 update with better instruction following, fewer repetitive outputs and more robust function calling; text and image input.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "vision"
+   ],
+   "updated": "2025-06-20",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "24B",
+   "vram": "~17 GB",
+   "run": "arcflare pull unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+   "url": "https://arcflare.net/models/mistral-small-3.2-24b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "14.3GB",
+     "context": "128K",
+     "updated": "2025-06-20"
+    },
+    {
+     "tag": "24b",
+     "size": "14.3GB",
+     "context": "128K",
+     "updated": "2025-06-20"
+    }
+   ]
+  },
+  {
+   "slug": "gemma2",
+   "name": "gemma2",
+   "author": "Google",
+   "description": "Google's instruction-tuned Gemma 2 9B, trained on 8T tokens of web documents, code and mathematics; no system prompt support.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct"
+   ],
+   "updated": "2024-06-27",
+   "license": "Gemma",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights under Google's Gemma Terms of Use and a prohibited-use policy.",
+   "licenseUrl": "https://ai.google.dev/gemma/terms",
+   "defaultSize": "9B",
+   "vram": "~7 GB",
+   "run": "arcflare pull bartowski/gemma-2-9b-it-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/google/gemma-2-9b-it",
+   "url": "https://arcflare.net/models/gemma2",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5.8GB",
+     "context": "8K",
+     "updated": "2024-06-27"
+    },
+    {
+     "tag": "9b",
+     "size": "5.8GB",
+     "context": "8K",
+     "updated": "2024-06-27"
+    }
+   ]
+  },
+  {
+   "slug": "gemma3-4b",
+   "name": "gemma3-4b",
+   "author": "Google",
+   "description": "Google's multimodal Gemma 3 4B instruction-tuned model: text and image input, text output, 128K context, 140+ languages.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "vision",
+    "small"
+   ],
+   "updated": "2025-03-12",
+   "license": "Gemma",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights under Google's Gemma Terms of Use and a prohibited-use policy.",
+   "licenseUrl": "https://ai.google.dev/gemma/terms",
+   "defaultSize": "4B",
+   "vram": "~5 GB",
+   "run": "arcflare pull unsloth/gemma-3-4b-it-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/google/gemma-3-4b-it",
+   "url": "https://arcflare.net/models/gemma3-4b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "2.5GB",
+     "context": "128K",
+     "updated": "2025-03-12"
+    },
+    {
+     "tag": "4b",
+     "size": "2.5GB",
+     "context": "128K",
+     "updated": "2025-03-12"
+    }
+   ]
+  },
+  {
+   "slug": "gemma3-27b",
+   "name": "gemma3-27b",
+   "author": "Google",
+   "description": "Google's multimodal Gemma 3 27B instruction-tuned model: text and image input, text output, 128K context, 140+ languages.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "vision"
+   ],
+   "updated": "2025-03-12",
+   "license": "Gemma",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights under Google's Gemma Terms of Use and a prohibited-use policy.",
+   "licenseUrl": "https://ai.google.dev/gemma/terms",
+   "defaultSize": "27B",
+   "vram": "~19 GB",
+   "run": "arcflare pull unsloth/gemma-3-27b-it-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/google/gemma-3-27b-it",
+   "url": "https://arcflare.net/models/gemma3-27b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "16.5GB",
+     "context": "128K",
+     "updated": "2025-03-12"
+    },
+    {
+     "tag": "27b",
+     "size": "16.5GB",
+     "context": "128K",
+     "updated": "2025-03-12"
+    }
+   ]
+  },
+  {
+   "slug": "gemma3n-e4b",
+   "name": "gemma3n-e4b",
+   "author": "Google",
+   "description": "Google's Gemma 3n E4B instruction-tuned model for low-resource devices, effective 4B parameters, 32K context; this GGUF is text-only.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "small"
+   ],
+   "updated": "2025-06-26",
+   "license": "Gemma",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights under Google's Gemma Terms of Use and a prohibited-use policy.",
+   "licenseUrl": "https://ai.google.dev/gemma/terms",
+   "defaultSize": "E4B",
+   "vram": "~6 GB",
+   "run": "arcflare pull unsloth/gemma-3n-E4B-it-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/google/gemma-3n-E4B-it",
+   "url": "https://arcflare.net/models/gemma3n-e4b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.5GB",
+     "context": "32K",
+     "updated": "2025-06-26"
+    },
+    {
+     "tag": "e4b",
+     "size": "4.5GB",
+     "context": "32K",
+     "updated": "2025-06-26"
+    }
+   ]
+  },
+  {
+   "slug": "phi4",
+   "name": "phi4",
+   "author": "Microsoft",
+   "description": "14B dense decoder-only Transformer trained on synthetic and filtered public data, built for high-quality reasoning in constrained environments.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct"
+   ],
+   "updated": "2024-12-12",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "14B",
+   "vram": "~10 GB",
+   "run": "arcflare pull unsloth/phi-4-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/microsoft/phi-4",
+   "url": "https://arcflare.net/models/phi4",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "8.9GB",
+     "context": "16K",
+     "updated": "2024-12-12"
+    },
+    {
+     "tag": "14b",
+     "size": "8.9GB",
+     "context": "16K",
+     "updated": "2024-12-12"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-0-6b",
+   "name": "qwen3-0-6b",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3 0.6B causal language model with switchable thinking and non-thinking modes, 32K context and 100+ languages.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "small"
+   ],
+   "updated": "2025-04-27",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "0.6B",
+   "vram": "~2 GB",
+   "run": "arcflare pull Qwen/Qwen3-0.6B-GGUF:Q8_0",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3-0.6B",
+   "url": "https://arcflare.net/models/qwen3-0-6b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.6GB",
+     "context": "32K",
+     "updated": "2025-04-27"
+    },
+    {
+     "tag": "0.6b",
+     "size": "0.6GB",
+     "context": "32K",
+     "updated": "2025-04-27"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-1-7b",
+   "name": "qwen3-1-7b",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3 1.7B causal language model with switchable thinking and non-thinking modes, 32K context and 100+ languages.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "small"
+   ],
+   "updated": "2025-04-27",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "1.7B",
+   "vram": "~3 GB",
+   "run": "arcflare pull Qwen/Qwen3-1.7B-GGUF:Q8_0",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3-1.7B",
+   "url": "https://arcflare.net/models/qwen3-1-7b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "1.8GB",
+     "context": "32K",
+     "updated": "2025-04-27"
+    },
+    {
+     "tag": "1.7b",
+     "size": "1.8GB",
+     "context": "32K",
+     "updated": "2025-04-27"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-4b-instruct-2507",
+   "name": "qwen3-4b-instruct-2507",
+   "author": "Alibaba Qwen",
+   "description": "Updated Qwen3-4B non-thinking model with better instruction following, reasoning and coding; 256K native context, no think blocks.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "small"
+   ],
+   "updated": "2025-08-05",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B",
+   "vram": "~4 GB",
+   "run": "arcflare pull unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507",
+   "url": "https://arcflare.net/models/qwen3-4b-instruct-2507",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "2.5GB",
+     "context": "256K",
+     "updated": "2025-08-05"
+    },
+    {
+     "tag": "4b",
+     "size": "2.5GB",
+     "context": "256K",
+     "updated": "2025-08-05"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-14b",
+   "name": "qwen3-14b",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3 14.8B dense model switching between thinking and non-thinking modes; 32K context, 131K with YaRN, 100+ languages.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct"
+   ],
+   "updated": "2025-04-27",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "14B",
+   "vram": "~10 GB",
+   "run": "arcflare pull Qwen/Qwen3-14B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3-14B",
+   "url": "https://arcflare.net/models/qwen3-14b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "9GB",
+     "context": "32K",
+     "updated": "2025-04-27"
+    },
+    {
+     "tag": "14b",
+     "size": "9GB",
+     "context": "32K",
+     "updated": "2025-04-27"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-32b",
+   "name": "qwen3-32b",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3 32.8B dense model switching between thinking and non-thinking modes; 32K context, 131K with YaRN, 100+ languages.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "large"
+   ],
+   "updated": "2025-04-27",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "32B",
+   "vram": "~21 GB",
+   "run": "arcflare pull Qwen/Qwen3-32B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3-32B",
+   "url": "https://arcflare.net/models/qwen3-32b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "19.8GB",
+     "context": "32K",
+     "updated": "2025-04-27"
+    },
+    {
+     "tag": "32b",
+     "size": "19.8GB",
+     "context": "32K",
+     "updated": "2025-04-27"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-30b-a3b-instruct-2507",
+   "name": "qwen3-30b-a3b-instruct-2507",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3-30B-A3B non-thinking update: 30.5B-parameter MoE with 3.3B active, 128 experts and 256K native context.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "moe",
+    "large"
+   ],
+   "updated": "2025-07-28",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "30B-A3B",
+   "vram": "~20 GB",
+   "run": "arcflare pull unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3-30B-A3B-Instruct-2507",
+   "url": "https://arcflare.net/models/qwen3-30b-a3b-instruct-2507",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "18.6GB",
+     "context": "256K",
+     "updated": "2025-07-28"
+    },
+    {
+     "tag": "30b-a3b",
+     "size": "18.6GB",
+     "context": "256K",
+     "updated": "2025-07-28"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-30b-a3b-thinking-2507",
+   "name": "qwen3-30b-a3b-thinking-2507",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3-30B-A3B thinking-only update: 30.5B MoE with 3.3B active, deeper reasoning and 256K native context.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning",
+    "moe",
+    "large"
+   ],
+   "updated": "2025-07-29",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "30B-A3B",
+   "vram": "~20 GB",
+   "run": "arcflare pull unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3-30B-A3B-Thinking-2507",
+   "url": "https://arcflare.net/models/qwen3-30b-a3b-thinking-2507",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "18.6GB",
+     "context": "256K",
+     "updated": "2025-07-29"
+    },
+    {
+     "tag": "30b-a3b",
+     "size": "18.6GB",
+     "context": "256K",
+     "updated": "2025-07-29"
+    }
+   ]
+  },
+  {
+   "slug": "gpt-oss-120b",
+   "name": "gpt-oss-120b",
+   "author": "OpenAI",
+   "description": "OpenAI open-weight MoE reasoning model, 117B parameters with 5.1B active, configurable reasoning effort, MXFP4-trained MoE weights.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning",
+    "moe",
+    "large"
+   ],
+   "updated": "2025-08-04",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "117B-A5B",
+   "vram": "~64 GB",
+   "run": "arcflare pull unsloth/gpt-oss-120b-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/openai/gpt-oss-120b",
+   "url": "https://arcflare.net/models/gpt-oss-120b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "62.8GB",
+     "context": "128K",
+     "updated": "2025-08-04"
+    },
+    {
+     "tag": "117b-a5b",
+     "size": "62.8GB",
+     "context": "128K",
+     "updated": "2025-08-04"
+    }
+   ]
+  },
+  {
+   "slug": "deepseek-r1",
+   "name": "deepseek-r1",
+   "author": "DeepSeek",
+   "description": "Qwen2.5-Math-7B fine-tuned on reasoning data generated by DeepSeek-R1.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning"
+   ],
+   "updated": "2025-01-20",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "7B",
+   "vram": "~6 GB",
+   "run": "arcflare pull unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+   "url": "https://arcflare.net/models/deepseek-r1",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.7GB",
+     "context": "128K",
+     "updated": "2025-01-20"
+    },
+    {
+     "tag": "7b",
+     "size": "4.7GB",
+     "context": "128K",
+     "updated": "2025-01-20"
+    }
+   ]
+  },
+  {
+   "slug": "deepseek-r1-distill-qwen-14b",
+   "name": "deepseek-r1-distill-qwen-14b",
+   "author": "DeepSeek",
+   "description": "Qwen2.5-14B fine-tuned on reasoning data generated by DeepSeek-R1.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning"
+   ],
+   "updated": "2025-01-20",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "14B",
+   "vram": "~10 GB",
+   "run": "arcflare pull unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+   "url": "https://arcflare.net/models/deepseek-r1-distill-qwen-14b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "9GB",
+     "context": "128K",
+     "updated": "2025-01-20"
+    },
+    {
+     "tag": "14b",
+     "size": "9GB",
+     "context": "128K",
+     "updated": "2025-01-20"
+    }
+   ]
+  },
+  {
+   "slug": "deepseek-r1-distill-qwen-32b",
+   "name": "deepseek-r1-distill-qwen-32b",
+   "author": "DeepSeek",
+   "description": "Qwen2.5-32B fine-tuned on DeepSeek-R1 reasoning data; card reports it outperforms OpenAI o1-mini across various benchmarks.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning",
+    "large"
+   ],
+   "updated": "2025-01-20",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "32B",
+   "vram": "~21 GB",
+   "run": "arcflare pull unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+   "url": "https://arcflare.net/models/deepseek-r1-distill-qwen-32b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "19.9GB",
+     "context": "128K",
+     "updated": "2025-01-20"
+    },
+    {
+     "tag": "32b",
+     "size": "19.9GB",
+     "context": "128K",
+     "updated": "2025-01-20"
+    }
+   ]
+  },
+  {
+   "slug": "deepseek-r1-distill-llama-8b",
+   "name": "deepseek-r1-distill-llama-8b",
+   "author": "DeepSeek",
+   "description": "Llama-3.1-8B fine-tuned on reasoning data generated by DeepSeek-R1.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning"
+   ],
+   "updated": "2025-01-20",
+   "license": "Llama 3.1 Community",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
+   "licenseUrl": "https://www.llama.com/llama3_1/license/",
+   "defaultSize": "8B",
+   "vram": "~6 GB",
+   "run": "arcflare pull unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+   "url": "https://arcflare.net/models/deepseek-r1-distill-llama-8b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2025-01-20"
+    },
+    {
+     "tag": "8b",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2025-01-20"
+    }
+   ]
+  },
+  {
+   "slug": "phi-4-reasoning-plus",
+   "name": "phi-4-reasoning-plus",
+   "author": "Microsoft",
+   "description": "14B dense reasoning model fine-tuned from Phi-4 with chain-of-thought SFT plus reinforcement learning; 32K context.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning"
+   ],
+   "updated": "2025-04-30",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "14B",
+   "vram": "~11 GB",
+   "run": "arcflare pull unsloth/Phi-4-reasoning-plus-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/microsoft/Phi-4-reasoning-plus",
+   "url": "https://arcflare.net/models/phi-4-reasoning-plus",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "9.1GB",
+     "context": "32K",
+     "updated": "2025-04-30"
+    },
+    {
+     "tag": "14b",
+     "size": "9.1GB",
+     "context": "32K",
+     "updated": "2025-04-30"
+    }
+   ]
+  },
+  {
+   "slug": "magistral-small-2509",
+   "name": "magistral-small-2509",
+   "author": "Mistral AI",
+   "description": "24B reasoning model built on Mistral Small 3.2 with SFT from Magistral Medium traces and RL; 128K context window.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning"
+   ],
+   "updated": "2025-09-12",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "24B",
+   "vram": "~16 GB",
+   "run": "arcflare pull mistralai/Magistral-Small-2509-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/mistralai/Magistral-Small-2509",
+   "url": "https://arcflare.net/models/magistral-small-2509",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "14.3GB",
+     "context": "128K",
+     "updated": "2025-09-12"
+    },
+    {
+     "tag": "24b",
+     "size": "14.3GB",
+     "context": "128K",
+     "updated": "2025-09-12"
+    }
+   ]
+  },
+  {
+   "slug": "smollm2-1-7b-instruct",
+   "name": "smollm2-1-7b-instruct",
+   "author": "Hugging Face",
+   "description": "1.7B compact instruct model trained on 11T tokens with SFT and DPO; supports rewriting, summarization and function calling.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "small"
+   ],
+   "updated": "2024-10-31",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "1.7B",
+   "vram": "~3 GB",
+   "run": "arcflare pull HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct",
+   "url": "https://arcflare.net/models/smollm2-1-7b-instruct",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "1.1GB",
+     "context": "8K",
+     "updated": "2024-10-31"
+    },
+    {
+     "tag": "1.7b",
+     "size": "1.1GB",
+     "context": "8K",
+     "updated": "2024-10-31"
+    }
+   ]
+  },
+  {
+   "slug": "granite-4-0-h-tiny",
+   "name": "granite-4-0-h-tiny",
+   "author": "IBM",
+   "description": "IBM 7B-parameter (1B active) hybrid long-context instruct model with improved instruction following and tool calling.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "moe"
+   ],
+   "updated": "2025-10-02",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "7B-A1B",
+   "vram": "~6 GB",
+   "run": "arcflare pull ibm-granite/granite-4.0-h-tiny-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/ibm-granite/granite-4.0-h-tiny",
+   "url": "https://arcflare.net/models/granite-4-0-h-tiny",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.2GB",
+     "context": "128K",
+     "updated": "2025-10-02"
+    },
+    {
+     "tag": "7b-a1b",
+     "size": "4.2GB",
+     "context": "128K",
+     "updated": "2025-10-02"
+    }
+   ]
+  },
+  {
+   "slug": "nemotron-nano-9b-v2",
+   "name": "nemotron-nano-9b-v2",
+   "author": "NVIDIA",
+   "description": "9B hybrid Mamba-2/Transformer model for reasoning and non-reasoning tasks; reasoning controllable via system prompt; up to 128K context.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning"
+   ],
+   "updated": "2025-08-18",
+   "license": "NVIDIA Open Model License",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "NVIDIA's own licence: commercial use is generally permitted under its terms, which include attribution and a condition about not bypassing the model's built-in guardrails. Read it before shipping a product.",
+   "licenseUrl": "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/",
+   "defaultSize": "9B",
+   "vram": "~8 GB",
+   "run": "arcflare pull bartowski/nvidia_NVIDIA-Nemotron-Nano-9B-v2-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-9B-v2",
+   "url": "https://arcflare.net/models/nemotron-nano-9b-v2",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "6.5GB",
+     "context": "128K",
+     "updated": "2025-08-18"
+    },
+    {
+     "tag": "9b",
+     "size": "6.5GB",
+     "context": "128K",
+     "updated": "2025-08-18"
+    }
+   ]
+  },
+  {
+   "slug": "ernie-4-5-21b-a3b",
+   "name": "ernie-4-5-21b-a3b",
+   "author": "Baidu",
+   "description": "Text MoE post-trained model with 21B total and 3B activated parameters per token and a 131072-token context length.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "moe"
+   ],
+   "updated": "2025-06-28",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "21B-A3B",
+   "vram": "~15 GB",
+   "run": "arcflare pull unsloth/ERNIE-4.5-21B-A3B-PT-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/baidu/ERNIE-4.5-21B-A3B-PT",
+   "url": "https://arcflare.net/models/ernie-4-5-21b-a3b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "13.3GB",
+     "context": "128K",
+     "updated": "2025-06-28"
+    },
+    {
+     "tag": "21b-a3b",
+     "size": "13.3GB",
+     "context": "128K",
+     "updated": "2025-06-28"
+    }
+   ]
+  },
+  {
+   "slug": "lfm2-8b-a1b",
+   "name": "lfm2-8b-a1b",
+   "author": "Liquid AI",
+   "description": "Liquid AI on-device hybrid MoE with 8.3B total and 1.5B active parameters and a 32,768-token context.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "moe"
+   ],
+   "updated": "2025-10-07",
+   "license": "LFM Open License v1.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Liquid AI's Apache-2.0-based licence with a revenue threshold: free for research and for commercial use below about USD 10M a year in revenue; above that you need a separate commercial licence.",
+   "licenseUrl": "https://huggingface.co/LiquidAI/LFM2-8B-A1B/blob/main/LICENSE",
+   "defaultSize": "8B-A1B",
+   "vram": "~6 GB",
+   "run": "arcflare pull LiquidAI/LFM2-8B-A1B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/LiquidAI/LFM2-8B-A1B",
+   "url": "https://arcflare.net/models/lfm2-8b-a1b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5GB",
+     "context": "32K",
+     "updated": "2025-10-07"
+    },
+    {
+     "tag": "8b-a1b",
+     "size": "5GB",
+     "context": "32K",
+     "updated": "2025-10-07"
+    }
+   ]
+  },
+  {
+   "slug": "hermes-3-llama-3-1-8b",
+   "name": "hermes-3-llama-3-1-8b",
+   "author": "Nous Research",
+   "description": "Generalist Llama-3.1 8B fine-tune with ChatML format, function calling, structured output, roleplay and reasoning improvements.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct"
+   ],
+   "updated": "2024-07-28",
+   "license": "Llama 3.1 Community",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
+   "licenseUrl": "https://www.llama.com/llama3_1/license/",
+   "defaultSize": "8B",
+   "vram": "~6 GB",
+   "run": "arcflare pull NousResearch/Hermes-3-Llama-3.1-8B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-8B",
+   "url": "https://arcflare.net/models/hermes-3-llama-3-1-8b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2024-07-28"
+    },
+    {
+     "tag": "8b",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2024-07-28"
+    }
+   ]
+  },
+  {
+   "slug": "nomic-embed-text",
+   "name": "nomic-embed-text",
+   "author": "Nomic AI",
+   "description": "English text embedding model with Matryoshka representation learning for resizable embeddings; requires task instruction prefixes.",
+   "category": "Embedding",
+   "tags": [
+    "embedding",
+    "small"
+   ],
+   "updated": "2024-02-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "137M",
+   "vram": "~2 GB",
+   "run": "arcflare pull nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
+   "url": "https://arcflare.net/models/nomic-embed-text",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.15GB",
+     "context": "8K",
+     "updated": "2024-02-10"
+    },
+    {
+     "tag": "137m",
+     "size": "0.15GB",
+     "context": "8K",
+     "updated": "2024-02-10"
+    }
+   ]
+  },
+  {
+   "slug": "nomic-embed-text-v2-moe",
+   "name": "nomic-embed-text-v2-moe",
+   "author": "Nomic AI",
+   "description": "Multilingual mixture-of-experts text embedding model (475M total, 305M active) supporting about 100 languages with Matryoshka embeddings.",
+   "category": "Embedding",
+   "tags": [
+    "embedding",
+    "small"
+   ],
+   "updated": "2025-02-07",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "475M",
+   "vram": "~2 GB",
+   "run": "arcflare pull nomic-ai/nomic-embed-text-v2-moe-GGUF:Q8_0",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe",
+   "url": "https://arcflare.net/models/nomic-embed-text-v2-moe",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.51GB",
+     "context": "512",
+     "updated": "2025-02-07"
+    },
+    {
+     "tag": "475m",
+     "size": "0.51GB",
+     "context": "512",
+     "updated": "2025-02-07"
+    }
+   ]
+  },
+  {
+   "slug": "embeddinggemma-300m",
+   "name": "embeddinggemma-300m",
+   "author": "Google",
+   "description": "300M-parameter open embedding model from Google, built from Gemma 3 and trained on 100+ languages; 768-dim output with Matryoshka truncation.",
+   "category": "Embedding",
+   "tags": [
+    "embedding",
+    "small"
+   ],
+   "updated": "2025-09-04",
+   "license": "Gemma",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights under Google's Gemma Terms of Use and a prohibited-use policy.",
+   "licenseUrl": "https://ai.google.dev/gemma/terms",
+   "defaultSize": "300M",
+   "vram": "~2 GB",
+   "run": "arcflare pull unsloth/embeddinggemma-300m-GGUF:Q8_0",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/google/embeddinggemma-300m",
+   "url": "https://arcflare.net/models/embeddinggemma-300m",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.33GB",
+     "context": "2K",
+     "updated": "2025-09-04"
+    },
+    {
+     "tag": "300m",
+     "size": "0.33GB",
+     "context": "2K",
+     "updated": "2025-09-04"
+    }
+   ]
+  },
+  {
+   "slug": "bge-m3",
+   "name": "bge-m3",
+   "author": "BAAI",
+   "description": "Multi-functionality, multilingual (100+ languages) and multi-granularity embedding model handling inputs up to 8192 tokens.",
+   "category": "Embedding",
+   "tags": [
+    "embedding",
+    "small"
+   ],
+   "updated": "2024-01-27",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "568M",
+   "vram": "~2 GB",
+   "run": "arcflare pull ggml-org/bge-m3-Q8_0-GGUF",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/BAAI/bge-m3",
+   "url": "https://arcflare.net/models/bge-m3",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.63GB",
+     "context": "8K",
+     "updated": "2024-01-27"
+    },
+    {
+     "tag": "568m",
+     "size": "0.63GB",
+     "context": "8K",
+     "updated": "2024-01-27"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-embedding-4b",
+   "name": "qwen3-embedding-4b",
+   "author": "Qwen",
+   "description": "Qwen3 text embedding model with 4B parameters, 32K context, 100+ languages and embedding dimensions up to 2560 (user-defined sizes).",
+   "category": "Embedding",
+   "tags": [
+    "embedding",
+    "small"
+   ],
+   "updated": "2025-06-03",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B",
+   "vram": "~6 GB",
+   "run": "arcflare pull Qwen/Qwen3-Embedding-4B-GGUF:Q8_0",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3-Embedding-4B",
+   "url": "https://arcflare.net/models/qwen3-embedding-4b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.3GB",
+     "context": "32K",
+     "updated": "2025-06-03"
+    },
+    {
+     "tag": "4b",
+     "size": "4.3GB",
+     "context": "32K",
+     "updated": "2025-06-03"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3-vl-8b-instruct",
+   "name": "qwen3-vl-8b-instruct",
+   "author": "Qwen",
+   "description": "Qwen3-VL 8B Instruct vision-language model with visual agent, spatial perception and OCR in 32 languages; native 256K context, expandable to 1M.",
+   "category": "Vision",
+   "tags": [
+    "vision"
+   ],
+   "updated": "2025-10-11",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "8B",
+   "vram": "~7 GB",
+   "run": "arcflare pull Qwen/Qwen3-VL-8B-Instruct-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct",
+   "url": "https://arcflare.net/models/qwen3-vl-8b-instruct",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5GB",
+     "context": "256K",
+     "updated": "2025-10-11"
+    },
+    {
+     "tag": "8b",
+     "size": "5GB",
+     "context": "256K",
+     "updated": "2025-10-11"
+    }
+   ]
+  },
+  {
+   "slug": "qwen2.5-vl-32b-instruct",
+   "name": "qwen2.5-vl-32b-instruct",
+   "author": "Qwen",
+   "description": "Instruction-tuned 32B Qwen2.5-VL vision-language model for visual understanding, agentic use, long-video comprehension and structured outputs.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "large"
+   ],
+   "updated": "2025-03-21",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "32B",
+   "vram": "~22 GB",
+   "run": "arcflare pull unsloth/Qwen2.5-VL-32B-Instruct-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen2.5-VL-32B-Instruct",
+   "url": "https://arcflare.net/models/qwen2.5-vl-32b-instruct",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "19.9GB",
+     "context": "32K",
+     "updated": "2025-03-21"
+    },
+    {
+     "tag": "32b",
+     "size": "19.9GB",
+     "context": "32K",
+     "updated": "2025-03-21"
+    }
+   ]
+  },
+  {
+   "slug": "minicpm-v-4.5",
+   "name": "minicpm-v-4.5",
+   "author": "OpenBMB",
+   "description": "8B multimodal model on Qwen3-8B and SigLIP2-400M for single-image, multi-image and high-FPS video understanding, OCR and document parsing.",
+   "category": "Vision",
+   "tags": [
+    "vision"
+   ],
+   "updated": "2025-08-24",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "8B",
+   "vram": "~7 GB",
+   "run": "arcflare pull openbmb/MiniCPM-V-4_5-gguf:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/openbmb/MiniCPM-V-4_5",
+   "url": "https://arcflare.net/models/minicpm-v-4.5",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5GB",
+     "context": "40K",
+     "updated": "2025-08-24"
+    },
+    {
+     "tag": "8b",
+     "size": "5GB",
+     "context": "40K",
+     "updated": "2025-08-24"
+    }
+   ]
+  },
+  {
+   "slug": "smolvlm2-2.2b-instruct",
+   "name": "smolvlm2-2.2b-instruct",
+   "author": "Hugging Face",
+   "description": "Lightweight multimodal model that processes video, image and text inputs to generate text; about 5.2GB of GPU RAM for video inference.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "small"
+   ],
+   "updated": "2025-02-08",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "2.2B",
+   "vram": "~4 GB",
+   "run": "arcflare pull ggml-org/SmolVLM2-2.2B-Instruct-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/HuggingFaceTB/SmolVLM2-2.2B-Instruct",
+   "url": "https://arcflare.net/models/smolvlm2-2.2b-instruct",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "1.1GB",
+     "context": "8K",
+     "updated": "2025-02-08"
+    },
+    {
+     "tag": "2.2b",
+     "size": "1.1GB",
+     "context": "8K",
+     "updated": "2025-02-08"
+    }
+   ]
+  },
+  {
+   "slug": "starcoder2",
+   "name": "starcoder2",
+   "author": "BigCode",
+   "description": "Code LLM self-aligned from StarCoder2-15B with a fully permissive, transparent pipeline and no human annotations or distilled data.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "instruct"
+   ],
+   "updated": "2024-04-23",
+   "license": "BigCode OpenRAIL-M",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open and royalty-free with use-based (responsible-AI) restrictions.",
+   "licenseUrl": "https://www.bigcode-project.org/docs/pages/bigcode-openrail/",
+   "defaultSize": "15B",
+   "vram": "~11 GB",
+   "run": "arcflare pull bartowski/starcoder2-15b-instruct-v0.1-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/bigcode/starcoder2-15b-instruct-v0.1",
+   "url": "https://arcflare.net/models/starcoder2",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "9.9GB",
+     "context": "16K",
+     "updated": "2024-04-23"
+    },
+    {
+     "tag": "15b",
+     "size": "9.9GB",
+     "context": "16K",
+     "updated": "2024-04-23"
+    }
+   ]
+  },
+  {
+   "slug": "qwen2.5-coder-14b-instruct",
+   "name": "qwen2.5-coder-14b-instruct",
+   "author": "Qwen",
+   "description": "Instruction-tuned 14B code model with improved code generation, reasoning and fixing, and long-context support up to 128K tokens.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "instruct"
+   ],
+   "updated": "2024-11-06",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "14B",
+   "vram": "~10 GB",
+   "run": "arcflare pull Qwen/Qwen2.5-Coder-14B-Instruct-GGUF:q4_k_m",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen2.5-Coder-14B-Instruct",
+   "url": "https://arcflare.net/models/qwen2.5-coder-14b-instruct",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "9GB",
+     "context": "128K",
+     "updated": "2024-11-06"
+    },
+    {
+     "tag": "14b",
+     "size": "9GB",
+     "context": "128K",
+     "updated": "2024-11-06"
+    }
+   ]
+  },
+  {
+   "slug": "granite-4.0-h-small",
+   "name": "granite-4.0-h-small",
+   "author": "IBM",
+   "description": "32B-parameter long-context instruct model with improved instruction following and tool calling, finetuned from Granite-4.0-H-Small-Base.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct",
+    "large"
+   ],
+   "updated": "2025-10-02",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "32B",
+   "vram": "~21 GB",
+   "run": "arcflare pull ibm-granite/granite-4.0-h-small-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/ibm-granite/granite-4.0-h-small",
+   "url": "https://arcflare.net/models/granite-4.0-h-small",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "19.5GB",
+     "context": "128K",
+     "updated": "2025-10-02"
+    },
+    {
+     "tag": "32b",
+     "size": "19.5GB",
+     "context": "128K",
+     "updated": "2025-10-02"
+    }
+   ]
+  },
+  {
+   "slug": "seed-oss-36b-instruct",
+   "name": "seed-oss-36b-instruct",
+   "author": "ByteDance Seed",
+   "description": "ByteDance Seed open-source LLM for long-context, reasoning and agent tasks, with flexible thinking-budget control and native 512K context.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning",
+    "large"
+   ],
+   "updated": "2025-08-20",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "36B",
+   "vram": "~23 GB",
+   "run": "arcflare pull unsloth/Seed-OSS-36B-Instruct-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/ByteDance-Seed/Seed-OSS-36B-Instruct",
+   "url": "https://arcflare.net/models/seed-oss-36b-instruct",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "21.8GB",
+     "context": "512K",
+     "updated": "2025-08-20"
+    },
+    {
+     "tag": "36b",
+     "size": "21.8GB",
+     "context": "512K",
+     "updated": "2025-08-20"
+    }
+   ]
+  },
+  {
+   "slug": "olmo-3-7b-instruct",
+   "name": "olmo-3-7b-instruct",
+   "author": "Ai2",
+   "description": "Open language model from Ai2, pre-trained on Dolma 3 and post-trained on the Dolci datasets; all code and checkpoints are released.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "instruct"
+   ],
+   "updated": "2025-11-19",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "7B",
+   "vram": "~6 GB",
+   "run": "arcflare pull unsloth/Olmo-3-7B-Instruct-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/allenai/Olmo-3-7B-Instruct",
+   "url": "https://arcflare.net/models/olmo-3-7b-instruct",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.5GB",
+     "context": "64K",
+     "updated": "2025-11-19"
+    },
+    {
+     "tag": "7b",
+     "size": "4.5GB",
+     "context": "64K",
+     "updated": "2025-11-19"
+    }
+   ]
+  },
+  {
+   "slug": "yi-coder-9b-chat",
+   "name": "yi-coder-9b-chat",
+   "author": "01.AI",
+   "description": "Open-source 9B code chat model with a 128K maximum context length, supporting 52 major programming languages.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "instruct"
+   ],
+   "updated": "2024-08-21",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "9B",
+   "vram": "~7 GB",
+   "run": "arcflare pull bartowski/Yi-Coder-9B-Chat-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/01-ai/Yi-Coder-9B-Chat",
+   "url": "https://arcflare.net/models/yi-coder-9b-chat",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5.3GB",
+     "context": "128K",
+     "updated": "2024-08-21"
+    },
+    {
+     "tag": "9b",
+     "size": "5.3GB",
+     "context": "128K",
+     "updated": "2024-08-21"
+    }
+   ]
+  },
+  {
+   "slug": "gemma4-e4b",
+   "name": "gemma4-e4b",
+   "author": "Google",
+   "description": "Gemma 4 E4B: Google's on-device Gemma 4, about 4.5B effective parameters. Reads images, in 140+ languages.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "vision",
+    "small",
+    "multilingual"
+   ],
+   "updated": "2026-07-03",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "E4B",
+   "vram": "~7 GB",
+   "run": "arcflare pull unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/google/gemma-4-E4B-it",
+   "url": "https://arcflare.net/models/gemma4-e4b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5.0GB",
+     "context": "128K",
+     "updated": "2026-07-03"
+    },
+    {
+     "tag": "e4b",
+     "size": "5.0GB",
+     "context": "128K",
+     "updated": "2026-07-03"
+    }
+   ]
+  },
+  {
+   "slug": "gemma4-12b",
+   "name": "gemma4-12b",
+   "author": "Google",
+   "description": "Gemma 4 12B: a dense Gemma 4 for 12 GB cards, with image input and a 256K context.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "vision",
+    "dense",
+    "multilingual",
+    "long-context"
+   ],
+   "updated": "2026-05-29",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "12B",
+   "vram": "~9 GB",
+   "run": "arcflare pull unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/google/gemma-4-12B-it",
+   "url": "https://arcflare.net/models/gemma4-12b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "7.1GB",
+     "context": "256K",
+     "updated": "2026-05-29"
+    },
+    {
+     "tag": "12b",
+     "size": "7.1GB",
+     "context": "256K",
+     "updated": "2026-05-29"
+    }
+   ]
+  },
+  {
+   "slug": "gemma4",
+   "name": "gemma4",
+   "author": "Google",
+   "description": "Gemma 4 26B-A4B: Google's mixture-of-experts Gemma 4. 25.2B total, 3.8B active per token, image input and a 256K context.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "vision",
+    "moe",
+    "multilingual",
+    "long-context"
+   ],
+   "updated": "2026-07-03",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "26B-A4B",
+   "vram": "~20 GB",
+   "run": "arcflare pull unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_XL",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/google/gemma-4-26B-A4B-it",
+   "url": "https://arcflare.net/models/gemma4",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "17.0GB",
+     "context": "256K",
+     "updated": "2026-07-03"
+    },
+    {
+     "tag": "26b-a4b",
+     "size": "17.0GB",
+     "context": "256K",
+     "updated": "2026-07-03"
+    }
+   ]
+  },
+  {
+   "slug": "gemma4-31b",
+   "name": "gemma4-31b",
+   "author": "Google",
+   "description": "Gemma 4 31B: the largest Gemma 4, dense, with image input and a 256K context.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "vision",
+    "dense",
+    "multilingual",
+    "long-context"
+   ],
+   "updated": "2026-07-03",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "31B",
+   "vram": "~22 GB",
+   "run": "arcflare pull unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/google/gemma-4-31B-it",
+   "url": "https://arcflare.net/models/gemma4-31b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "18.3GB",
+     "context": "256K",
+     "updated": "2026-07-03"
+    },
+    {
+     "tag": "31b",
+     "size": "18.3GB",
+     "context": "256K",
+     "updated": "2026-07-03"
+    }
+   ]
+  },
+  {
+   "slug": "nemotron3.5-lightning",
+   "name": "nemotron3.5-lightning",
+   "author": "NVIDIA",
+   "description": "Nemotron 3.5 Lightning: NVIDIA's 30B-A3B hybrid Mamba-2 and attention MoE, with reasoning you can switch on or off and a context of up to 1M tokens.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning",
+    "moe",
+    "long-context",
+    "tools"
+   ],
+   "updated": "2026-08-11",
+   "license": "OpenMDW-1.1",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "A permissive model licence: use, modify and redistribute freely. If you distribute the model, keep a copy of the licence and its notices. Rights end if you sue over patents or copyright in the model.",
+   "licenseUrl": "https://openmdw.ai/license/1-1/",
+   "defaultSize": "30B-A3B",
+   "vram": "~28 GB",
+   "run": "arcflare pull unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF:UD-Q4_K_XL",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+   "url": "https://arcflare.net/models/nemotron3.5-lightning",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "25.5GB",
+     "context": "1M",
+     "updated": "2026-08-11"
+    },
+    {
+     "tag": "30b-a3b",
+     "size": "25.5GB",
+     "context": "1M",
+     "updated": "2026-08-11"
+    }
+   ]
+  },
+  {
+   "slug": "lfm2.5",
+   "name": "lfm2.5",
+   "author": "Liquid AI",
+   "description": "LFM2.5-24B-A2B: Liquid AI's 24B reasoning MoE with about 2.5B active per token, built for fast on-device agents. Text only.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning",
+    "moe",
+    "agentic",
+    "tools",
+    "multilingual"
+   ],
+   "updated": "2026-10-13",
+   "license": "LFM Open License v1.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Liquid AI's Apache-2.0-based licence with a revenue threshold: free for research and for commercial use below about USD 10M a year in revenue; above that you need a separate commercial licence.",
+   "licenseUrl": "https://huggingface.co/LiquidAI/LFM2-8B-A1B/blob/main/LICENSE",
+   "defaultSize": "24B-A2B",
+   "vram": "~17 GB",
+   "run": "arcflare pull unsloth/LFM2.5-24B-A2B-GGUF:UD-Q4_K_XL",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/LiquidAI/LFM2.5-24B-A2B",
+   "url": "https://arcflare.net/models/lfm2.5",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "14.9GB",
+     "context": "128K",
+     "updated": "2026-10-13"
+    },
+    {
+     "tag": "24b-a2b",
+     "size": "14.9GB",
+     "context": "128K",
+     "updated": "2026-10-13"
+    }
+   ]
+  },
+  {
+   "slug": "north-mini-code",
+   "name": "north-mini-code",
+   "author": "Cohere",
+   "description": "North Mini Code: Cohere's 30B-A3B open-weights model for code generation, agentic software engineering and terminal tasks, with a 256K context.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "agentic",
+    "moe",
+    "long-context"
+   ],
+   "updated": "2026-06-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "30B-A3B",
+   "vram": "~22 GB",
+   "run": "arcflare pull unsloth/North-Mini-Code-1.0-GGUF:UD-Q4_K_XL",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/CohereLabs/North-Mini-Code-1.0",
+   "url": "https://arcflare.net/models/north-mini-code",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "19.3GB",
+     "context": "256K",
+     "updated": "2026-06-10"
+    },
+    {
+     "tag": "30b-a3b",
+     "size": "19.3GB",
+     "context": "256K",
+     "updated": "2026-06-10"
+    }
+   ]
+  },
+  {
+   "slug": "ministral3",
+   "name": "ministral3",
+   "author": "Mistral AI",
+   "description": "Ministral 3 14B: Mistral's edge model family (3B, 8B, 14B) with image input, function calling and a 256K context.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "vision",
+    "tools",
+    "multilingual",
+    "long-context"
+   ],
+   "updated": "2025-12-02",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "14B",
+   "vram": "~10 GB",
+   "run": "arcflare pull unsloth/Ministral-3-14B-Instruct-2512-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512",
+   "url": "https://arcflare.net/models/ministral3",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "8.2GB",
+     "context": "256K",
+     "updated": "2025-12-02"
+    },
+    {
+     "tag": "14b",
+     "size": "8.2GB",
+     "context": "256K",
+     "updated": "2025-12-02"
+    },
+    {
+     "tag": "8b",
+     "size": "5.2GB",
+     "context": "256K",
+     "updated": "2025-12-02"
+    }
+   ]
+  },
+  {
+   "slug": "glm4.6v-flash",
+   "name": "glm4.6v-flash",
+   "author": "Z.ai",
+   "description": "GLM-4.6V-Flash: Z.ai's 9B vision-language model for local use, with native multimodal function calling and a 128K context.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "tools",
+    "documents"
+   ],
+   "updated": "2025-12-16",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "9B",
+   "vram": "~8 GB",
+   "run": "arcflare pull ggml-org/GLM-4.6V-Flash-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/zai-org/GLM-4.6V-Flash",
+   "url": "https://arcflare.net/models/glm4.6v-flash",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "6.2GB",
+     "context": "128K",
+     "updated": "2025-12-16"
+    },
+    {
+     "tag": "9b",
+     "size": "6.2GB",
+     "context": "128K",
+     "updated": "2025-12-16"
+    }
+   ]
+  },
+  {
+   "slug": "glm-ocr",
+   "name": "glm-ocr",
+   "author": "Z.ai",
+   "description": "GLM-OCR: a 0.9B model for document OCR: text, tables and formulas from images and scanned pages.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "ocr",
+    "documents",
+    "small"
+   ],
+   "updated": "2026-02-17",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "0.9B",
+   "vram": "~2 GB",
+   "run": "arcflare pull ggml-org/GLM-OCR-GGUF:Q8_0",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/zai-org/GLM-OCR",
+   "url": "https://arcflare.net/models/glm-ocr",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.95GB",
+     "context": "128K",
+     "updated": "2026-02-17"
+    },
+    {
+     "tag": "0.9b",
+     "size": "0.95GB",
+     "context": "128K",
+     "updated": "2026-02-17"
+    }
+   ]
+  },
+  {
+   "slug": "embeddinggemma2",
+   "name": "embeddinggemma2",
+   "author": "Google",
+   "description": "EmbeddingGemma 2: Google's multimodal embedding model. Text, code, images, video and audio in one 768-dim space, with Matryoshka truncation.",
+   "category": "Embedding",
+   "tags": [
+    "embedding",
+    "small",
+    "multilingual"
+   ],
+   "updated": "2026-10-06",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "740M",
+   "vram": "~2 GB",
+   "run": "arcflare pull unsloth/embeddinggemma-2-GGUF:Q8_0",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/google/embeddinggemma-2",
+   "url": "https://arcflare.net/models/embeddinggemma2",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.31GB",
+     "context": "8K",
+     "updated": "2026-10-06"
+    },
+    {
+     "tag": "740m",
+     "size": "0.31GB",
+     "context": "8K",
+     "updated": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "slug": "ornith-1.5-35b-a3b",
+   "name": "ornith-1.5-35b-a3b",
+   "author": "Ornith",
+   "description": "Ornith-1.5 35B-A3B: a mixture-of-experts model for coding agents with about 3B parameters active per token. A reasoning model, under the MIT licence.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "agentic",
+    "moe",
+    "reasoning",
+    "tools",
+    "long-context"
+   ],
+   "updated": "2026-08-18",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "35B-A3B",
+   "vram": "~25 GB",
+   "run": "arcflare pull ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B",
+   "url": "https://arcflare.net/models/ornith-1.5-35b-a3b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "21.7GB",
+     "context": "256K",
+     "updated": "2026-08-18"
+    },
+    {
+     "tag": "35b-a3b",
+     "size": "21.7GB",
+     "context": "256K",
+     "updated": "2026-08-18"
+    }
+   ]
+  },
+  {
+   "slug": "ornith-1.5-9b",
+   "name": "ornith-1.5-9b",
+   "author": "Ornith",
+   "description": "Ornith-1.5 9B: a dense 9B reasoning model built for single-GPU coding agents, from the same family as the 35B-A3B.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "agentic",
+    "reasoning",
+    "tools",
+    "long-context"
+   ],
+   "updated": "2026-08-19",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "9B",
+   "vram": "~8 GB",
+   "run": "arcflare pull ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/ornith-ai/Ornith-1.5-9B",
+   "url": "https://arcflare.net/models/ornith-1.5-9b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5.8GB",
+     "context": "256K",
+     "updated": "2026-08-19"
+    },
+    {
+     "tag": "9b",
+     "size": "5.8GB",
+     "context": "256K",
+     "updated": "2026-08-19"
+    }
+   ]
+  },
+  {
+   "slug": "ripple-65b-preview",
+   "name": "ripple-65b-preview",
+   "author": "Ricursive Intelligence",
+   "description": "Ripple-65B Preview: a 65B dense model trained from scratch on 12T tokens and post-trained for agentic coding. A preview release.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "agentic",
+    "long-context",
+    "preview"
+   ],
+   "updated": "2026-11-04",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "65B",
+   "vram": "~48 GB",
+   "run": "arcflare pull AtomicChat/Ripple-65B-Preview-GGUF:AD-Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/ricursiveAI/Ripple-65B-Preview",
+   "url": "https://arcflare.net/models/ripple-65b-preview",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "40.4GB",
+     "context": "1M",
+     "updated": "2026-11-04"
+    },
+    {
+     "tag": "65b",
+     "size": "40.4GB",
+     "context": "1M",
+     "updated": "2026-11-04"
+    }
+   ]
+  },
+  {
+   "slug": "spark-x2.6-4b",
+   "name": "spark-x2.6-4b",
+   "author": "XHToken",
+   "description": "Spark-X2.6 4B: a compact general-purpose model for on-device agents. Thinking is on by default.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "agentic",
+    "reasoning",
+    "tools",
+    "small"
+   ],
+   "updated": "2026-10-19",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B",
+   "vram": "~5 GB",
+   "run": "arcflare pull XHToken/Spark-X2.6-4B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/XHToken/Spark-X2.6-4B",
+   "url": "https://arcflare.net/models/spark-x2.6-4b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "3.5GB",
+     "context": "—",
+     "updated": "2026-10-19"
+    },
+    {
+     "tag": "4b",
+     "size": "3.5GB",
+     "context": "—",
+     "updated": "2026-10-19"
+    }
+   ]
+  },
+  {
+   "slug": "lfm3-1.7b",
+   "name": "lfm3-1.7b",
+   "author": "Liquid AI",
+   "description": "LFM3 1.7B: Liquid AI's small text model for local agents, tool calling and structured output. It mixes short convolutions with attention layers.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "tools",
+    "small",
+    "long-context"
+   ],
+   "updated": "2026-10-24",
+   "license": "LFM Open License v1.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Liquid AI's Apache-2.0-based licence with a revenue threshold: free for research and for commercial use below about USD 10M a year in revenue; above that you need a separate commercial licence.",
+   "licenseUrl": "https://huggingface.co/LiquidAI/LFM2-8B-A1B/blob/main/LICENSE",
+   "defaultSize": "1.7B",
+   "vram": "~3 GB",
+   "run": "arcflare pull LiquidAI/LFM3-1.7B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://www.liquid.ai/blog/lfm3",
+   "url": "https://arcflare.net/models/lfm3-1.7b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "1.1GB",
+     "context": "256K",
+     "updated": "2026-10-24"
+    },
+    {
+     "tag": "1.7b",
+     "size": "1.1GB",
+     "context": "256K",
+     "updated": "2026-10-24"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.8-27b",
+   "name": "qwen3.8-27b",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3.8 27B: Qwen's dense 27B model. It reads images and video as well as text, with thinking you can turn up or down, and is built to carry multi-step tasks through.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "reasoning",
+    "vision",
+    "tools",
+    "long-context"
+   ],
+   "updated": "2026-08-13",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "27B",
+   "vram": "~20 GB",
+   "run": "arcflare pull unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3.8-27B",
+   "url": "https://arcflare.net/models/qwen3.8-27b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "16.5GB",
+     "context": "256K",
+     "updated": "2026-08-13"
+    },
+    {
+     "tag": "27b",
+     "size": "16.5GB",
+     "context": "256K",
+     "updated": "2026-08-13"
+    }
+   ]
+  },
+  {
+   "slug": "granite-4.2-8b",
+   "name": "granite-4.2-8b",
+   "author": "IBM",
+   "description": "Granite 4.2 8B: IBM's mid-size reasoning model, a dense 8B transformer with a 128K context, for reasoning, code and tool calling.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning",
+    "code",
+    "tools",
+    "agentic",
+    "long-context"
+   ],
+   "updated": "2026-08-12",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "8B",
+   "vram": "~7 GB",
+   "run": "arcflare pull ibm-granite/granite-4.2-8b-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/ibm-granite/granite-4.2-8b",
+   "url": "https://arcflare.net/models/granite-4.2-8b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5.3GB",
+     "context": "128K",
+     "updated": "2026-08-12"
+    },
+    {
+     "tag": "8b",
+     "size": "5.3GB",
+     "context": "128K",
+     "updated": "2026-08-12"
+    }
+   ]
+  },
+  {
+   "slug": "ternary-bonsai-2-27b",
+   "name": "ternary-bonsai-2-27b",
+   "author": "PrismML",
+   "description": "Ternary Bonsai 2 27B: Qwen3.8-27B squeezed to ternary weights, about 1.7 bits each, so a 27B-class model fits in under 8 GB.",
+   "category": "Reasoning",
+   "tags": [
+    "reasoning",
+    "small",
+    "long-context",
+    "ternary"
+   ],
+   "updated": "2026-09-16",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "27B",
+   "vram": "~10 GB",
+   "run": "arcflare pull prism-ml/Ternary-Bonsai-2-27B-gguf:Q2_0",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://prismml.com",
+   "url": "https://arcflare.net/models/ternary-bonsai-2-27b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "7.6GB",
+     "context": "256K",
+     "updated": "2026-09-16"
+    },
+    {
+     "tag": "27b",
+     "size": "7.6GB",
+     "context": "256K",
+     "updated": "2026-09-16"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.8-35b-a3b-distill",
+   "name": "qwen3.8-35b-a3b-distill",
+   "author": "empero-ai",
+   "description": "Qwen3.8 35B-A3B Distill: a community distillation of Qwen3.8 models into the Qwen3.6-35B-A3B architecture, about 3B parameters active per token. Not an official Qwen release.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "reasoning",
+    "moe",
+    "community"
+   ],
+   "updated": "2026-09-16",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "35B-A3B",
+   "vram": "~25 GB",
+   "run": "arcflare pull empero-ai/Qwen3.8-35B-A3B-Distill-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/empero-ai/Qwen3.8-35B-A3B-Distill",
+   "url": "https://arcflare.net/models/qwen3.8-35b-a3b-distill",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "21.7GB",
+     "context": "—",
+     "updated": "2026-09-16"
+    },
+    {
+     "tag": "35b-a3b",
+     "size": "21.7GB",
+     "context": "—",
+     "updated": "2026-09-16"
+    }
+   ]
+  },
+  {
+   "slug": "agents-a1-abliterated",
+   "name": "agents-a1-abliterated",
+   "author": "huihui-ai (from InternScience)",
+   "description": "Agents-A1, abliterated: InternScience's 35B mixture-of-experts agentic vision-language model with refusals removed. Built for tool use and long-horizon search.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "agentic",
+    "vision",
+    "moe",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-07-11",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "35B-A3B",
+   "vram": "~25 GB",
+   "run": "arcflare pull huihui-ai/Huihui-Agents-A1-abliterated-GGUF:Q4_K",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/InternScience/Agents-A1",
+   "url": "https://arcflare.net/models/agents-a1-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "21.2GB",
+     "context": "—",
+     "updated": "2026-07-11"
+    },
+    {
+     "tag": "35b-a3b",
+     "size": "21.2GB",
+     "context": "—",
+     "updated": "2026-07-11"
+    }
+   ]
+  },
+  {
+   "slug": "minicpm-v-4.7-uncensored",
+   "name": "minicpm-v-4.7-uncensored",
+   "author": "AtomicChat (from OpenBMB)",
+   "description": "MiniCPM-V 4.7 35B-A3B, uncensored: OpenBMB's vision-language mixture-of-experts model with its refusal direction projected out. About 3B parameters active per token.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "moe",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-10-12",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "35B-A3B",
+   "vram": "~24 GB",
+   "run": "arcflare pull AtomicChat/MiniCPM-V-4.7-35B-A3B-Uncensored-GGUF:AD-Q4_K-IQ4_XS",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/openbmb/MiniCPM-V-4.7-35B-A3B",
+   "url": "https://arcflare.net/models/minicpm-v-4.7-uncensored",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "20.1GB",
+     "context": "—",
+     "updated": "2026-10-12"
+    },
+    {
+     "tag": "35b-a3b",
+     "size": "20.1GB",
+     "context": "—",
+     "updated": "2026-10-12"
+    }
+   ]
+  },
+  {
+   "slug": "neohorse-1-4b-abliterated",
+   "name": "neohorse-1-4b-abliterated",
+   "author": "huihui-ai (from TokenRhythm)",
+   "description": "NeoHorse-1 4B, abliterated: a 4B agentic and coding post-train of Qwen3.5-4B, with refusals removed. Small enough for almost any GPU.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "agentic",
+    "dense",
+    "small",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-09-18",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B",
+   "vram": "~4 GB",
+   "run": "arcflare pull huihui-ai/Huihui-NeoHorse-1-4B-abliterated-GGUF:Q4_K",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-NeoHorse-1-4B-abliterated",
+   "url": "https://arcflare.net/models/neohorse-1-4b-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "2.8GB",
+     "context": "—",
+     "updated": "2026-09-18"
+    },
+    {
+     "tag": "4b",
+     "size": "2.8GB",
+     "context": "—",
+     "updated": "2026-09-18"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.5-4b",
+   "name": "qwen3.5-4b",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3.5 4B: a dense 4B model with a built-in vision encoder. It reads images and video as well as text, and fits a 4 GB card.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "video",
+    "reasoning",
+    "small",
+    "long-context"
+   ],
+   "updated": "2026-03-02",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B",
+   "vram": "~4 GB",
+   "run": "arcflare pull unsloth/Qwen3.5-4B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3.5-4B",
+   "url": "https://arcflare.net/models/qwen3.5-4b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "2.7GB",
+     "context": "256K",
+     "updated": "2026-03-02"
+    },
+    {
+     "tag": "4b",
+     "size": "2.7GB",
+     "context": "256K",
+     "updated": "2026-03-02"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.5-9b",
+   "name": "qwen3.5-9b",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3.5 9B: a dense 9B model with a built-in vision encoder for images and video. The mid-size choice for an 8 GB card.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "video",
+    "reasoning",
+    "long-context"
+   ],
+   "updated": "2026-02-28",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "9B",
+   "vram": "~8 GB",
+   "run": "arcflare pull unsloth/Qwen3.5-9B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3.5-9B",
+   "url": "https://arcflare.net/models/qwen3.5-9b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5.7GB",
+     "context": "256K",
+     "updated": "2026-02-28"
+    },
+    {
+     "tag": "9b",
+     "size": "5.7GB",
+     "context": "256K",
+     "updated": "2026-02-28"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.6-35b-a3b",
+   "name": "qwen3.6-35b-a3b",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3.6 35B-A3B: Qwen's mixture-of-experts model, 35B in total and 3B active per token, with a vision encoder for images and video.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "video",
+    "moe",
+    "reasoning",
+    "long-context"
+   ],
+   "updated": "2026-04-16",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "35B-A3B",
+   "vram": "~26 GB",
+   "run": "arcflare pull unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+   "url": "https://arcflare.net/models/qwen3.6-35b-a3b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "22.1GB",
+     "context": "256K",
+     "updated": "2026-04-16"
+    },
+    {
+     "tag": "35b-a3b",
+     "size": "22.1GB",
+     "context": "256K",
+     "updated": "2026-04-16"
+    }
+   ]
+  },
+  {
+   "slug": "lfm3-vl-2b",
+   "name": "lfm3-vl-2b",
+   "author": "Liquid AI",
+   "description": "LFM3-VL 2B: Liquid AI's vision-language model for on-device visual understanding. It takes text, images and video, at native resolution.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "video",
+    "ocr",
+    "small"
+   ],
+   "updated": "2026-10-19",
+   "license": "LFM Open License v1.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Liquid AI's Apache-2.0-based licence with a revenue threshold: free for research and for commercial use below about USD 10M a year in revenue; above that you need a separate commercial licence.",
+   "licenseUrl": "https://huggingface.co/LiquidAI/LFM2-8B-A1B/blob/main/LICENSE",
+   "defaultSize": "2B",
+   "vram": "~3 GB",
+   "run": "arcflare pull LiquidAI/LFM3-VL-2B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/LiquidAI/LFM3-VL-2B",
+   "url": "https://arcflare.net/models/lfm3-vl-2b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "1.1GB",
+     "context": "128K",
+     "updated": "2026-10-19"
+    },
+    {
+     "tag": "2b",
+     "size": "1.1GB",
+     "context": "128K",
+     "updated": "2026-10-19"
+    }
+   ]
+  },
+  {
+   "slug": "minicpm-ocr-1.0",
+   "name": "minicpm-ocr-1.0",
+   "author": "OpenBMB",
+   "description": "MiniCPM-OCR 1.0: a 1.3B document model that reads text, tables, formulas, charts and seals from page images, in Chinese and English.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "ocr",
+    "documents",
+    "small"
+   ],
+   "updated": "2026-10-21",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "1.3B",
+   "vram": "~3 GB",
+   "run": "arcflare pull openbmb/MiniCPM-OCR-1.0-gguf:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/openbmb/MiniCPM-OCR-1.0",
+   "url": "https://arcflare.net/models/minicpm-ocr-1.0",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.5GB",
+     "context": "—",
+     "updated": "2026-10-21"
+    },
+    {
+     "tag": "1.3b",
+     "size": "0.5GB",
+     "context": "—",
+     "updated": "2026-10-21"
+    }
+   ]
+  },
+  {
+   "slug": "cyberstrike-offsec-35b-abliterated",
+   "name": "cyberstrike-offsec-35b-abliterated",
+   "author": "huihui-ai (from oyildirim, on Qwen3.6-35B-A3B)",
+   "description": "CyberStrike-OffSec 35B, abliterated: a Qwen3.6-35B-A3B tuned to drive offensive-security tools through structured tool calls, with refusals removed. About 3B parameters active per token.",
+   "category": "Chat",
+   "tags": [
+    "security",
+    "agentic",
+    "tools",
+    "moe",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-08-11",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "35B-A3B",
+   "vram": "~25 GB",
+   "run": "arcflare pull huihui-ai/Huihui-CyberStrike-OffSec-35B-abliterated-GGUF:Q4_K",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/huihui-ai/Huihui-CyberStrike-OffSec-35B-abliterated",
+   "url": "https://arcflare.net/models/cyberstrike-offsec-35b-abliterated",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "21.7GB",
+     "context": "256K",
+     "updated": "2026-08-11"
+    },
+    {
+     "tag": "35b-a3b",
+     "size": "21.7GB",
+     "context": "256K",
+     "updated": "2026-08-11"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.8-27b-uncensored-cyber",
+   "name": "qwen3.8-27b-uncensored-cyber",
+   "author": "philbert440 (from Alibaba Qwen)",
+   "description": "Qwen3.8-27B, uncensored for cybersecurity: a refusal direction aimed at the cyber and offensive-security domain, removed from Qwen3.8-27B. No fine-tuning data; abliteration only.",
+   "category": "Chat",
+   "tags": [
+    "security",
+    "dense",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-08-17",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "27B",
+   "vram": "~22 GB",
+   "run": "arcflare pull philbert440/Qwen3.8-27B-Uncensored-Cyber-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/philbert440/Qwen3.8-27B-Uncensored-Cyber",
+   "url": "https://arcflare.net/models/qwen3.8-27b-uncensored-cyber",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "19.0GB",
+     "context": "256K",
+     "updated": "2026-08-17"
+    },
+    {
+     "tag": "27b",
+     "size": "19.0GB",
+     "context": "256K",
+     "updated": "2026-08-17"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.8-27b-abliterated-cyber-preview",
+   "name": "qwen3.8-27b-abliterated-cyber-preview",
+   "author": "hotdogs (from Alibaba Qwen)",
+   "description": "Qwen3.8-27B, abliterated with a cyber tool-calling LoRA on top: a preview aimed at agentic offensive-security work, with the multi-token-prediction head built in.",
+   "category": "Chat",
+   "tags": [
+    "security",
+    "agentic",
+    "tools",
+    "dense",
+    "abliterated",
+    "uncensored",
+    "preview"
+   ],
+   "updated": "2026-08-19",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "27B",
+   "vram": "~20 GB",
+   "run": "arcflare pull hotdogs/Qwen3.8-27B-abliterated-cyber-preview-MTP-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/hotdogs/Qwen3.8-27B-abliterated-cyber-preview-MTP-GGUF",
+   "url": "https://arcflare.net/models/qwen3.8-27b-abliterated-cyber-preview",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "16.8GB",
+     "context": "256K",
+     "updated": "2026-08-19"
+    },
+    {
+     "tag": "27b",
+     "size": "16.8GB",
+     "context": "256K",
+     "updated": "2026-08-19"
+    }
+   ]
+  },
+  {
+   "slug": "dolphin3-cyber-8b",
+   "name": "dolphin3-cyber-8b",
+   "author": "RavichandranJ (from Cognitive Computations and huihui-ai, on Llama 3.1)",
+   "description": "Dolphin3-Cyber 8B: an abliterated Dolphin 3.0 Llama 3.1 8B with a cybersecurity LoRA, covering offensive and defensive work, CTFs and bug bounty.",
+   "category": "Chat",
+   "tags": [
+    "security",
+    "dense",
+    "small",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-02-13",
+   "license": "Llama 3.1 Community",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
+   "licenseUrl": "https://www.llama.com/llama3_1/license/",
+   "defaultSize": "8B",
+   "vram": "~7 GB",
+   "run": "arcflare pull RavichandranJ/Dolphin3-Cyber-8B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/RavichandranJ/Dolphin3-Cyber-8B-GGUF",
+   "url": "https://arcflare.net/models/dolphin3-cyber-8b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2026-02-13"
+    },
+    {
+     "tag": "8b",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2026-02-13"
+    }
+   ]
+  },
+  {
+   "slug": "cyber-ornith-1.5-9b",
+   "name": "cyber-ornith-1.5-9b",
+   "author": "DuoNeural (from Ornith, quants by mradermacher)",
+   "description": "Cyber-Ornith 1.5 9B: an abliterated Ornith-1.5 9B tuned on terminal, tool-call and security trajectories, for exploit triage, vulnerability auditing and command-line work. A reasoning model.",
+   "category": "Chat",
+   "tags": [
+    "security",
+    "agentic",
+    "reasoning",
+    "dense",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-09-25",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "9B",
+   "vram": "~8 GB",
+   "run": "arcflare pull mradermacher/Cyber-Ornith-1.5-9B-OBLITERATED-i1-GGUF:i1-Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/DuoNeural/Cyber-Ornith-1.5-9B-OBLITERATED",
+   "url": "https://arcflare.net/models/cyber-ornith-1.5-9b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "5.6GB",
+     "context": "256K",
+     "updated": "2026-09-25"
+    },
+    {
+     "tag": "9b",
+     "size": "5.6GB",
+     "context": "256K",
+     "updated": "2026-09-25"
+    }
+   ]
+  },
+  {
+   "slug": "gpt-oss-cybersecurity-20b-heretic",
+   "name": "gpt-oss-cybersecurity-20b-heretic",
+   "author": "piotreknow02 (from OpenAI gpt-oss, quants by mradermacher)",
+   "description": "GPT-OSS Cybersecurity 20B, heretic: gpt-oss-20b tuned as a cybersecurity assistant (threat analysis, alert triage, incident response, ATT&CK mapping), then de-censored with the Heretic tool. About 3.6B parameters active.",
+   "category": "Chat",
+   "tags": [
+    "security",
+    "moe",
+    "reasoning",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-03-12",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "20B",
+   "vram": "~19 GB",
+   "run": "arcflare pull mradermacher/GPT-OSS-Cybersecurity-20B-Merged-heretic-i1-GGUF:i1-Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/sainikhiljuluri2015/GPT-OSS-Cybersecurity-20B-Merged",
+   "url": "https://arcflare.net/models/gpt-oss-cybersecurity-20b-heretic",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "15.8GB",
+     "context": "128K",
+     "updated": "2026-03-12"
+    },
+    {
+     "tag": "20b",
+     "size": "15.8GB",
+     "context": "128K",
+     "updated": "2026-03-12"
+    }
+   ]
+  },
+  {
+   "slug": "foundation-sec-8b-reasoning",
+   "name": "foundation-sec-8b-reasoning",
+   "author": "Cisco Foundation AI",
+   "description": "Foundation-Sec 8B Reasoning: Cisco's security-focused reasoning model, built on Llama 3.1 8B. Aimed at SOC work, threat defense and engineering enablement. Not abliterated: it keeps its safety tuning.",
+   "category": "Reasoning",
+   "tags": [
+    "security",
+    "reasoning",
+    "dense",
+    "defensive"
+   ],
+   "updated": "2026-01-28",
+   "license": "Llama 3.1 Community",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Open weights with conditions; free unless you exceed ~700M monthly active users, plus an acceptable-use policy. If you redistribute it or ship a product built on it, Meta requires \"Built with Llama\" to be shown and the licence to be included.",
+   "licenseUrl": "https://www.llama.com/llama3_1/license/",
+   "defaultSize": "8B",
+   "vram": "~7 GB",
+   "run": "arcflare pull fdtn-ai/Foundation-Sec-8B-Reasoning-Q4_K_M-GGUF",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/fdtn-ai/Foundation-Sec-8B-Reasoning",
+   "url": "https://arcflare.net/models/foundation-sec-8b-reasoning",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2026-01-28"
+    },
+    {
+     "tag": "8b",
+     "size": "4.9GB",
+     "context": "128K",
+     "updated": "2026-01-28"
+    }
+   ]
+  },
+  {
+   "slug": "imperum-cybersecurity-v1",
+   "name": "imperum-cybersecurity-v1",
+   "author": "IMPERUM (from Alibaba Qwen, with Alican Kiraz)",
+   "description": "Imperum CybersecurityLLM v1.0: a Qwen3.6-35B-A3B tuned for security operations: triage, DFIR, detection engineering (Sigma, YARA), ATT&CK mapping, malware analysis, cloud and secure code review. Not abliterated.",
+   "category": "Reasoning",
+   "tags": [
+    "security",
+    "reasoning",
+    "moe",
+    "defensive"
+   ],
+   "updated": "2026-08-17",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "35B-A3B",
+   "vram": "~25 GB",
+   "run": "arcflare pull IMPERUM/Imperum-CybersecurityLLM-v1.0-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/IMPERUM/Imperum-CybersecurityLLM-v1.0",
+   "url": "https://arcflare.net/models/imperum-cybersecurity-v1",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "21.2GB",
+     "context": "256K",
+     "updated": "2026-08-17"
+    },
+    {
+     "tag": "35b-a3b",
+     "size": "21.2GB",
+     "context": "256K",
+     "updated": "2026-08-17"
+    }
+   ]
+  },
+  {
+   "slug": "cybersecqwen-4b",
+   "name": "cybersecqwen-4b",
+   "author": "lablab-ai AMD hackathon (from Alibaba Qwen, quants by mradermacher)",
+   "description": "CyberSecQwen 4B: a small defensive specialist built on Qwen3-4B-Instruct-2507. It maps CVEs to CWEs and answers threat-intelligence questions.",
+   "category": "Chat",
+   "tags": [
+    "security",
+    "dense",
+    "small",
+    "defensive"
+   ],
+   "updated": "2026-05-08",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B",
+   "vram": "~4 GB",
+   "run": "arcflare pull mradermacher/CyberSecQwen-4B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/lablab-ai-amd-developer-hackathon/CyberSecQwen-4B",
+   "url": "https://arcflare.net/models/cybersecqwen-4b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "2.5GB",
+     "context": "32K",
+     "updated": "2026-05-08"
+    },
+    {
+     "tag": "4b",
+     "size": "2.5GB",
+     "context": "32K",
+     "updated": "2026-05-08"
+    }
+   ]
+  },
+  {
+   "slug": "minicpm-v-4.7-35b-a3b",
+   "name": "minicpm-v-4.7-35b-a3b",
+   "author": "OpenBMB",
+   "description": "MiniCPM-V 4.7 35B-A3B: OpenBMB's vision-language mixture-of-experts model, the first MoE in the MiniCPM-V series. It reads single images, several images and video.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "video",
+    "moe"
+   ],
+   "updated": "2026-10-06",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "35B-A3B",
+   "vram": "~25 GB",
+   "run": "arcflare pull openbmb/MiniCPM-V-4.7-35B-A3B-gguf:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/openbmb/MiniCPM-V-4.7-35B-A3B",
+   "url": "https://arcflare.net/models/minicpm-v-4.7-35b-a3b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "21.2GB",
+     "context": "—",
+     "updated": "2026-10-06"
+    },
+    {
+     "tag": "35b-a3b",
+     "size": "21.2GB",
+     "context": "—",
+     "updated": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "slug": "minicpm-v-4.7-1b",
+   "name": "minicpm-v-4.7-1b",
+   "author": "OpenBMB",
+   "description": "MiniCPM-V 4.7 1B: the small MiniCPM-V 4.7, for single images, several images and video on almost any GPU.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "video",
+    "small"
+   ],
+   "updated": "2026-10-06",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "1B",
+   "vram": "~3 GB",
+   "run": "arcflare pull openbmb/MiniCPM-V-4.7-1B-gguf:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/openbmb/MiniCPM-V-4.7-1B",
+   "url": "https://arcflare.net/models/minicpm-v-4.7-1b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "0.7GB",
+     "context": "—",
+     "updated": "2026-10-06"
+    },
+    {
+     "tag": "1b",
+     "size": "0.7GB",
+     "context": "—",
+     "updated": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "slug": "lfm3-omni",
+   "name": "lfm3-omni",
+   "author": "Liquid AI",
+   "description": "LFM3-Omni 2B: Liquid AI's first omni-modal model. One small model that understands text, images, video and audio, and answers in text or speech.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "audio",
+    "speech",
+    "video",
+    "omni",
+    "small"
+   ],
+   "updated": "2026-10-27",
+   "license": "LFM Open License v1.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Liquid AI's Apache-2.0-based licence with a revenue threshold: free for research and for commercial use below about USD 10M a year in revenue; above that you need a separate commercial licence.",
+   "licenseUrl": "https://huggingface.co/LiquidAI/LFM2-8B-A1B/blob/main/LICENSE",
+   "defaultSize": "2B",
+   "vram": "~3 GB",
+   "run": "arcflare pull LiquidAI/LFM3-Omni-2B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/LiquidAI/LFM3-Omni-2B",
+   "url": "https://arcflare.net/models/lfm3-omni",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "1.1GB",
+     "context": "32K",
+     "updated": "2026-10-27"
+    },
+    {
+     "tag": "2b",
+     "size": "1.1GB",
+     "context": "32K",
+     "updated": "2026-10-27"
+    }
+   ]
+  },
+  {
+   "slug": "qwen3.8-flash-next",
+   "name": "qwen3.8-flash-next",
+   "author": "Alibaba Qwen",
+   "description": "Qwen3.8-Flash-Next: Qwen's preview of the architecture Qwen4 will be built on. A 125B mixture-of-experts model with 6B active per token, reading images and video as well as text, with a 256K context.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "reasoning",
+    "vision",
+    "moe",
+    "long-context",
+    "preview",
+    "large"
+   ],
+   "updated": "2026-08-26",
+   "license": "Qwen Community License 1.0",
+   "commercial": true,
+   "restriction": "Companies that run a model-as-a-service, or an AI coding or office-assistant business, need a separate licence from Qwen to use it commercially (internal use is exempt).",
+   "licenseNote": "Qwen's MIT-style licence with two conditions: a product with more than 100M monthly users or USD 20M monthly revenue must show the model's name, and a company running a model-as-a-service or AI coding or office-assistant business needs a separate licence from Qwen for commercial use.",
+   "licenseUrl": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/main/LICENSE",
+   "defaultSize": "125B-A6B",
+   "vram": "~85 GB",
+   "run": "arcflare pull unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_K_XL",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next",
+   "url": "https://arcflare.net/models/qwen3.8-flash-next",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "79.6GB",
+     "context": "256K",
+     "updated": "2026-08-26"
+    },
+    {
+     "tag": "125b-a6b",
+     "size": "79.6GB",
+     "context": "256K",
+     "updated": "2026-08-26"
+    }
+   ]
+  },
+  {
+   "slug": "glm5.3-flash",
+   "name": "glm5.3-flash",
+   "author": "Z.ai",
+   "description": "GLM-5.3-Flash: Z.ai's first natively multimodal GLM-5 model, a 320B mixture-of-experts with 18B active per token, for agentic coding and long tasks.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "agentic",
+    "moe",
+    "vision",
+    "long-context",
+    "large"
+   ],
+   "updated": "2026-08-26",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "320B-A18B",
+   "vram": "~115 GB",
+   "run": "arcflare pull unsloth/GLM-5.3-Flash-GGUF:UD-Q2_K_XL",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/zai-org/GLM-5.3-Flash",
+   "url": "https://arcflare.net/models/glm5.3-flash",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "108.7GB",
+     "context": "1M",
+     "updated": "2026-08-26"
+    },
+    {
+     "tag": "320b-a18b",
+     "size": "108.7GB",
+     "context": "1M",
+     "updated": "2026-08-26"
+    }
+   ]
+  },
+  {
+   "slug": "nanbeige4.3-33b",
+   "name": "nanbeige4.3-33b",
+   "author": "Nanbeige",
+   "description": "Nanbeige4.3 33B: Nanbeige's flagship agent model, a dense 33B built for agentic coding and long tool-using tasks.",
+   "category": "Code",
+   "tags": [
+    "code",
+    "agentic",
+    "tools",
+    "reasoning",
+    "long-context"
+   ],
+   "updated": "2026-10-25",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "33B",
+   "vram": "~24 GB",
+   "run": "arcflare pull bartowski/Nanbeige_Nanbeige4.3-33B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/Nanbeige/Nanbeige4.3-33B",
+   "url": "https://arcflare.net/models/nanbeige4.3-33b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "20.8GB",
+     "context": "512K",
+     "updated": "2026-10-25"
+    },
+    {
+     "tag": "33b",
+     "size": "20.8GB",
+     "context": "512K",
+     "updated": "2026-10-25"
+    }
+   ]
+  },
+  {
+   "slug": "arete-27b",
+   "name": "arete-27b",
+   "author": "Nous Research",
+   "description": "Arete 27B: Nous Research's fine-tune of Qwen3.8-27B for questions on politics, free expression and other contested subjects, where Nous found the base model refusing or deflecting.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "reasoning",
+    "vision",
+    "fine-tune"
+   ],
+   "updated": "2026-11-06",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "27B",
+   "vram": "~20 GB",
+   "run": "arcflare pull bartowski/NousResearch_Arete-27B-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/NousResearch/Arete-27B",
+   "url": "https://arcflare.net/models/arete-27b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "17.2GB",
+     "context": "256K",
+     "updated": "2026-11-06"
+    },
+    {
+     "tag": "27b",
+     "size": "17.2GB",
+     "context": "256K",
+     "updated": "2026-11-06"
+    }
+   ]
+  },
+  {
+   "slug": "nemotron3.5-bolt-e4b",
+   "name": "nemotron3.5-bolt-e4b",
+   "author": "NVIDIA",
+   "description": "Nemotron-3.5-Bolt E4B: NVIDIA's post-training of Gemma 4 E4B for fast local assistants: voice and device assistants, characters and embedded interfaces.",
+   "category": "Chat",
+   "tags": [
+    "chat",
+    "reasoning",
+    "small",
+    "assistant"
+   ],
+   "updated": "2026-10-05",
+   "license": "OpenMDW-1.1",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "A permissive model licence: use, modify and redistribute freely. If you distribute the model, keep a copy of the licence and its notices. Rights end if you sue over patents or copyright in the model.",
+   "licenseUrl": "https://openmdw.ai/license/1-1/",
+   "defaultSize": "E4B",
+   "vram": "~8 GB",
+   "run": "arcflare pull nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB",
+   "url": "https://arcflare.net/models/nemotron3.5-bolt-e4b",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "6.2GB",
+     "context": "64K",
+     "updated": "2026-10-05"
+    },
+    {
+     "tag": "e4b",
+     "size": "6.2GB",
+     "context": "64K",
+     "updated": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "slug": "mage-vl-cowork",
+   "name": "mage-vl-cowork",
+   "author": "Microsoft",
+   "description": "Mage-VL-Cowork: Microsoft's 4B computer-use model. It looks at screenshots and decides, step by step, whether to click and type or to run a shell command.",
+   "category": "Vision",
+   "tags": [
+    "vision",
+    "computer-use",
+    "agentic",
+    "small"
+   ],
+   "updated": "2026-11-07",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B",
+   "vram": "~4 GB",
+   "run": "arcflare pull ggml-org/Mage-VL-Cowork-GGUF:Q4_K_M",
+   "runnable": true,
+   "featured": false,
+   "homepage": "https://huggingface.co/microsoft/Mage-VL-Cowork",
+   "url": "https://arcflare.net/models/mage-vl-cowork",
+   "versions": [
+    {
+     "tag": "latest",
+     "size": "2.7GB",
+     "context": "32K",
+     "updated": "2026-11-07"
+    },
+    {
+     "tag": "4b",
+     "size": "2.7GB",
+     "context": "32K",
+     "updated": "2026-11-07"
+    }
+   ]
+  },
+  {
+   "slug": "arc",
+   "name": "Arc",
+   "author": "ArcFlare",
+   "description": "Everyday assistant. The general one: questions, writing, explaining, planning. Reads images when the base model does.",
+   "category": "Chat",
+   "tags": [
+    "arc"
+   ],
+   "updated": "2026-11-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B–27B",
+   "vram": "~4 GB",
+   "run": "arcflare arcs pull arc",
+   "runnable": true,
+   "featured": false,
+   "homepage": null,
+   "url": "https://arcflare.net/models/arc",
+   "versions": [
+    {
+     "tag": "qwen3.5-4b",
+     "size": "2.7GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3.5-9b",
+     "size": "5.7GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3.8-27b",
+     "size": "16.5GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    }
+   ]
+  },
+  {
+   "slug": "arc-think",
+   "name": "Arc Think",
+   "author": "ArcFlare",
+   "description": "Careful reasoning. For problems worth working through: maths, logic, trade-offs, debugging an argument. Slower, and shows its working.",
+   "category": "Reasoning",
+   "tags": [
+    "arc"
+   ],
+   "updated": "2026-11-10",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "3.8B–30B-A3B",
+   "vram": "~3 GB",
+   "run": "arcflare arcs pull arc-think",
+   "runnable": true,
+   "featured": false,
+   "homepage": null,
+   "url": "https://arcflare.net/models/arc-think",
+   "versions": [
+    {
+     "tag": "phi4-mini",
+     "size": "2.5GB",
+     "context": "128K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "granite-4.2-8b",
+     "size": "5.3GB",
+     "context": "128K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "gpt-oss",
+     "size": "12GB",
+     "context": "128K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3-30b-a3b-thinking-2507",
+     "size": "18.6GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    }
+   ]
+  },
+  {
+   "slug": "arc-code",
+   "name": "Arc Code",
+   "author": "ArcFlare",
+   "description": "Coding agent. Built for the ArcFlare agent and coding harnesses: reads before it edits, makes small changes, and tests what it built.",
+   "category": "Code",
+   "tags": [
+    "arc"
+   ],
+   "updated": "2026-11-10",
+   "license": "MIT",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Very permissive — do almost anything as long as the copyright notice is kept.",
+   "licenseUrl": "https://opensource.org/license/mit",
+   "defaultSize": "9B–35B-A3B",
+   "vram": "~8 GB",
+   "run": "arcflare arcs pull arc-code",
+   "runnable": true,
+   "featured": false,
+   "homepage": null,
+   "url": "https://arcflare.net/models/arc-code",
+   "versions": [
+    {
+     "tag": "ornith-1.5-9b",
+     "size": "5.8GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "devstral2-small",
+     "size": "14.3GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3-coder",
+     "size": "18GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "ornith-1.5-35b-a3b",
+     "size": "21.7GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    }
+   ]
+  },
+  {
+   "slug": "arc-desk",
+   "name": "Arc Desk",
+   "author": "ArcFlare",
+   "description": "Operates the desktop. Sees the screen and uses the mouse and keyboard through ArcFlare's desktop server. Needs a base model that reads images.",
+   "category": "Vision",
+   "tags": [
+    "arc",
+    "desktop"
+   ],
+   "updated": "2026-11-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B–35B-A3B",
+   "vram": "~4 GB",
+   "run": "arcflare arcs pull arc-desk",
+   "runnable": true,
+   "featured": false,
+   "homepage": null,
+   "url": "https://arcflare.net/models/arc-desk",
+   "versions": [
+    {
+     "tag": "qwen3.5-4b",
+     "size": "2.7GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3.5-9b",
+     "size": "5.7GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3.8-27b",
+     "size": "16.5GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3.6-35b-a3b",
+     "size": "22.1GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    }
+   ]
+  },
+  {
+   "slug": "arc-scout",
+   "name": "Arc Scout",
+   "author": "ArcFlare",
+   "description": "Web research. Searches the web, reads the pages, and answers with the sources it used. Built around ArcFlare's web tools.",
+   "category": "Chat",
+   "tags": [
+    "arc",
+    "web"
+   ],
+   "updated": "2026-11-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B–27B",
+   "vram": "~5 GB",
+   "run": "arcflare arcs pull arc-scout",
+   "runnable": true,
+   "featured": false,
+   "homepage": null,
+   "url": "https://arcflare.net/models/arc-scout",
+   "versions": [
+    {
+     "tag": "spark-x2.6-4b",
+     "size": "3.5GB",
+     "context": "—",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "granite-4.2-8b",
+     "size": "5.3GB",
+     "context": "128K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "gpt-oss",
+     "size": "12GB",
+     "context": "128K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3.8-27b",
+     "size": "16.5GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    }
+   ]
+  },
+  {
+   "slug": "arc-studio",
+   "name": "Arc Studio",
+   "author": "ArcFlare",
+   "description": "Images, 3D and speech. Turns an idea into prompts and settings for ArcFlare's image, 3D and speech generators, and runs them when it has the tools.",
+   "category": "Chat",
+   "tags": [
+    "arc"
+   ],
+   "updated": "2026-11-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "E4B–26B-A4B",
+   "vram": "~7 GB",
+   "run": "arcflare arcs pull arc-studio",
+   "runnable": true,
+   "featured": false,
+   "homepage": null,
+   "url": "https://arcflare.net/models/arc-studio",
+   "versions": [
+    {
+     "tag": "gemma4-e4b",
+     "size": "5.0GB",
+     "context": "128K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "gemma4-12b",
+     "size": "7.1GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "gemma4",
+     "size": "17.0GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    }
+   ]
+  },
+  {
+   "slug": "arc-sentinel",
+   "name": "Arc Sentinel",
+   "author": "ArcFlare",
+   "description": "Defensive security. For the defending side: reading logs and alerts, triage, hardening, detection rules, explaining a vulnerability and its fix.",
+   "category": "Chat",
+   "tags": [
+    "arc",
+    "security"
+   ],
+   "updated": "2026-11-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B–35B-A3B",
+   "vram": "~4 GB",
+   "run": "arcflare arcs pull arc-sentinel",
+   "runnable": true,
+   "featured": false,
+   "homepage": null,
+   "url": "https://arcflare.net/models/arc-sentinel",
+   "versions": [
+    {
+     "tag": "cybersecqwen-4b",
+     "size": "2.5GB",
+     "context": "32K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "imperum-cybersecurity-v1",
+     "size": "21.2GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    }
+   ]
+  },
+  {
+   "slug": "arc-unbound",
+   "name": "Arc Unbound",
+   "author": "ArcFlare",
+   "description": "Plain-spoken assistant. The general assistant on a third-party abliterated base, for adults who want straight answers without lectures. Its refusals were removed by community members, not the original authors.",
+   "category": "Chat",
+   "tags": [
+    "arc",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-11-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "4B–27B",
+   "vram": "~4 GB",
+   "run": "arcflare arcs pull arc-unbound",
+   "runnable": true,
+   "featured": false,
+   "homepage": null,
+   "url": "https://arcflare.net/models/arc-unbound",
+   "versions": [
+    {
+     "tag": "qwen3.5-4b-abliterated",
+     "size": "2.7GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3.5-9b-abliterated",
+     "size": "5.6GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3.8-abliterated",
+     "size": "17.4GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    }
+   ]
+  },
+  {
+   "slug": "arc-code-unbound",
+   "name": "Arc Code Unbound",
+   "author": "ArcFlare",
+   "description": "Coding agent, unfiltered. The coding agent on a third-party abliterated base, for adults who do not want a coding model second-guessing their project. Its refusals were removed by community members, not the original authors.",
+   "category": "Code",
+   "tags": [
+    "arc",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-11-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "30B-A3B–40B-A2.5B",
+   "vram": "~20 GB",
+   "run": "arcflare arcs pull arc-code-unbound",
+   "runnable": true,
+   "featured": false,
+   "homepage": null,
+   "url": "https://arcflare.net/models/arc-code-unbound",
+   "versions": [
+    {
+     "tag": "qwen3-coder-abliterated",
+     "size": "18.6GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "flint-abliterated",
+     "size": "24.2GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    }
+   ]
+  },
+  {
+   "slug": "arc-red",
+   "name": "Arc Red",
+   "author": "ArcFlare",
+   "description": "Authorised security testing. The offensive-security counterpart of Arc Sentinel, for authorised testing, CTFs and lab work, on a third-party abliterated base. Its refusals were removed by community members, not the original authors.",
+   "category": "Chat",
+   "tags": [
+    "arc",
+    "security",
+    "abliterated",
+    "uncensored"
+   ],
+   "updated": "2026-11-10",
+   "license": "Apache-2.0",
+   "commercial": true,
+   "restriction": null,
+   "licenseNote": "Permissive — commercial use, modification, and distribution allowed, with attribution and a patent grant.",
+   "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+   "defaultSize": "9B–35B-A3B",
+   "vram": "~8 GB",
+   "run": "arcflare arcs pull arc-red",
+   "runnable": true,
+   "featured": false,
+   "homepage": null,
+   "url": "https://arcflare.net/models/arc-red",
+   "versions": [
+    {
+     "tag": "cyber-ornith-1.5-9b",
+     "size": "5.6GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "qwen3.8-27b-abliterated-cyber-preview",
+     "size": "16.8GB",
+     "context": "256K",
+     "updated": "2026-11-10"
+    },
+    {
+     "tag": "cyberstrike-offsec-35b-abliterated",
+     "size": "21.7GB",
+     "context": "256K",
+     "updated": "2026-11-10"
     }
    ]
   }
