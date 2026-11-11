@@ -178,3 +178,58 @@ test("a firewall in the phone's way: firewalld answers for certain, ufw only whe
   assert.strictEqual(await fw.checkFirewall({ port: 7878, exec: none, readFile: files({ "/etc/ufw/ufw.conf": "ENABLED=yes\n", "/etc/default/ufw": 'DEFAULT_INPUT_POLICY="ACCEPT"\n' }) }), null);
   assert.strictEqual(fw.subnetOf("10.1.2.3", { e: [{ address: "10.1.2.3", netmask: "255.255.0.0", family: "IPv4" }] }), "10.1.0.0/16");
 });
+
+// ---- Wayland ----------------------------------------------------------------------------------------------------
+// On sway, Hyprland and other wlroots compositors: grim, wtype and wlrctl, and the compositor's own socket where there
+// is one. The live test below runs only inside a Wayland session that has those tools; it was run against a headless
+// sway session.
+
+const unix = require("../lib/mcp/desktop-unix");
+
+test("Wayland: keys and text become one wtype command line", () => {
+  assert.deepStrictEqual(unix.toWtype("ctrl+shift+p"), ["-M", "ctrl", "-M", "shift", "-k", "p", "-m", "shift", "-m", "ctrl"]);
+  assert.deepStrictEqual(unix.toWtype("enter"), ["-k", "Return"]);
+  assert.deepStrictEqual(unix.toWtype("win+pgdn"), ["-M", "logo", "-k", "Next", "-m", "logo"]);
+  assert.deepStrictEqual(unix.toWtype("alt+f4"), ["-M", "alt", "-k", "F4", "-m", "alt"]);
+  assert.throws(() => unix.toWtype("hyper+x"), /unknown modifier/);
+  // All the text in one call, so no key is lost between two virtual keyboards; a pause before the first key; and a
+  // line that starts with dashes typed as keys, since wtype would read it as an option.
+  const argv = unix.wtypeText("first\n--flag x\n\nlast");
+  assert.deepStrictEqual(argv.slice(0, 2), ["-s", "80"]);
+  assert.deepStrictEqual(argv.slice(2), ["-d", "4", "first", "-k", "Return", "-k", "minus", "-k", "minus", "flag x", "-k", "Return", "-k", "Return", "last"]);
+});
+
+test("Wayland: the compositor decides how windows and the pointer are reached, and GNOME and KDE get advice", () => {
+  const all = () => true, none = () => false;
+  assert.strictEqual(unix.wlCompositor({ SWAYSOCK: "/run/sway.sock" }, all), "sway");
+  assert.strictEqual(unix.wlCompositor({ HYPRLAND_INSTANCE_SIGNATURE: "abc" }, all), "hyprland");
+  assert.strictEqual(unix.wlCompositor({ SWAYSOCK: "/run/sway.sock" }, none), "wlroots", "no swaymsg: the generic path");
+  assert.strictEqual(unix.wlCompositor({}, all), "wlroots");
+  assert.match(unix.waylandAdvice({ XDG_CURRENT_DESKTOP: "ubuntu:GNOME" }), /does not let one program see or control another's windows.*GNOME on Xorg/);
+  assert.match(unix.waylandAdvice({ XDG_CURRENT_DESKTOP: "KDE" }), /Plasma \(X11\)/);
+  assert.match(unix.waylandAdvice({ XDG_CURRENT_DESKTOP: "river" }), /grim, wtype and wlrctl/);
+});
+
+const haveWayland = LINUX && !!process.env.WAYLAND_DISPLAY &&
+  ["grim", "wtype", "foot"].every((t) => require("child_process").spawnSync("which", [t]).status === 0);
+
+test("Wayland, live: windows, focus, typing, keys, screenshots and the clipboard", { skip: haveWayland ? false : "needs a wlroots Wayland session with grim, wtype and foot" }, async () => {
+  const desktop = require("../lib/mcp/desktop");
+  const out = path.join(tmp("wl"), "typed.txt");
+  const title = `ArcFlare test ${process.pid}`;
+  const term = require("child_process").spawn("foot", ["-T", title, "sh", "-c", `cat > '${out}'`], { stdio: "ignore", detached: true });
+  try {
+    await new Promise((r) => setTimeout(r, 1500));
+    assert.strictEqual(desktop.support().ok, true);
+    assert.ok((await desktop.listWindows()).some((w) => w.title === title));
+    assert.strictEqual((await desktop.focusWindow(title)).title, title);
+    await desktop.typeText("one 100% (ok)\ntwo");
+    await desktop.pressKeys(["enter", "ctrl+d"]);
+    await new Promise((r) => setTimeout(r, 600));
+    assert.strictEqual(fs.readFileSync(out, "utf8"), "one 100% (ok)\ntwo\n");
+    const shot = await desktop.screenshot({ region: { x: 0, y: 0, width: 200, height: 100 } });
+    assert.ok(shot.shotWidth > 0 && shot.bytes > 100);
+    await desktop.clipboardSet("from arcflare ✓");
+    assert.strictEqual(await desktop.clipboardGet(), "from arcflare ✓");
+  } finally { try { process.kill(-term.pid); } catch { /* gone */ } }
+});
