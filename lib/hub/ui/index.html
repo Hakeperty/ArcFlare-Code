@@ -210,6 +210,11 @@
             <span class="dev-meta">to</span>
             <input id="phone-until" type="time" aria-label="Until">
           </div>
+          <div id="ringtone-row" class="hours-row" hidden>
+            <p class="dev-meta ringtone-name">Ringtone: <span id="ringtone-title"></span></p>
+            <button id="ringtone-pick" class="btn outline sm" type="button">Change</button>
+            <button id="ringtone-test" class="btn outline sm" type="button">Test</button>
+          </div>
           <p id="phone-note" class="dev-meta sub" hidden></p>
         </div>
         <div id="arc-card" class="card arc-card" hidden>
@@ -478,6 +483,33 @@
       <div class="two">
         <button id="question-later" class="btn outline block lg" type="button">Later</button>
         <button id="question-send" class="btn primary block lg" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- A call from an agent on the computer (call_phone). The phone says the agent's line and listens; typing works too. -->
+  <div id="sheet-call" class="sheet-wrap" hidden>
+    <div class="scrim"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="call-title" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <h2 id="call-title" class="sheet-title">Call from your computer</h2>
+      <p id="call-status" class="dev-meta sub" role="status"></p>
+      <p id="call-line" class="lead"></p>
+      <p id="call-heard" class="call-heard" hidden></p>
+      <p id="call-error" class="banner error" role="alert" hidden></p>
+      <div id="call-ringing" class="two">
+        <button id="call-decline" class="btn danger block lg" type="button">Decline</button>
+        <button id="call-answer" class="btn primary block lg" type="button">Answer</button>
+      </div>
+      <div id="call-active" hidden>
+        <label class="field"><span class="lbl">Or type your answer</span>
+          <textarea id="call-type" rows="2"></textarea>
+        </label>
+        <div class="two">
+          <button id="call-listen" class="btn outline block lg" type="button">Listen again</button>
+          <button id="call-send" class="btn outline block lg" type="button">Send</button>
+        </div>
+        <button id="call-hangup" class="btn danger block lg call-hangup" type="button">Hang up</button>
       </div>
     </div>
   </div>

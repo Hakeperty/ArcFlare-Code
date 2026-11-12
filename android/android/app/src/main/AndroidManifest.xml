@@ -48,4 +48,12 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Local notifications (NotifierPlugin): a chat answer is ready, an agent needs approval or finished. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Calls from agents (CallPlugin): hearing and recording the answer. Asked for the first time a call is answered. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Android 11+ hides other apps unless asked: the phone's speech recogniser and text-to-speech voice (CallPlugin). -->
+    <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+    </queries>
 </manifest>

@@ -73,6 +73,19 @@ navigation rule is compiled and executed with `javac`; everything else is listed
 Records from earlier builds with a LAN address the new rules refuse (https, port 80/443) show the pairing screen again:
 pair once more.
 
+## Calls from agents (`call_phone`)
+
+An agent on the computer can ring the phone through the hub (`lib/hub/calls.js`); the call arrives as an event over the
+same tunnel, so there is no phone number and no push service. **The app must be open or in the background and still
+connected**; a killed app does not ring. `CallPlugin.java` rings with the ringtone picked under Tools (Android's own
+picker), says the agent's line with the phone's text-to-speech voice, and listens with its speech recogniser. One
+`AudioRecord` stream at 16 kHz feeds, at the same time, the recording of the whole call, the recording of the current
+answer and (Android 13+, `EXTRA_AUDIO_SOURCE`) the recogniser. Before Android 13 the recogniser needs the microphone
+itself, so nothing is recorded. The recordings (mu-law WAV, `MuLawWav.java`, tested with javac in `test/mulaw.test.js`)
+are uploaded in 36 KB pieces when the call ends, saved on the computer, and deleted from the phone. Needs
+`RECORD_AUDIO`, asked the first time a call is answered. Mute and the hours under Tools stop calls on the computer's
+side. **None of this has run on a phone yet.**
+
 ## Layout
 
 ```

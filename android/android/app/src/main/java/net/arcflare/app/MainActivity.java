@@ -26,6 +26,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AppUpdaterPlugin.class);
         // Local notifications for chat answers and agent events (see NotifierPlugin).
         registerPlugin(NotifierPlugin.class);
+        // Calls from agents on the computer: ring, speak, listen, record (see CallPlugin).
+        registerPlugin(CallPlugin.class);
         super.onCreate(savedInstanceState);
         WebView webView = bridge.getWebView();
         // The app never needs file:// or content:// access from the WebView.
