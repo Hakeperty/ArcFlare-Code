@@ -103,7 +103,7 @@ test("calls and sounds from agents: off by default only when muted, and only ins
 
   const dir = tmp();
   const s = new HubSettings({ dir });
-  assert.deepStrictEqual(s.phone(), { muted: false, from: "07:00", until: "23:00" });
+  assert.deepStrictEqual(s.phone(), { muted: false, from: "07:00", until: "23:00", voice: null });
   assert.deepStrictEqual(s.phoneAllows(at(12)), { ring: true, sound: true, why: null });
   assert.strictEqual(s.phoneAllows(at(2)).sound, false);
   assert.match(s.phoneAllows(at(2)).why, /07:00 to 23:00/);
@@ -111,10 +111,10 @@ test("calls and sounds from agents: off by default only when muted, and only ins
   assert.deepStrictEqual(s.phoneAllows(at(12)), { ring: false, sound: false, why: "the user muted calls and notification sounds" });
   // Another process (the CLI) changing the file is seen without a restart.
   new HubSettings({ dir }).setPhone({ muted: false, from: "08:30", until: "20:00" });
-  assert.deepStrictEqual(s.phone(), { muted: false, from: "08:30", until: "20:00" });
+  assert.deepStrictEqual(s.phone(), { muted: false, from: "08:30", until: "20:00", voice: null });
   assert.throws(() => s.setPhone({ from: "25:00" }), /HH:MM/);
   assert.throws(() => s.setPhone({ muted: "yes" }), /true or false/);
-  assert.deepStrictEqual(new HubSettings({ dir }).phone(), { muted: false, from: "08:30", until: "20:00" }, "a refused change keeps the old one");
+  assert.deepStrictEqual(new HubSettings({ dir }).phone(), { muted: false, from: "08:30", until: "20:00", voice: null }, "a refused change keeps the old one");
 });
 
 test("a notice carries its kind, and no sound when the user muted or it is outside their hours", () => {
@@ -129,4 +129,23 @@ test("a notice carries its kind, and no sound when the user muted or it is outsi
   qb.ask({ question: "Deploy?" });
   assert.deepStrictEqual(seen.map((e) => [e.type, e.kind, e.sound]), [["notice", "commit", true], ["notice", "push", false], ["question", undefined, false]]);
   assert.throws(() => qb.notice({ title: "x", kind: "siren" }), /kind is one of/);
+});
+
+test("the agent's voice on calls: only an installed speech model that needs no clip, and one of its voices", () => {
+  const MODELS = [
+    { id: "kokoro", kind: "tts", label: "Kokoro 82M", voices: ["af_heart", "am_michael"], defaultVoice: "af_heart" },
+    { id: "big", kind: "tts", label: "Big", voices: [] },
+    { id: "clone", kind: "tts", label: "Clone", needsRefText: true },
+    { id: "hunyuan", label: "3D" },
+  ];
+  const have = new Set(["kokoro", "clone", "hunyuan"]);
+  const gen = { MODELS, kindOf: (m) => m.kind || "3d", installed: (m) => have.has(m.id) };
+  const s = new HubSettings({ dir: tmp(), gen });
+  assert.deepStrictEqual(s.voiceChoices().map((m) => m.id), ["kokoro"]);
+  assert.throws(() => s.setPhone({ voice: { model: "big" } }), /not installed/);
+  assert.throws(() => s.setPhone({ voice: { model: "clone" } }), /not installed/);
+  assert.throws(() => s.setPhone({ voice: { model: "kokoro", voice: "nope" } }), /no voice "nope"/);
+  assert.deepStrictEqual(s.setPhone({ voice: { model: "kokoro", voice: "am_michael" } }).voice, { model: "kokoro", voice: "am_michael" });
+  assert.deepStrictEqual(s.phone().voice, { model: "kokoro", voice: "am_michael" });
+  assert.strictEqual(s.setPhone({ voice: null }).voice, null, "back to the phone's own voice");
 });

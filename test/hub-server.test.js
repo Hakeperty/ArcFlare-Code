@@ -884,6 +884,24 @@ test("call_phone round trip: the agent rings, the phone answers and replies, onl
   } finally { await s.close(); }
 });
 
+test("a line spoken by the computer's speech model reaches the phone in parts; only an owner may fetch it", async () => {
+  const L = require("../lib/hub/local");
+  const { CallBox } = require("../lib/hub/calls");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hub-line-"));
+  const calls = new CallBox({ dir, synth: async (text, file) => { fs.writeFileSync(file, "RIFF" + text); return true; } });
+  const questions = new L.QuestionBox();
+  const s = await start({ opts: { local: { token: L.ensureToken(dir), questions, calls, api: async () => {} } } });
+  try {
+    const { id } = calls.start({ say: "Deploy now?" });
+    const a = await login(s);
+    const r = await req(s.port, { path: `/api/calls/${id}/line/0?part=0`, headers: { Cookie: a.cookie } });
+    assert.deepStrictEqual([r.status, Buffer.from(r.json.data, "base64").toString(), r.json.parts], [200, "RIFFDeploy now?", 1]);
+    assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/line/3`, headers: { Cookie: a.cookie } })).status, 404);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/line/0`, headers: { Cookie: a.cookie } })).status, 403);
+  } finally { await s.close(); }
+});
+
 test("ask_phone limits: bad input refused, questions expire, at most 20 open", async () => {
   const { s, token, questions } = await localHub();
   try {
@@ -1066,7 +1084,8 @@ test("mute and hours: anyone signed in can read them, only an owner can change t
   try {
     const a = await login(s);
     const r = await req(s.port, { path: "/api/settings/phone", headers: { Cookie: a.cookie } });
-    assert.deepStrictEqual(r.json, { muted: false, from: "07:00", until: "23:00", canEdit: true });
+    assert.deepStrictEqual({ ...r.json, voices: undefined }, { muted: false, from: "07:00", until: "23:00", voice: null, voices: undefined, canEdit: true });
+    assert.ok(Array.isArray(r.json.voices), "the speech models the phone can choose from");
     assert.strictEqual((await jsonPost(s, a, "/api/settings/phone", { from: "7am" })).status, 400);
     const m = await jsonPost(s, a, "/api/settings/phone", { muted: true });
     assert.deepStrictEqual([m.status, m.json.muted], [200, true]);

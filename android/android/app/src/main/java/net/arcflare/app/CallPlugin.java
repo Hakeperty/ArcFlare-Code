@@ -11,6 +11,7 @@ import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
+import android.media.MediaPlayer;
 import android.media.MediaRecorder;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
@@ -43,6 +44,7 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
@@ -64,7 +66,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *   ringtone()                 -> { title }                   pickRingtone() -> { title }   (Android's ringtone picker)
  *   ring({ title, seconds })   rings with the chosen ringtone and shows a call notification; stopRing()
  *   start()                    asks for the microphone, starts recording -> { recording }
- *   speak({ text })            resolves when the line has been said
+ *   speak({ text })            resolves when the line has been said with the phone's own voice
+ *   writeLine({ data, append }), playLine()   an agent line spoken by the computer's speech model (base64 .wav
+ *                              parts from the hub), played on the speaker; playLine resolves when it has finished
  *   listen({ seconds })        -> { text } ("" when nothing was understood)
  *   stop()                     -> { files: [{ name, size }] }
  *   read({ name, offset, length }) -> { data (base64) }      clear()
@@ -290,6 +294,43 @@ public class CallPlugin extends Plugin {
         if (c == null) return;
         c.setKeepAlive(false);
         if (error != null) c.reject(error); else c.resolve();
+    }
+
+    private File lineFile() { return new File(getContext().getCacheDir(), "call-line.wav"); }
+
+    @PluginMethod
+    public void writeLine(PluginCall call) {
+        byte[] b;
+        try { b = Base64.decode(call.getString("data", ""), Base64.DEFAULT); } catch (IllegalArgumentException e) { call.reject("bad data"); return; }
+        boolean append = call.getBoolean("append", false);
+        if (append && lineFile().length() + b.length > 32L * 1024 * 1024) { call.reject("line too long"); return; }
+        try (FileOutputStream out = new FileOutputStream(lineFile(), append)) {
+            out.write(b);
+            call.resolve();
+        } catch (IOException e) {
+            call.reject("could not keep the line");
+        }
+    }
+
+    @PluginMethod
+    public void playLine(PluginCall call) {
+        call.setKeepAlive(true);
+        main.post(() -> {
+            MediaPlayer mp = new MediaPlayer();
+            try {
+                mp.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+                mp.setDataSource(lineFile().getPath());
+                mp.setOnCompletionListener((p) -> { p.release(); call.setKeepAlive(false); call.resolve(); });
+                mp.setOnErrorListener((p, what, extra) -> { p.release(); call.setKeepAlive(false); call.reject("could not play the line"); return true; });
+                mp.prepare();
+                mp.start();
+            } catch (IOException | RuntimeException e) {
+                mp.release();
+                call.setKeepAlive(false);
+                call.reject("could not play the line");
+            }
+        });
     }
 
     @PluginMethod

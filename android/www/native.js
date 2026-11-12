@@ -56,7 +56,8 @@
     },
     /**
      * Calls from agents (CallPlugin.java): ringtone(), pickRingtone(), ring({title, seconds}), stopRing(), start(),
-     * speak({text}), listen({seconds}), stop(), read({name, offset, length}), clear(). null outside the app.
+     * speak({text}), writeLine(data, append), playLine(), listen({seconds}), stop(), read({name, offset, length}),
+     * clear(). null outside the app.
      */
     call: function () {
       var p;
@@ -68,6 +69,8 @@
         stopRing: function () { return p.stopRing(); },
         start: function () { return p.start(); },
         speak: function (text) { return p.speak({ text: text }); },
+        writeLine: function (data, append) { return p.writeLine({ data: data, append: append }); },
+        playLine: function () { return p.playLine(); },
         listen: function (seconds) { return p.listen({ seconds: seconds }); },
         stop: function () { return p.stop(); },
         read: function (o) { return p.read({ name: o.name, offset: o.offset, length: o.length }); },
