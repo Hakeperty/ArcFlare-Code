@@ -524,3 +524,10 @@ test("end to end: a client spawns the server and tests a project with it", async
   assert.match(bad, /smoke: FAIL/);
   assert.match(bad, /exited early/);
 });
+
+test("call_phone refuses a time (at) on a call that is already under way, before it reaches the hub", async () => {
+  const s = createServer({});
+  const res = await s.handle({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "call_phone", arguments: { say: "Still there?", call_id: "0123456789abcdef", at: "08:00" } } });
+  assert.strictEqual(res.result.isError, true);
+  assert.match(res.result.content[0].text, /at starts a new call for later: it cannot be used with call_id/);
+});
