@@ -130,7 +130,13 @@ test("past calls on Tools: newest first, what was said, and in the app the kept 
 test("a call nobody answered leaves the agent's line as a silent notification, once", { skip }, async (t) => {
   const { page, calls } = await phone(t, {
     app: true,
-    before: (calls) => calls.end(calls.start({ say: "The build is done.", from: "Codex" }).id),   // missed while the phone was away
+    before: (calls) => {
+      calls.end(calls.start({ say: "The build is done.", from: "Codex" }).id);   // missed while the phone was away
+      // And one missed two days ago: too old to bring up.
+      const old = path.join(calls.dir, "00000000000000aa");
+      fs.mkdirSync(old);
+      fs.writeFileSync(path.join(old, "transcript.json"), JSON.stringify({ id: "00000000000000aa", from: "Aider", started: new Date(Date.now() - 2 * 86400000).toISOString(), status: "missed", why: "no answer", turns: [{ who: "agent", text: "Old news." }], recordings: [] }));
+    },
   });
   const notes = () => page.evaluate(() => window.__notes);
   const missed = ["Missed call from Codex", "The build is done.", false];
