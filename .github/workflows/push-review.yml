@@ -1,0 +1,146 @@
+# Rules check and a hard review on every push. See rules/05-push-review.md.
+#
+# Copied into each ArcFlare repo by sync.sh in Hakeperty/Arcflare-rules-for-claude.
+# Edit it there, not here.
+#
+#   rules   no model: authorship (rule 1) and licences (rule 6). Red on failure.
+#   review  Claude Haiku, read-only: why was this added, is it needed, will a
+#           user see it, is it right. Red on "VERDICT: REVERT".
+#   post    puts the review on the commit as a comment.
+#
+# Needs one repository secret (Settings → Secrets and variables → Actions):
+#   ANTHROPIC_API_KEY        an API key from console.anthropic.com, or
+#   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token` (uses a Claude plan)
+# Without it, review is skipped with a notice and rules still runs.
+name: push-review
+
+on:
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  rules:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Work out what this push added
+        id: range
+        env:
+          BEFORE: ${{ github.event.before }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
+        run: bash rules/push-range.sh "$BEFORE" "$GITHUB_SHA" "$DEFAULT" >> "$GITHUB_OUTPUT"
+      - name: Authorship (rule 1)
+        env:
+          RANGE: ${{ steps.range.outputs.range }}
+        run: |
+          bad=0
+          for c in $(git rev-list --no-merges $RANGE); do
+            who=$(git log -1 --format='%an <%ae> / %cn <%ce>' "$c")
+            if echo "$who" | grep -Eiq 'anthropic\.com|(^|[ <])claude\b|openai\.com|copilot'; then
+              echo "::error::$(git log -1 --format=%h "$c"): author or committer is a model ($who). Only the owner may author commits."; bad=1
+            fi
+            if git log -1 --format=%B "$c" | grep -Eiq '^(co-authored-by|claude-session|generated with|🤖)'; then
+              echo "::error::$(git log -1 --format=%h "$c"): commit message has an attribution line. Remove it."; bad=1
+            fi
+          done
+          exit $bad
+      - name: Licences (rule 6)
+        run: node rules/check-licenses.mjs
+
+  review:
+    if: ${{ !github.event.deleted && !startsWith(github.event.head_commit.message, 'Merge pull request') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      verdict: ${{ steps.verdict.outputs.verdict }}
+    steps:
+      - name: Is a key set?
+        id: key
+        env:
+          A: ${{ secrets.ANTHROPIC_API_KEY }}
+          B: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$A$B" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::No ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN secret: push review skipped."; fi
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.ok == 'true'
+        with:
+          fetch-depth: 0
+      - name: Collect the diff
+        if: steps.key.outputs.ok == 'true'
+        env:
+          BEFORE: ${{ github.event.before }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
+        run: |
+          eval "$(bash rules/push-range.sh "$BEFORE" "$GITHUB_SHA" "$DEFAULT")"
+          mkdir -p .push-review
+          git log --no-merges --format='--- %h %an%n%s%n%b' $range > .push-review/commits.txt
+          git diff "$base" "$GITHUB_SHA" -- . ':(exclude)package-lock.json' ':(exclude)lib/site-changelog.json' > .push-review/full.diff
+          # Keep the review cheap: at most 2,500 lines of diff.
+          head -n 2500 .push-review/full.diff > .push-review/push.diff
+          total=$(wc -l < .push-review/full.diff)
+          if [ "$total" -gt 2500 ]; then
+            echo "The diff is $total lines; only the first 2500 are in push.diff. Use the repository to read the rest of what you need." > .push-review/note.txt
+          fi
+          rm .push-review/full.diff
+      - uses: anthropics/claude-code-action@v1
+        if: steps.key.outputs.ok == 'true'
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          claude_args: >-
+            --model claude-haiku-5-5
+            --max-turns 20
+            --allowedTools Read,Grep,Glob,Write
+          prompt: |
+            Review push ${{ github.sha }} to ${{ github.repository }} (branch ${{ github.ref_name }}).
+            Follow the instructions in rules/review-prompt.md exactly, and write your review to
+            .push-review/review.md.
+      - name: Verdict
+        id: verdict
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          f=.push-review/review.md
+          if [ ! -s "$f" ]; then
+            printf '## Push review\n\nThe reviewer wrote no review. See the run log.\n\nVERDICT: CHANGE\n' > "$f"
+          fi
+          v=$(grep -Eo 'VERDICT: (KEEP|CHANGE|REVERT)' "$f" | tail -1 | cut -d' ' -f2)
+          echo "verdict=${v:-CHANGE}" >> "$GITHUB_OUTPUT"
+          cat "$f" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: steps.key.outputs.ok == 'true'
+        with:
+          name: push-review
+          path: .push-review/review.md
+      - name: Fail on REVERT
+        if: steps.verdict.outputs.verdict == 'REVERT'
+        run: |
+          echo "::error::The reviewer says this push should be reverted. Read the review in the run summary."
+          exit 1
+      - name: Warn on CHANGE
+        if: steps.verdict.outputs.verdict == 'CHANGE'
+        run: echo "::warning::The reviewer asks for changes. Read the review in the run summary."
+
+  post:
+    needs: review
+    if: ${{ always() && needs.review.outputs.verdict != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # commit comments
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: push-review
+      - name: Comment on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@review.md > /dev/null
