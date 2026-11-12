@@ -74,3 +74,25 @@ test("declined, missed, and the agent hanging up all end the call and free the l
   assert.throws(() => box.start({ say: "" }), /say is required/);
   assert.throws(() => box.start({ say: "x".repeat(1001) }), /too long/);
 });
+
+test("answering or declining with a message: the agent gets the text, marked as typed, and nothing is recorded for it", async () => {
+  const box = new CallBox({ dir: tmp() });
+  let { id } = box.start({ say: "Deploy now?" });
+  assert.throws(() => box.decline(id, "x".repeat(501)), /up to 500/);
+  box.decline(id, " In a meeting, text me ");
+  let c = await box.wait(id, -1, 0);
+  assert.strictEqual(c.why, 'the user declined, with the message "In a meeting, text me"');
+  assert.deepStrictEqual(c.turns.at(-1), { who: "user", text: "In a meeting, text me", via: "text" });
+
+  ({ id } = box.start({ say: "Deploy now?" }));
+  box.answer(id);
+  assert.throws(() => box.reply(id, "yes", "smoke"), /voice or text/);
+  assert.throws(() => box.reply(id, "   ", "text"), /text required/);
+  box.reply(id, "Yes, go", "text");
+  c = await box.wait(id, -1, 0);
+  assert.deepStrictEqual([c.status, c.answer, c.via], ["waiting", "Yes, go", "text"]);
+  box.say(id, { say: "Deploying." });
+  box.reply(id, "thanks");                      // spoken: the default, and it gets a recording name
+  box.hangUp(id, []);
+  assert.deepStrictEqual((await box.wait(id, -1, 0)).turns.map((t) => t.via), [undefined, "text", undefined, "voice"]);
+});

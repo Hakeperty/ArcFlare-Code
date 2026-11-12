@@ -493,14 +493,21 @@
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="call-title" tabindex="-1">
       <span class="grabber" aria-hidden="true"></span>
       <h2 id="call-title" class="sheet-title">Call from your computer</h2>
-      <p class="dev-meta sub">Calls are recorded: the whole call and each answer are saved on your computer.</p>
+      <p class="dev-meta sub">Voice calls are recorded: the whole call and each answer are saved on your computer.</p>
       <p id="call-status" class="dev-meta sub" role="status"></p>
       <p id="call-line" class="lead"></p>
       <p id="call-heard" class="call-heard" hidden></p>
       <p id="call-error" class="banner error" role="alert" hidden></p>
-      <div id="call-ringing" class="two">
-        <button id="call-decline" class="btn danger block lg" type="button">Decline</button>
-        <button id="call-answer" class="btn primary block lg" type="button">Answer</button>
+      <div id="call-ringing">
+        <div class="two">
+          <button id="call-decline" class="btn danger block lg" type="button">Decline</button>
+          <button id="call-answer" class="btn primary block lg" type="button">Answer</button>
+        </div>
+        <label class="field"><span class="lbl">Or answer with a message</span>
+          <textarea id="call-msg" rows="2" maxlength="500"></textarea>
+        </label>
+        <p class="dev-meta sub">Send answers by text: no voice and no recording. Decline sends the message with the no.</p>
+        <button id="call-text" class="btn outline block lg" type="button" disabled>Send message</button>
       </div>
       <div id="call-active" hidden>
         <label class="field"><span class="lbl">Or type your answer</span>
