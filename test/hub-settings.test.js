@@ -92,3 +92,41 @@ test("a phone chat under an Arc gets its instructions first, the chat's own afte
   assert.strictEqual(doc.system, "Answer in Swedish.");
   assert.ok(chats._withSystem({ messages: [] }, [])[0].content.startsWith("You are Arc,"));
 });
+
+test("calls and sounds from agents: off by default only when muted, and only inside the user's hours", () => {
+  const { inHours } = require("../lib/hub/settings");
+  const at = (h, m = 0) => new Date(2026, 0, 1, h, m);
+  assert.ok(inHours(at(7), "07:00", "23:00") && inHours(at(22, 59), "07:00", "23:00"));
+  assert.ok(!inHours(at(6, 59), "07:00", "23:00") && !inHours(at(23), "07:00", "23:00") && !inHours(at(3), "07:00", "23:00"));
+  // A window past midnight wraps.
+  assert.ok(inHours(at(23, 30), "22:00", "06:00") && inHours(at(5), "22:00", "06:00") && !inHours(at(12), "22:00", "06:00"));
+
+  const dir = tmp();
+  const s = new HubSettings({ dir });
+  assert.deepStrictEqual(s.phone(), { muted: false, from: "07:00", until: "23:00" });
+  assert.deepStrictEqual(s.phoneAllows(at(12)), { ring: true, sound: true, why: null });
+  assert.strictEqual(s.phoneAllows(at(2)).sound, false);
+  assert.match(s.phoneAllows(at(2)).why, /07:00 to 23:00/);
+  s.setPhone({ muted: true });
+  assert.deepStrictEqual(s.phoneAllows(at(12)), { ring: false, sound: false, why: "the user muted calls and notification sounds" });
+  // Another process (the CLI) changing the file is seen without a restart.
+  new HubSettings({ dir }).setPhone({ muted: false, from: "08:30", until: "20:00" });
+  assert.deepStrictEqual(s.phone(), { muted: false, from: "08:30", until: "20:00" });
+  assert.throws(() => s.setPhone({ from: "25:00" }), /HH:MM/);
+  assert.throws(() => s.setPhone({ muted: "yes" }), /true or false/);
+  assert.deepStrictEqual(new HubSettings({ dir }).phone(), { muted: false, from: "08:30", until: "20:00" }, "a refused change keeps the old one");
+});
+
+test("a notice carries its kind, and no sound when the user muted or it is outside their hours", () => {
+  const { QuestionBox } = require("../lib/hub/local");
+  let allows = { sound: true };
+  const qb = new QuestionBox({ allows: () => allows });
+  const seen = [];
+  qb.on("event", (e) => seen.push(e));
+  assert.deepStrictEqual(qb.notice({ title: "Committed", kind: "commit" }), { ok: true, sound: true });
+  allows = { sound: false };
+  assert.deepStrictEqual(qb.notice({ title: "Pushed", kind: "push" }), { ok: true, sound: false });
+  qb.ask({ question: "Deploy?" });
+  assert.deepStrictEqual(seen.map((e) => [e.type, e.kind, e.sound]), [["notice", "commit", true], ["notice", "push", false], ["question", undefined, false]]);
+  assert.throws(() => qb.notice({ title: "x", kind: "siren" }), /kind is one of/);
+});

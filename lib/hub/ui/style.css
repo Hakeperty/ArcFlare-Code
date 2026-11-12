@@ -519,7 +519,7 @@ button { font: inherit; color: inherit; }
 .field { display: block; margin: 16px 0 0; padding: 0; border: 0; min-width: 0; }
 .field .lbl, legend.lbl { display: block; padding: 0; margin-bottom: 6px; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--muted); }
 .opt { font-weight: 400; color: var(--muted-2); }
-input[type="text"], input[type="password"], textarea {
+input[type="text"], input[type="password"], input[type="time"], textarea {
   display: block;
   width: 100%;
   min-height: 52px;
@@ -912,6 +912,9 @@ progress.load-bar::-moz-progress-bar { background: var(--accent-bright); border-
 
 /* ---- Agent model choice ---------------------------------------------------- */
 .model-select.compact { flex: 0 1 44%; height: 32px; font-size: 13px; padding: 0 10px; }
+.phone-top { align-items: center; margin-bottom: 8px; }
+.hours-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.hours-row input { flex: 1; min-width: 0; }
 .field-select { display: block; width: 100%; height: 44px; border-radius: 12px; font-size: 16px; }
 fieldset.muted-off { opacity: 0.5; }
 .agent-model-line { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--muted); }
