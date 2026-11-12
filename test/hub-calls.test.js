@@ -108,7 +108,7 @@ test("what call_phone tells the agent: typed and heard answers, a decline messag
   assert.deepStrictEqual([declined.isError, /"Busy"/.test(declined.text)], [true, true]);
   const ended = (turns) => callReport({ ...base, status: "ended", turns });
   assert.match(ended([{ who: "agent", text: "Hi" }, { who: "user", text: "ok", via: "text" }]), /Typed: ok[\s\S]*answered by message/);
-  // No answers at all, or spoken ones the phone could not record: never blamed on a message.
-  assert.match(ended([{ who: "agent", text: "Hi" }]), /Android 13 or newer records/);
-  assert.match(ended([{ who: "agent", text: "Hi" }, { who: "user", text: "ok", via: "voice" }]), /Heard: ok[\s\S]*Android 13/);
+  // No answers at all, or spoken ones that came with no recording: never blamed on a message, and no guess at why.
+  assert.match(ended([{ who: "agent", text: "Hi" }]), /the phone sent no recording/);
+  assert.match(ended([{ who: "agent", text: "Hi" }, { who: "user", text: "ok", via: "voice" }]), /Heard: ok[\s\S]*sent no recording/);
 });
