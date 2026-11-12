@@ -543,6 +543,30 @@ session costs about 80 seconds to re-read.
   Fixed. The bug was `a - b` instead of `a + b`.
 ```
 
+**The loop guard.** A small thinking model wastes tokens in two ways that are cheap to
+spot: it goes round one thought ("2 + 2 = 4. Let me check again. 2 + 2 = 4."), and it
+makes the same call again hoping for a different result. The agent watches for both
+(`lib/agent/loopguard.js`), with no second model:
+
+- **Thinking that repeats is cut.** The reasoning is read as it streams. The same
+  sentence four times (six for a very short one), or the same passage three times back to
+  back, drops the request, and llama.cpp stops generating. The step is asked once more
+  with thinking off and a one-line note riding on the last message, so the cached prefix
+  is untouched. If the model loops again, the turn stops and says so instead of trying a
+  third time.
+- **Thinking has a ceiling per step**: an eighth of the context window, between 1,024 and
+  4,096 tokens. Past it the same thing happens, with a note to act on the best idea.
+- **A look asked a third time is answered without running it.** `read_file`, `grep`,
+  `glob`, `list_dir`, `skill_load` and `tool_search` with the same arguments, when nothing
+  has been written or run since and the earlier result is at most eight calls back, get a
+  one-line reply instead of the same output again.
+- **A command is always run**, but the third identical result carries a note that running
+  it again will not change it.
+
+`/stats` shows what the guard caught. `ARCFLARE_LOOP_GUARD=off` turns all of it off, and
+`ARCFLARE_THINK_CAP=<tokens>` sets the ceiling (`0` for none). The `arc-think-once` skill
+in the store is the same idea as instructions, and every Arc now carries one sentence of it.
+
 **MCP.** Servers are connected over stdio and their tools namespaced
 `server__tool`. The model sees a one-line index, then calls `tool_search` to
 pull the schemas it actually needs and `mcp_call` to run one. For 120 tools that
@@ -1020,6 +1044,9 @@ arcflare store models                   # the hub (arcflare shop)
 **Skills** are instructions the agent loads when a task calls for one: `code-review`,
 `write-tests`, `debug`, `refactor`, `explain-codebase`, `git-commit`, `readme`,
 `release-notes`, `security-review`, `web-research`, `check-web-app` and `desktop-task`.
+Six more are written for the Arc models, as short numbered steps with a fixed report:
+`arc-commit`, `arc-review-diff`, `arc-fix-failing-test`, `arc-read-codebase`,
+`arc-write-tests` and `arc-think-once` (decide once, test the idea, move on).
 Adding one copies its `SKILL.md` into `~/.arcflare/skills`, where the agent already looks.
 A skill you wrote yourself under the same name is never overwritten or removed.
 

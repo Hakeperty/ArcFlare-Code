@@ -18,7 +18,8 @@
     { "id": "arc-review-diff", "category": "arc", "uses": [] },
     { "id": "arc-fix-failing-test", "category": "arc", "uses": [] },
     { "id": "arc-read-codebase", "category": "arc", "uses": [] },
-    { "id": "arc-write-tests", "category": "arc", "uses": [] }
+    { "id": "arc-write-tests", "category": "arc", "uses": [] },
+    { "id": "arc-think-once", "category": "arc", "uses": [] }
   ],
   "mcp": [
     {
