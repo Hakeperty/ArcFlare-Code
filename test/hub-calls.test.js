@@ -150,3 +150,17 @@ test("the computer speaks the agent's lines: the phone fetches each in parts, or
   const s2 = slow.start({ say: "x" });
   assert.deepStrictEqual(await slow.line(s2.id, 0, 0, 20), { pending: true });
 });
+
+test("a speech model that hangs is cancelled, and the rest of the call uses the phone's own voice at once", async () => {
+  const signals = [];
+  let calls = 0;
+  const box = new CallBox({ dir: tmp(), speakMs: 30, synth: (text, file, signal) => { calls++; signals.push(signal); return new Promise(() => {}); } });
+  const { id } = box.start({ say: "Hello" });
+  assert.strictEqual(await box.line(id, 0, 0, 1000), null, "given up after speakMs");
+  assert.strictEqual(signals[0].aborted, true, "the stuck job is cancelled");
+  box.answer(id);
+  box.reply(id, "hi");
+  box.say(id, { say: "Next" });
+  assert.strictEqual(await box.line(id, 2, 0, 1000), null);
+  assert.strictEqual(calls, 1, "the hung model is not asked again in this call");
+});
