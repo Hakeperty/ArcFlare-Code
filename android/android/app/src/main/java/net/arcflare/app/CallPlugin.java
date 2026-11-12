@@ -259,7 +259,9 @@ public class CallPlugin extends Plugin {
         while (running) {
             int n = rec.read(buf, 0, buf.length);
             if (n <= 0) continue;
-            try { convo.write(buf, n); } catch (IOException e) { running = false; }
+            MuLawWav c = convo;
+            if (c == null) break;
+            try { c.write(buf, n); } catch (IOException e) { running = false; }
             MuLawWav a = answer;
             if (a != null) try { a.write(buf, n); } catch (IOException e) { answer = null; }
             OutputStream p = pipe;
@@ -362,29 +364,28 @@ public class CallPlugin extends Plugin {
 
     @PluginMethod
     public void stop(PluginCall call) {
-        main.post(() -> {
-            if (recognizer != null) { recognizer.destroy(); recognizer = null; }
-            if (tts != null) tts.stop();
-            stopRecording();
-            JSArray list = new JSArray();
-            for (String name : files) {
-                File f = new File(dir(), name);
-                if (!f.isFile()) continue;
-                JSObject o = new JSObject();
-                o.put("name", name);
-                o.put("size", f.length());
-                list.put(o);
-            }
-            JSObject r = new JSObject();
-            r.put("files", list);
-            call.resolve(r);
-        });
+        // The recogniser lives on the main thread; the recording is stopped here, off it (it waits for the audio thread).
+        main.post(() -> { if (recognizer != null) { recognizer.destroy(); recognizer = null; } });
+        if (tts != null) tts.stop();
+        stopRecording();
+        JSArray list = new JSArray();
+        for (String name : files) {
+            File f = new File(dir(), name);
+            if (!f.isFile()) continue;
+            JSObject o = new JSObject();
+            o.put("name", name);
+            o.put("size", f.length());
+            list.put(o);
+        }
+        JSObject r = new JSObject();
+        r.put("files", list);
+        call.resolve(r);
     }
 
     private void stopRecording() {
         running = false;
         endAnswer();
-        if (loop != null) { try { loop.join(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } loop = null; }
+        if (loop != null) { try { loop.join(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } loop = null; }
         if (rec != null) { try { rec.stop(); } catch (IllegalStateException e) { /* never started */ } rec.release(); rec = null; }
         if (convo != null) { try { convo.close(); } catch (IOException e) { /* keep what was written */ } convo = null; }
     }
