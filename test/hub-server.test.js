@@ -797,9 +797,10 @@ async function localHub(extra = {}) {
   backend.status = async () => ({ modelRef: "m1", running: true });
   backend.unload = async () => { unloaded++; return { stopped: true, modelRef: "m1" }; };
   const srv = require("../lib/hub/server");
-  const api = L.makeLocalApi({ questions, backend, models: () => [{ id: "m1", size: 5 }], readJson: (r) => srv.readJson(r), sendJson: srv.sendJson });
-  const s = await start({ opts: { local: { token, questions, api }, ...(extra.opts || {}) } });
-  return { s, token, questions, dir, unloaded: () => unloaded };
+  const calls = new (require("../lib/hub/calls").CallBox)({ dir: path.join(dir, "calls") });
+  const api = L.makeLocalApi({ questions, calls, backend, models: () => [{ id: "m1", size: 5 }], readJson: (r) => srv.readJson(r), sendJson: srv.sendJson });
+  const s = await start({ opts: { local: { token, questions, calls, api }, ...(extra.opts || {}) } });
+  return { s, token, questions, calls, dir, unloaded: () => unloaded };
 }
 
 const bearerReq = (s, method, p, token, body) => req(s.port, {
@@ -856,6 +857,30 @@ test("ask_phone round trip: agent asks, the phone sees it and answers, the agent
     assert.strictEqual((await jsonPost(s, a, `/api/questions/${id}/answer`, { answer: "No" })).status, 409, "answered once");
     assert.strictEqual((await jsonPost(s, a, `/api/questions/${id}/answer`, { answer: "No" }, { "X-CSRF-Token": "x" })).status, 403);
     assert.strictEqual((await req(s.port, { path: "/api/questions" })).status, 401, "the phone side needs a session");
+  } finally { await s.close(); }
+});
+
+test("call_phone round trip: the agent rings, the phone answers and replies, only an owner can take the call", async () => {
+  const { s, token } = await localHub();
+  try {
+    const started = await bearerReq(s, "POST", "/api/local/call", token, { say: "Deploy now?" });
+    assert.strictEqual(started.status, 200);
+    const id = started.json.id;
+    const a = await login(s);
+    const cur = (await req(s.port, { path: "/api/calls", headers: { Cookie: a.cookie } })).json.call;
+    assert.deepStrictEqual([cur.id, cur.status, cur.turns[0].text], [id, "ringing", "Deploy now?"]);
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/call", token, { say: "second" })).status, 429);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    assert.strictEqual((await jsonPost(s, a, `/api/calls/${id}/answer`, {})).status, 403);
+    for (const v of s.auth.sessions.values()) v.user.role = "owner";
+    assert.strictEqual((await jsonPost(s, a, `/api/calls/${id}/answer`, {})).status, 200);
+    const waiting = bearerReq(s, "GET", `/api/local/call/${id}?after=${cur.version + 1}&wait=5`, token);
+    await new Promise((r) => setTimeout(r, 50));
+    assert.strictEqual((await jsonPost(s, a, `/api/calls/${id}/reply`, { text: "Yes" })).status, 200);
+    const got = await waiting;
+    assert.deepStrictEqual([got.json.status, got.json.answer], ["waiting", "Yes"]);
+    assert.strictEqual((await bearerReq(s, "POST", `/api/local/call/${id}/end`, token, {})).json.status, "ended");
+    assert.strictEqual((await jsonPost(s, a, `/api/calls/${id}/end`, { files: [] })).json.saved, true);
   } finally { await s.close(); }
 });
 

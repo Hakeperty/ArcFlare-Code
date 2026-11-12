@@ -54,6 +54,26 @@
         notify: function (o) { return p.notify({ id: o.id, title: o.title, body: o.body, kind: o.kind, sound: o.sound }); },
       };
     },
+    /**
+     * Calls from agents (CallPlugin.java): ringtone(), pickRingtone(), ring({title, seconds}), stopRing(), start(),
+     * speak({text}), listen({seconds}), stop(), read({name, offset, length}), clear(). null outside the app.
+     */
+    call: function () {
+      var p;
+      try { p = plugin("Call"); } catch (e) { return null; }
+      return {
+        ringtone: function () { return p.ringtone(); },
+        pickRingtone: function () { return p.pickRingtone(); },
+        ring: function (o) { return p.ring({ title: o.title, seconds: o.seconds }); },
+        stopRing: function () { return p.stopRing(); },
+        start: function () { return p.start(); },
+        speak: function (text) { return p.speak({ text: text }); },
+        listen: function (seconds) { return p.listen({ seconds: seconds }); },
+        stop: function () { return p.stop(); },
+        read: function (o) { return p.read({ name: o.name, offset: o.offset, length: o.length }); },
+        clear: function () { return p.clear(); },
+      };
+    },
     appUpdater: function () {
       var p;
       try { p = plugin("AppUpdater"); } catch (e) { return null; }

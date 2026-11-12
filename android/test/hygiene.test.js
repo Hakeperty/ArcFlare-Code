@@ -107,9 +107,9 @@ test("manifest: allowBackup=false, rules files, networkSecurityConfig, no debugg
   // intent filter: arcflare://pair only, never https app links
   assert.match(m, /<data android:scheme="arcflare" android:host="pair" \/>/);
   assert.doesNotMatch(m, /android:autoVerify|android:scheme="https?"/);
-  // INTERNET, and REQUEST_INSTALL_PACKAGES for the app's own updates (AppUpdaterPlugin). Nothing else.
+  // INTERNET, REQUEST_INSTALL_PACKAGES (AppUpdaterPlugin), POST_NOTIFICATIONS (NotifierPlugin), RECORD_AUDIO (CallPlugin). Nothing else.
   assert.deepEqual([...m.matchAll(/<uses-permission android:name="([^"]+)"/g)].map((x) => x[1]).sort(),
-    ["android.permission.INTERNET", "android.permission.POST_NOTIFICATIONS", "android.permission.REQUEST_INSTALL_PACKAGES"]);
+    ["android.permission.INTERNET", "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO", "android.permission.REQUEST_INSTALL_PACKAGES"]);
 });
 
 test("backup rule files exclude every domain", () => {
@@ -151,7 +151,7 @@ test("gradle: minSdk 26, release not debuggable, signing only from environment",
 
 test("native source lint (greps only, cannot catch an inverted condition): MainActivity and NavPolicy", () => {
   const dir = path.join(native, "java", "net", "arcflare", "app");
-  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "MainActivity.java", "NavPolicy.java", "NotifierPlugin.java"], "no NavGuard plugin any more");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "CallPlugin.java", "MainActivity.java", "MuLawWav.java", "NavPolicy.java", "NotifierPlugin.java"], "no NavGuard plugin any more");
   const main = read(path.join(dir, "MainActivity.java"));
   // The updater: only ever this app, a private receiver, an explicit intent, size and hash checked before
   // commit, and no file sharing (no FileProvider, no shared storage, no ACTION_VIEW of a file).
@@ -182,7 +182,7 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.match(main, /bridge\.setWebViewClient\(new GuardedClient\(bridge\)\)/);
   // there is no way to add an exception, no plugin, no settable state
   // The one native plugin is the updater; MainActivity registers it and nothing else, NavPolicy none.
-  assert.deepEqual([...java.matchAll(/registerPlugin\((\w+)\.class\)/g)].map((x) => x[1]), ["AppUpdaterPlugin", "NotifierPlugin"]);
+  assert.deepEqual([...java.matchAll(/registerPlugin\((\w+)\.class\)/g)].map((x) => x[1]), ["AppUpdaterPlugin", "NotifierPlugin", "CallPlugin"]);
   assert.doesNotMatch(java, /@CapacitorPlugin|@PluginMethod|setLan|lanOrigin|static\s+(volatile\s+)?String\s+\w+\s*=\s*null/);
   assert.doesNotMatch(java, /addJavascriptInterface|@JavascriptInterface|setWebContentsDebuggingEnabled\(true\)|android\.util\.Log|\bLog\.|System\.out|printStackTrace/);
   assert.doesNotMatch(java, /startActivity|ACTION_VIEW|launchIntent/, "external links must open nothing");
