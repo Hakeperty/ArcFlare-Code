@@ -726,6 +726,9 @@ const HELP_GROUPS = [
     ["arcflare phone lan", "[on|off|status]", "encrypted tunnel over your Wi-Fi, no internet (default on)"],
     ["arcflare phone pair", "", "QR to pair a phone (LAN and/or relay); confirm its code here"],
     ["arcflare phone devices", "[revoke <id>]", "paired phones; revoke cuts one off"],
+    ["arcflare phone mute", "[on|off]", "stop agents ringing the phone or making it sound"],
+    ["arcflare phone hours", "<07:00-23:00>", "the hours agents may ring the phone or make it sound"],
+    ["arcflare phone notify", "[--kind k] <title>", "a notice on the phone (kind: commit, push, done, failed)"],
   ]],
   ["server", [
     ["arcflare serve", "[--port N]", "start the server only"],

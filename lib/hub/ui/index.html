@@ -196,6 +196,22 @@
       <section id="view-tools" class="view" hidden>
         <h1 class="view-title">Tools</h1>
         <p id="tools-error" class="banner error" role="alert" hidden></p>
+        <div id="phone-card" class="card arc-card" hidden>
+          <div class="dev-top phone-top">
+            <div class="dev-body">
+              <p class="dev-name">Mute calls and sounds</p>
+              <p class="dev-meta sub">When on, agents cannot ring this phone and their notices arrive without sound.</p>
+            </div>
+            <label class="switch"><input id="phone-mute" type="checkbox" role="switch" aria-label="Mute calls and sounds from agents"><span class="switch-ui" aria-hidden="true"></span></label>
+          </div>
+          <p class="dev-meta sub">Agents may ring and make sounds only between these times.</p>
+          <div class="hours-row">
+            <input id="phone-from" type="time" aria-label="From">
+            <span class="dev-meta">to</span>
+            <input id="phone-until" type="time" aria-label="Until">
+          </div>
+          <p id="phone-note" class="dev-meta sub" hidden></p>
+        </div>
         <div id="arc-card" class="card arc-card" hidden>
           <label class="dev-name" for="arc-select">Arc</label>
           <p class="dev-meta sub">ArcFlare&#39;s own instructions for the model, in new chats and agents. Remembered on the computer.</p>

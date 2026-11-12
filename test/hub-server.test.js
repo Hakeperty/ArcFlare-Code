@@ -895,6 +895,8 @@ test("local API: notify reaches the phone's event stream; unload calls the backe
     assert.strictEqual((await bearerReq(s, "POST", "/api/local/notify", token, { title: "Build done", body: "all green" })).status, 200);
     const text = await got;
     assert.match(text, /"title":"Build done"/);
+    assert.match(text, /"kind":"info","sound":true/);
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/notify", token, { title: "x", kind: "loud" })).status, 400);
     const u = await bearerReq(s, "POST", "/api/local/unload", token, {});
     assert.deepStrictEqual(u.json, { stopped: true, modelRef: "m1" });
     assert.strictEqual(unloaded(), 1);
@@ -1030,6 +1032,23 @@ test("workspace: no folder means the workspace, a name makes a project in it, ba
     assert.ok(!fs.existsSync(path.join(ws, "a..b")));
     assert.strictEqual((await jsonPost(s, a, "/api/agents", { name: "x", cwd: 5 })).status, 400);
   } finally { await s.close(); fs.rmSync(ws, { recursive: true, force: true }); }
+});
+
+test("mute and hours: anyone signed in can read them, only an owner can change them, bad times are refused", async () => {
+  const { HubSettings } = require("../lib/hub/settings");
+  const settings = new HubSettings({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "hub-phoneset-")) });
+  const s = await start({ opts: { settings } });
+  try {
+    const a = await login(s);
+    const r = await req(s.port, { path: "/api/settings/phone", headers: { Cookie: a.cookie } });
+    assert.deepStrictEqual(r.json, { muted: false, from: "07:00", until: "23:00", canEdit: true });
+    assert.strictEqual((await jsonPost(s, a, "/api/settings/phone", { from: "7am" })).status, 400);
+    const m = await jsonPost(s, a, "/api/settings/phone", { muted: true });
+    assert.deepStrictEqual([m.status, m.json.muted], [200, true]);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    assert.strictEqual((await jsonPost(s, a, "/api/settings/phone", { muted: false })).status, 403);
+    assert.strictEqual(settings.phone().muted, true);
+  } finally { await s.close(); }
 });
 
 test("YOLO mode can only be switched by an owner, with a true/false body", async () => {
