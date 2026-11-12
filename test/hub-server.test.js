@@ -894,7 +894,8 @@ test("call_phone round trip: the agent rings, the phone answers and replies, onl
 test("a scheduled call: the agent asks for a time, the phone lists it, and only an owner can take it back", async () => {
   const { s, token } = await localHub();
   try {
-    assert.strictEqual((await bearerReq(s, "POST", "/api/local/call", token, { say: "Good morning.", at: "never" })).status, 400);
+    // A time that cannot be read is refused: it never turns into a call that rings now.
+    for (const at of ["never", null, "", 800]) assert.strictEqual((await bearerReq(s, "POST", "/api/local/call", token, { say: "Good morning.", at })).status, 400, String(at));
     const at = new Date(Date.now() + 3600_000).toISOString();
     const made = await bearerReq(s, "POST", "/api/local/call", token, { say: "Good morning.", at });
     assert.deepStrictEqual([made.status, made.json.at, typeof made.json.folder], [200, at, "string"]);
