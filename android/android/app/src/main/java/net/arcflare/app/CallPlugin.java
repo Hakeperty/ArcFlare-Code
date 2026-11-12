@@ -50,6 +50,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Calls from agents on the computer (call_phone, lib/hub/calls.js). The hub's event reaches the app over the tunnel;
@@ -89,10 +90,11 @@ public class CallPlugin extends Plugin {
     private AudioRecord rec;
     private Thread loop;
     private volatile boolean running;
-    private MuLawWav convo;
+    private volatile MuLawWav convo;
     private volatile MuLawWav answer;
     private volatile OutputStream pipe;
-    private final List<String> files = new ArrayList<>();
+    // Added on the main thread (listen), read on the plugin thread (stop): a copy-on-write list is safe for both.
+    private final List<String> files = new CopyOnWriteArrayList<>();
     private int answers;
     private SpeechRecognizer recognizer;
 
