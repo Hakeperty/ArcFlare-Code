@@ -93,7 +93,7 @@ public class CallPlugin extends Plugin {
     private volatile MuLawWav convo;
     private volatile MuLawWav answer;
     private volatile OutputStream pipe;
-    // Added on the main thread (listen), read on the plugin thread (stop): a copy-on-write list is safe for both.
+    // Written by begin() (plugin thread) and listen() (main thread), read by stop() (plugin thread): copy-on-write is safe for all.
     private final List<String> files = new CopyOnWriteArrayList<>();
     private int answers;
     private SpeechRecognizer recognizer;
