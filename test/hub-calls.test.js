@@ -96,3 +96,19 @@ test("answering or declining with a message: the agent gets the text, marked as 
   box.hangUp(id, []);
   assert.deepStrictEqual((await box.wait(id, -1, 0)).turns.map((t) => t.via), [undefined, "text", undefined, "voice"]);
 });
+
+test("what call_phone tells the agent: typed and heard answers, a decline message, and why there is no recording", () => {
+  const { callReport } = require("../lib/mcp/tools");
+  const base = { id: "c1", folder: "/calls/c1", recordings: [], saved: true, why: "the user hung up" };
+  const typed = callReport({ ...base, status: "waiting", answer: "Yes", via: "text", turns: [] });
+  assert.match(typed, /The user typed: "Yes"/);
+  assert.doesNotMatch(typed, /microphone/);
+  assert.match(callReport({ ...base, status: "waiting", answer: "Yes", via: "voice", turns: [] }), /Heard on the phone: "Yes"[\s\S]*anyone near the phone/);
+  const declined = callReport({ ...base, status: "declined", why: 'the user declined, with the message "Busy"', turns: [] });
+  assert.deepStrictEqual([declined.isError, /"Busy"/.test(declined.text)], [true, true]);
+  const ended = (turns) => callReport({ ...base, status: "ended", turns });
+  assert.match(ended([{ who: "agent", text: "Hi" }, { who: "user", text: "ok", via: "text" }]), /Typed: ok[\s\S]*answered by message/);
+  // No answers at all, or spoken ones the phone could not record: never blamed on a message.
+  assert.match(ended([{ who: "agent", text: "Hi" }]), /Android 13 or newer records/);
+  assert.match(ended([{ who: "agent", text: "Hi" }, { who: "user", text: "ok", via: "voice" }]), /Heard: ok[\s\S]*Android 13/);
+});
