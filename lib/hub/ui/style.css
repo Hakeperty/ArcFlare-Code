@@ -919,6 +919,8 @@ progress.load-bar::-moz-progress-bar { background: var(--accent-bright); border-
 .ringtone-name { flex: 1; min-width: 0; margin: 0; }
 .call-heard { margin: 8px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
 .call-hangup { margin-top: 12px; }
+.call-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+.call-quick .btn { padding: 0 4px; }
 .field-select { display: block; width: 100%; height: 44px; border-radius: 12px; font-size: 16px; }
 fieldset.muted-off { opacity: 0.5; }
 .agent-model-line { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--muted); }
