@@ -195,3 +195,13 @@ test("the browser reads a page built by JavaScript, clicks, types and goes back"
     assert.strictEqual((await call("browser_open", { url: "file:///etc/passwd" })).isError, true);
   } finally { server.browser.stop(); srv.close(); }
 });
+
+test("IPv6 forms of loopback and private IPv4 are refused, including the hex-mapped form URL parsing produces", async () => {
+  for (const u of ["http://[::ffff:127.0.0.1]/", "http://[::ffff:7f00:1]/", "http://[::ffff:a9fe:a9fe]/", "http://[64:ff9b::7f00:1]/", "http://[::7f00:1]/",
+    "http://[::ffff:0:7f00:1]/", "http://[2002:7f00:1::]/", "http://[2002:c0a8:101::1]/", "http://[0:0:0:0:0:ffff:7f00:1]/"]) {
+    await assert.rejects(web.checkUrl(u, { lookup: publicDns }), /public internet/, u);
+  }
+  assert.strictEqual(web.privateIp("::ffff:5db8:d822"), false);
+  assert.strictEqual(web.privateIp("2002:5db8:d822::1"), false, "a public address inside 6to4 is still public");
+  assert.strictEqual(web.privateIp("2606:4700:4700::1111"), false, "an ordinary public IPv6 address is untouched");
+});
