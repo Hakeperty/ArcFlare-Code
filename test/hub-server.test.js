@@ -329,6 +329,7 @@ test("static assets: fonts and images are served with the right type; near-miss 
     "/assets/mascot-light.png": "image/png",
     "/assets/mascot-dark.png": "image/png",
     "/assets/panda-search.png": "image/png",
+    "/assets/panda-builder.png": "image/png",
   };
   fs.mkdirSync(path.join(uiDir, "assets"), { recursive: true });
   for (const p of Object.keys(assets)) fs.writeFileSync(path.join(uiDir, p.slice(1)), "bytes:" + p);
