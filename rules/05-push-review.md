@@ -1,6 +1,6 @@
 # 5. A hard review on every push
 
-Every push to every branch of the CLI, desktop and site repos is reviewed by the cheapest capable model, Claude
+Every push to every branch of the CLI, desktop and site repos, and of the rules repo itself, is reviewed by the cheapest capable model, Claude
 Haiku (`claude-haiku-5-5`). Its job is not to be nice. It asks of each change: why does this exist, is it needed,
 will a user ever see it, and is it right.
 
@@ -10,13 +10,13 @@ will a user ever see it, and is it right.
 
 | Job | Model? | Fails the push when |
 |---|---|---|
-| `rules` | No | A commit has a `Co-Authored-By` or other attribution line, or a model as author or committer ([rule 1](01-authorship.md)); or `node rules/check-licenses.mjs` fails ([rule 6](06-licensing.md)) |
+| `rules` | No | A commit is not authored by the owner's address (more go in the `OWNER_EMAILS` repository variable), or has a `Co-Authored-By` or other attribution line ([rule 1](01-authorship.md)); or `node rules/check-licenses.mjs` fails ([rule 6](06-licensing.md)) |
 | `review` | Haiku | The verdict is **REVERT** |
 | `post` | No | Never. Puts the review on the commit as a comment, and in the run summary |
 
 The review reads the pushed diff and the reviewer instructions in `rules/review-prompt.md`. It can read the repo
 but cannot change anything. Pushes that are only a merged pull request landing on `main` are not reviewed again,
-because each of their commits was reviewed when it was pushed.
+because each of their commits was reviewed when it was pushed. If the reviewer itself fails, the comment says so, and the push needs a review by hand.
 
 It needs one repository secret, `ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`), the same one the CLI's
 autofix workflow uses. Without it the `review` job is skipped with a notice and the `rules` job still runs.

@@ -39,15 +39,24 @@ jobs:
       - name: Authorship (rule 1)
         env:
           RANGE: ${{ steps.range.outputs.range }}
+          # The owner's addresses, space-separated. Add another (Settings →
+          # Secrets and variables → Actions → Variables → OWNER_EMAILS) if you
+          # commit from one that is not your GitHub noreply address.
+          OWNER_EMAILS: 165009938+Hakeperty@users.noreply.github.com ${{ vars.OWNER_EMAILS }}
         run: |
           bad=0
+          owner() { for e in $OWNER_EMAILS; do [ "$1" = "$e" ] && return 0; done; return 1; }
           for c in $(git rev-list --no-merges $RANGE); do
-            who=$(git log -1 --format='%an <%ae> / %cn <%ce>' "$c")
-            if echo "$who" | grep -Eiq 'anthropic\.com|(^|[ <])claude\b|openai\.com|copilot'; then
-              echo "::error::$(git log -1 --format=%h "$c"): author or committer is a model ($who). Only the owner may author commits."; bad=1
+            h=$(git log -1 --format=%h "$c"); ae=$(git log -1 --format=%ae "$c"); ce=$(git log -1 --format=%ce "$c")
+            if ! owner "$ae"; then
+              echo "::error::$h: author is $(git log -1 --format='%an <%ae>' "$c"). Only the owner may author commits."; bad=1
+            fi
+            # GitHub itself commits merges and web edits made by the owner.
+            if ! owner "$ce" && [ "$ce" != "noreply@github.com" ]; then
+              echo "::error::$h: committer is $(git log -1 --format='%cn <%ce>' "$c"). Only the owner (or GitHub) may commit."; bad=1
             fi
             if git log -1 --format=%B "$c" | grep -Eiq '^(co-authored-by|claude-session|generated with|🤖)'; then
-              echo "::error::$(git log -1 --format=%h "$c"): commit message has an attribution line. Remove it."; bad=1
+              echo "::error::$h: commit message has an attribution line. Remove it."; bad=1
             fi
           done
           exit $bad
@@ -106,27 +115,29 @@ jobs:
             .push-review/review.md.
       - name: Verdict
         id: verdict
-        if: steps.key.outputs.ok == 'true'
+        # Also when the reviewer failed (API error, out of turns): then the
+        # fallback note below is posted instead of nothing.
+        if: always() && steps.key.outputs.ok == 'true'
         run: |
           f=.push-review/review.md
           if [ ! -s "$f" ]; then
-            printf '## Push review\n\nThe reviewer wrote no review. See the run log.\n\nVERDICT: CHANGE\n' > "$f"
+            printf '## Push review\n\nThe reviewer failed or wrote no review. See the run log, and review this push by hand.\n\nVERDICT: CHANGE\n' > "$f"
           fi
           v=$(grep -Eo 'VERDICT: (KEEP|CHANGE|REVERT)' "$f" | tail -1 | cut -d' ' -f2)
           echo "verdict=${v:-CHANGE}" >> "$GITHUB_OUTPUT"
           cat "$f" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
-        if: steps.key.outputs.ok == 'true'
+        if: always() && steps.key.outputs.ok == 'true'
         with:
           name: push-review
           path: .push-review/review.md
       - name: Fail on REVERT
-        if: steps.verdict.outputs.verdict == 'REVERT'
+        if: always() && steps.verdict.outputs.verdict == 'REVERT'
         run: |
           echo "::error::The reviewer says this push should be reverted. Read the review in the run summary."
           exit 1
       - name: Warn on CHANGE
-        if: steps.verdict.outputs.verdict == 'CHANGE'
+        if: always() && steps.verdict.outputs.verdict == 'CHANGE'
         run: echo "::warning::The reviewer asks for changes. Read the review in the run summary."
 
   post:

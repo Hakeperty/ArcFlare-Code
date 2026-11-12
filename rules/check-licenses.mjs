@@ -28,17 +28,15 @@ const ALLOWED = new Set([
   "Zlib", "MPL-2.0", "WTFPL", "OFL-1.1",
 ]);
 
-// "package-name" (or "prefix*"): why it is allowed. New entries need the
-// owner's yes; say so in the commit body.
+// "package-name" (or "prefix*") → { why, applies(rootPackageJson) }. New
+// entries need the owner's yes; say so in the commit body.
 const EXCEPTIONS = {
   // Next.js's optional image optimiser. libvips is LGPL-3.0, dynamically
   // linked, and runs only on the web server: nothing is handed to visitors,
-  // so the LGPL's distribution terms are not triggered. If a desktop or CLI
-  // build ever bundles sharp, this no longer holds: ask the owner.
-  "@img/sharp-*": "LGPL libvips, server-side only (website)",
+  // so the LGPL's distribution terms are not triggered. Only in the website:
+  // in the CLI or the desktop app it would be shipped, so it fails there.
+  "@img/sharp-*": { why: "LGPL libvips, server-side only", applies: (root) => Boolean(root.dependencies?.next) },
 };
-const excepted = (name) =>
-  Object.keys(EXCEPTIONS).some((k) => (k.endsWith("*") ? name.startsWith(k.slice(0, -1)) : name === k));
 
 function spdxOk(expr) {
   if (!expr || typeof expr !== "string") return false;
@@ -54,8 +52,17 @@ function checkLockfile() {
   const file = join(ROOT, "package-lock.json");
   if (!existsSync(file)) return 0;
   const lock = JSON.parse(readFileSync(file, "utf8"));
+  if (!lock.packages) {
+    problems.push("package-lock.json has no \"packages\" list (lockfile version 1), so nothing can be checked. Regenerate it with npm 7 or later.");
+    return 0;
+  }
+  const root = existsSync(join(ROOT, "package.json")) ? JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) : {};
+  const excepted = (name) =>
+    Object.entries(EXCEPTIONS).some(
+      ([k, e]) => (k.endsWith("*") ? name.startsWith(k.slice(0, -1)) : name === k) && e.applies(root),
+    );
   let shipped = 0;
-  for (const [path, pkg] of Object.entries(lock.packages ?? {})) {
+  for (const [path, pkg] of Object.entries(lock.packages)) {
     if (path === "" || pkg.dev || pkg.devOptional || pkg.link) continue;
     // A local file: dependency (the desktop app's engine) is our own code.
     if (pkg.resolved && pkg.resolved.startsWith("file:")) continue;
@@ -75,11 +82,20 @@ function checkModels() {
   const used = new Set([...readFileSync(models, "utf8").matchAll(/\blicense:\s*"([^"]+)"/g)].map((m) => m[1]));
   const src = readFileSync(licenses, "utf8");
   const start = src.indexOf("LICENSE_INFO");
-  const known = new Set(
-    [...src.slice(start).matchAll(/^ {2}(?:"([^"]+)"|([A-Za-z_][\w]*)):\s*\{/gm)].map((m) => m[1] ?? m[2]),
-  );
+  // Each entry runs from its key to the next key: it must give the full
+  // text's url, a plain-English note and whether commercial use is allowed.
+  const body = src.slice(start);
+  const keys = [...body.matchAll(/^ {2}(?:"([^"]+)"|([A-Za-z_][\w]*)):\s*\{/gm)];
+  const known = new Map(keys.map((m, i) => [m[1] ?? m[2], body.slice(m.index, keys[i + 1]?.index ?? body.length)]));
   for (const l of used) {
-    if (!known.has(l)) problems.push(`model licence "${l}" is used in lib/models.ts but has no entry in LICENSE_INFO (lib/licenses.ts)`);
+    const entry = known.get(l);
+    if (!entry) {
+      problems.push(`model licence "${l}" is used in lib/models.ts but has no entry in LICENSE_INFO (lib/licenses.ts)`);
+      continue;
+    }
+    for (const field of ["url", "note", "commercial"]) {
+      if (!new RegExp(`\\b${field}:`).test(entry)) problems.push(`LICENSE_INFO["${l}"] has no ${field}`);
+    }
   }
   return used.size;
 }
