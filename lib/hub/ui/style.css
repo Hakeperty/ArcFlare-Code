@@ -921,6 +921,13 @@ progress.load-bar::-moz-progress-bar { background: var(--accent-bright); border-
 .call-hangup { margin-top: 12px; }
 .call-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
 .call-quick .btn { padding: 0 4px; }
+.calls-list { margin-top: 8px; }
+.call-log { border-top: 1px solid var(--border); }
+.call-log summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; cursor: pointer; list-style: none; }
+.call-log-who { min-width: 0; font-size: 14px; line-height: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.call-log-line { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin: 0 0 8px; font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.call-log-line .btn { flex: none; }
+.call-log > .btn, .call-log > .dev-meta { margin-bottom: 12px; }
 .field-select { display: block; width: 100%; height: 44px; border-radius: 12px; font-size: 16px; }
 fieldset.muted-off { opacity: 0.5; }
 .agent-model-line { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--muted); }

@@ -1,5 +1,5 @@
-// The call screen of the phone UI (lib/hub/ui) in a real browser, against a real hub: one-tap answers and taps
-// that arrive twice. Needs Playwright with Chromium to be resolvable; where it is not (CI), the tests are skipped.
+// The call screen of the phone UI (lib/hub/ui) in a real browser, against a real hub: one-tap answers, taps
+// that arrive twice, and the list of past calls. Needs Playwright with Chromium to be resolvable; where it is not (CI), the tests are skipped.
 
 const test = require("node:test");
 const assert = require("node:assert");
@@ -13,10 +13,24 @@ const skip = pw ? false : "playwright is not installed";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "af-call-screen-"));
 process.env.ARCFLARE_HOME = path.join(TMP, "home");
+process.on("exit", () => fs.rmSync(TMP, { recursive: true, force: true }));
 const PASS = "correct horse battery staple";
 
-/** A hub with one owner account and calls, and a signed-in phone-sized page on it. */
-async function phone(t) {
+// What the app gives the page for calls (android/www/native.js), reduced to a player that keeps what it was given.
+const FAKE_APP = () => {
+  const ok = async () => ({});
+  window.ArcFlareNative = { call: () => ({
+    ring: ok, stopRing: ok, start: ok, speak: ok, listen: ok, stop: ok, read: ok, clear: ok,
+    writeLine: async (data, append) => { window.__line = (append ? window.__line : "") + atob(data); },
+    playLine: async () => { window.__played = window.__line; },
+  }) };
+};
+
+/**
+ * A hub with one owner account and calls, and a signed-in phone-sized page on it.
+ * before(calls) runs before the page opens; app: the page is given the app's player.
+ */
+async function phone(t, { before, app } = {}) {
   const { AuthStore } = require("../lib/hub/auth");
   const { Supervisor } = require("../lib/hub/supervisor");
   const { createHubServer } = require("../lib/hub/server");
@@ -26,12 +40,14 @@ async function phone(t) {
   const auth = new AuthStore({ dir });
   auth.createAccount("owner", PASS);
   const supervisor = new Supervisor({ dir, roots: [dir], backend: async () => ({ port: 1, model: "m", nCtx: 4096, modelRef: "r" }), makeAgent: () => ({}) });
-  const calls = new CallBox({ dir: path.join(dir, "calls") });
+  const calls = new CallBox({ dir: path.join(dir, "calls"), synth: async (text, file) => { fs.writeFileSync(file, "RIFF" + text); return true; } });
+  if (before) await before(calls);
   const hub = createHubServer({ auth, supervisor, config: { roots: [dir] }, local: { token: L.ensureToken(dir), questions: new L.QuestionBox(), calls, api: async () => {} } });
   const { port } = await hub.listen({ port: 0, host: "127.0.0.1" });
   const browser = await pw.chromium.launch();
   t.after(async () => { await browser.close(); await hub.close(); });
   const page = await (await browser.newContext(pw.devices["Pixel 7"])).newPage();
+  if (app) await page.addInitScript(FAKE_APP);
   await page.goto(`http://127.0.0.1:${port}/`);
   await page.fill("#login-user", "owner");
   await page.fill("#login-pass", PASS);
@@ -70,4 +86,37 @@ test("call screen: one tap answers while it rings and in the call; a second tap 
   await page.click("#call-hangup");
   await until(() => calls.current() === null, "hanging up did not end the call");
   await page.locator("#call-quick").waitFor({ state: "hidden" });
+
+  // The call is now in the list on Tools. A browser shows what was said and has nothing to play it with.
+  await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
+  await page.click("#tab-tools");
+  await page.locator("#calls-list summary", { hasText: "Answered: Codex" }).click();
+  await page.locator("#calls-list", { hasText: "You typed: Yes." }).waitFor();
+  assert.strictEqual(await page.locator("#calls-list button").count(), 0);
+});
+
+test("past calls on Tools: newest first, what was said, and in the app the kept audio is fetched and played", { skip }, async (t) => {
+  const { page } = await phone(t, {
+    app: true,
+    before: async (calls) => {
+      const missed = calls.start({ say: "The build is done.", from: "Codex" }).id;
+      await calls.line(missed, 0, 0, 1000);
+      calls.end(missed);
+      await new Promise((r) => setTimeout(r, 5));   // a later start time, so the order is known
+      const id = calls.start({ say: "Deploy now?", from: "Claude Code" }).id;
+      calls.answer(id);
+      calls.reply(id, "Yes", "text");
+      calls.hangUp(id, []);
+    },
+  });
+  await page.click("#tab-tools");
+  await page.locator("#calls-card").waitFor({ state: "visible" });
+  assert.deepStrictEqual(await page.locator("#calls-list summary .call-log-who").allTextContents(), ["Answered: Claude Code", "Missed: Codex"]);
+  const row = page.locator("#calls-list details", { hasText: "Missed: Codex" });
+  await row.locator("summary").click();
+  await row.locator("p", { hasText: "Codex: The build is done." }).waitFor();
+  await row.locator("p", { hasText: "Ended: the agent hung up before you answered" }).waitFor();
+  await row.getByRole("button", { name: "Play" }).click();
+  await page.waitForFunction(() => window.__played !== undefined);
+  assert.strictEqual(await page.evaluate(() => window.__played), "RIFFThe build is done.");
 });

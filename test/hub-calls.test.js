@@ -164,3 +164,44 @@ test("a speech model that hangs is cancelled, and the rest of the call uses the 
   assert.strictEqual(await box.line(id, 2, 0, 1000), null);
   assert.strictEqual(calls, 1, "the hung model is not asked again in this call");
 });
+
+test("past calls: newest first, with what was said and the audio that can be played back in parts; no path tricks", async () => {
+  const dir = tmp();
+  let t = Date.parse("2026-01-01T10:00:00Z");
+  const box = new CallBox({ dir, now: () => t, synth: async (text, file) => { fs.writeFileSync(file, "RIFF" + text); return true; } });
+  assert.deepStrictEqual(box.history(), []);
+
+  const missed = box.start({ say: "The build is done.", from: "Codex" }).id;
+  await box.line(missed, 0, 0, 1000);            // the computer finished speaking the line
+  assert.deepStrictEqual(box.history(), [], "a call that is still ringing is not history yet");
+  box.end(missed);
+
+  t += 60_000;
+  const id = box.start({ say: "Deploy now?", from: "Claude Code" }).id;
+  box.answer(id);
+  box.reply(id, "Yes");
+  box.say(id, { say: "Deploying. Bye.", hangUp: true });
+  box.hangUp(id, ["conversation.wav", "answer-1.wav"]);
+  box.audio(id, { name: "conversation.wav", offset: 0, data: b64("RIFFwhole"), last: true });
+  await box.line(id, 0, 0, 1000);
+  await box.line(id, 2, 0, 1000);
+
+  const h = box.history();
+  assert.deepStrictEqual(h.map((c) => [c.id, c.from, c.status, c.started]), [
+    [id, "Claude Code", "ended", "2026-01-01T10:01:00.000Z"],
+    [missed, "Codex", "missed", "2026-01-01T10:00:00.000Z"],
+  ]);
+  assert.deepStrictEqual(h[0].turns, [
+    { who: "agent", text: "Deploy now?" }, { who: "user", text: "Yes", via: "voice", audio: "answer-1.wav" }, { who: "agent", text: "Deploying. Bye." },
+  ]);
+  assert.deepStrictEqual(h[0].audio.sort(), ["agent-0.wav", "agent-2.wav", "conversation.wav"]);
+  assert.deepStrictEqual([h[1].why, h[1].turns, h[1].audio], ["the agent hung up before the user answered", [{ who: "agent", text: "The build is done." }], ["agent-0.wav"]]);
+
+  const part = box.kept(id, "conversation.wav", 0);
+  assert.deepStrictEqual([Buffer.from(part.data, "base64").toString(), part.part, part.parts], ["RIFFwhole", 0, 1]);
+  assert.strictEqual(Buffer.from(box.kept(missed, "agent-0.wav", 0).data, "base64").toString(), "RIFFThe build is done.");
+  assert.throws(() => box.kept(id, "conversation.wav", 1), /No such part/);
+  for (const [i, n] of [[id, "transcript.json"], [id, "../" + id + "/conversation.wav"], ["../" + id, "conversation.wav"], [id, "answer-2.wav"], ["0".repeat(16), "conversation.wav"]]) {
+    assert.throws(() => box.kept(i, n, 0), (e) => e.status === 404, `${i} ${n}`);
+  }
+});

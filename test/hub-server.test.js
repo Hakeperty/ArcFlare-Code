@@ -881,6 +881,13 @@ test("call_phone round trip: the agent rings, the phone answers and replies, onl
     assert.deepStrictEqual([got.json.status, got.json.answer], ["waiting", "Yes"]);
     assert.strictEqual((await bearerReq(s, "POST", `/api/local/call/${id}/end`, token, {})).json.status, "ended");
     assert.strictEqual((await jsonPost(s, a, `/api/calls/${id}/end`, { files: [] })).json.saved, true);
+    // The call is now in the list of past calls, for owners only.
+    const past = await req(s.port, { path: "/api/calls/history", headers: { Cookie: a.cookie } });
+    assert.deepStrictEqual([past.status, past.json.calls.map((c) => [c.id, c.status, c.turns.map((t) => t.text)])], [200, [[id, "ended", ["Deploy now?", "Yes"]]]]);
+    assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/file/conversation.wav`, headers: { Cookie: a.cookie } })).status, 404);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    assert.strictEqual((await req(s.port, { path: "/api/calls/history", headers: { Cookie: a.cookie } })).status, 403);
+    assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/file/conversation.wav`, headers: { Cookie: a.cookie } })).status, 403);
   } finally { await s.close(); }
 });
 
@@ -897,6 +904,11 @@ test("a line spoken by the computer's speech model reaches the phone in parts; o
     const r = await req(s.port, { path: `/api/calls/${id}/line/0?part=0`, headers: { Cookie: a.cookie } });
     assert.deepStrictEqual([r.status, Buffer.from(r.json.data, "base64").toString(), r.json.parts], [200, "RIFFDeploy now?", 1]);
     assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/line/3`, headers: { Cookie: a.cookie } })).status, 404);
+    // Once the call is over the same audio can be played back from the list of past calls.
+    calls.end(id);
+    const kept = await req(s.port, { path: `/api/calls/${id}/file/agent-0.wav?part=0`, headers: { Cookie: a.cookie } });
+    assert.deepStrictEqual([kept.status, Buffer.from(kept.json.data, "base64").toString()], [200, "RIFFDeploy now?"]);
+    assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/file/agent-0.wav?part=7`, headers: { Cookie: a.cookie } })).status, 400);
     for (const v of s.auth.sessions.values()) v.user.role = "user";
     assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/line/0`, headers: { Cookie: a.cookie } })).status, 403);
   } finally { await s.close(); }
