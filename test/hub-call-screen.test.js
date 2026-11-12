@@ -16,10 +16,11 @@ process.env.ARCFLARE_HOME = path.join(TMP, "home");
 process.on("exit", () => fs.rmSync(TMP, { recursive: true, force: true }));
 const PASS = "correct horse battery staple";
 
-// What the app gives the page for calls (android/www/native.js), reduced to a player that keeps what it was given.
+// What the app gives the page (android/www/native.js), reduced to a player and a notifier that keep what they were given.
 const FAKE_APP = () => {
   const ok = async () => ({});
-  window.ArcFlareNative = { call: () => ({
+  window.__notes = [];
+  window.ArcFlareNative = { notifier: () => ({ state: async () => ({ granted: true }), request: ok, notify: async (n) => { window.__notes.push([n.title, n.body, n.sound]); } }), call: () => ({
     ring: ok, stopRing: ok, start: ok, speak: ok, listen: ok, stop: ok, read: ok, clear: ok,
     writeLine: async (data, append) => { window.__line = (append ? window.__line : "") + atob(data); },
     playLine: async () => { window.__played = window.__line; },
@@ -60,7 +61,7 @@ const tapTwice = (page, label) => page.evaluate((l) => {
   const b = [...document.querySelectorAll("#call-quick button")].find((x) => x.textContent === l);
   b.click(); b.click();   // in the same tick: the second arrives while the first is on its way
 }, label);
-const until = async (f, what) => { for (let i = 0; i < 100; i++) { if (f()) return; await new Promise((r) => setTimeout(r, 50)); } assert.fail(what); };
+const until = async (f, what) => { for (let i = 0; i < 100; i++) { if (await f()) return; await new Promise((r) => setTimeout(r, 50)); } assert.fail(what); };
 
 test("call screen: one tap answers while it rings and in the call; a second tap changes nothing", { skip }, async (t) => {
   const { page, calls } = await phone(t);
@@ -119,4 +120,26 @@ test("past calls on Tools: newest first, what was said, and in the app the kept 
   await row.getByRole("button", { name: "Play" }).click();
   await page.waitForFunction(() => window.__played !== undefined);
   assert.strictEqual(await page.evaluate(() => window.__played), "RIFFThe build is done.");
+});
+
+test("a call nobody answered leaves the agent's line as a silent notification, once", { skip }, async (t) => {
+  const { page, calls } = await phone(t, {
+    app: true,
+    before: (calls) => calls.end(calls.start({ say: "The build is done.", from: "Codex" }).id),   // missed while the phone was away
+  });
+  const notes = () => page.evaluate(() => window.__notes);
+  const missed = ["Missed call from Codex", "The build is done.", false];
+  await until(async () => (await notes()).length === 1, "no notification for the call missed while away");
+  assert.deepStrictEqual(await notes(), [missed]);
+
+  await page.reload();
+  await page.locator("#view-dashboard").waitFor({ state: "visible" });
+  await new Promise((r) => setTimeout(r, 500));
+  assert.deepStrictEqual(await notes(), [], "the same missed call was brought up again");
+
+  const { id } = calls.start({ say: "Tests are red. Look?", from: "Claude Code" });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
+  calls.end(id);                                                                                   // it stops ringing, unanswered
+  await until(async () => (await notes()).length === 1, "no notification for the call that just stopped ringing");
+  assert.deepStrictEqual(await notes(), [["Missed call from Claude Code", "Tests are red. Look?", false]]);
 });

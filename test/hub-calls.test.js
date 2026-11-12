@@ -106,6 +106,9 @@ test("what call_phone tells the agent: typed and heard answers, a decline messag
   assert.match(callReport({ ...base, status: "waiting", answer: "Yes", via: "voice", turns: [] }), /Heard on the phone: "Yes"[\s\S]*anyone near the phone/);
   const declined = callReport({ ...base, status: "declined", why: 'the user declined, with the message "Busy"', turns: [] });
   assert.deepStrictEqual([declined.isError, /"Busy"/.test(declined.text)], [true, true]);
+  // Nobody answered: the agent is told its line stayed on the phone. Hanging up itself, it is not.
+  assert.match(callReport({ ...base, status: "missed", why: "no answer", turns: [] }).text, /no answer\. Your line was left on the phone as a missed call/);
+  assert.strictEqual(callReport({ ...base, status: "missed", why: "the agent hung up before the user answered", turns: [] }).text, "No call: the agent hung up before the user answered.");
   const ended = (turns) => callReport({ ...base, status: "ended", turns });
   assert.match(ended([{ who: "agent", text: "Hi" }, { who: "user", text: "ok", via: "text" }]), /Typed: ok[\s\S]*answered by message/);
   // No answers at all, or spoken ones that came with no recording: never blamed on a message, and no guess at why.
