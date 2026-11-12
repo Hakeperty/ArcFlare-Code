@@ -108,11 +108,16 @@ test("past calls on Tools: newest first, what was said, and in the app the kept 
       calls.answer(id);
       calls.reply(id, "Yes", "text");
       calls.hangUp(id, []);
+      await new Promise((r) => setTimeout(r, 5));
+      calls.decline(calls.start({ say: "Merge it?", from: "Aider" }).id, "Ask the user group first");
     },
   });
   await page.click("#tab-tools");
   await page.locator("#calls-card").waitFor({ state: "visible" });
-  assert.deepStrictEqual(await page.locator("#calls-list summary .call-log-who").allTextContents(), ["Answered: Claude Code", "Missed: Codex"]);
+  assert.deepStrictEqual(await page.locator("#calls-list summary .call-log-who").allTextContents(), ["Declined: Aider", "Answered: Claude Code", "Missed: Codex"]);
+  // "the user" becomes "you" in the reason, but not inside the message the user typed.
+  await page.locator("#calls-list summary", { hasText: "Declined: Aider" }).click();
+  await page.locator("#calls-list p", { hasText: 'Ended: you declined, with the message "Ask the user group first"' }).waitFor();
   const row = page.locator("#calls-list details", { hasText: "Missed: Codex" });
   await row.locator("summary").click();
   await row.locator("p", { hasText: "Codex: The build is done." }).waitFor();
