@@ -891,6 +891,27 @@ test("call_phone round trip: the agent rings, the phone answers and replies, onl
   } finally { await s.close(); }
 });
 
+test("a scheduled call: the agent asks for a time, the phone lists it, and only an owner can take it back", async () => {
+  const { s, token } = await localHub();
+  try {
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/call", token, { say: "Good morning.", at: "never" })).status, 400);
+    const at = new Date(Date.now() + 3600_000).toISOString();
+    const made = await bearerReq(s, "POST", "/api/local/call", token, { say: "Good morning.", at });
+    assert.deepStrictEqual([made.status, made.json.at, typeof made.json.folder], [200, at, "string"]);
+    const id = made.json.id;
+    const a = await login(s);
+    assert.strictEqual((await req(s.port, { path: "/api/calls", headers: { Cookie: a.cookie } })).json.call, null, "it does not ring yet");
+    const past = await req(s.port, { path: "/api/calls/history", headers: { Cookie: a.cookie } });
+    assert.deepStrictEqual(past.json.calls.map((c) => [c.id, c.status, c.started]), [[id, "scheduled", at]]);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    assert.strictEqual((await jsonPost(s, a, `/api/calls/${id}/cancel`, {})).status, 403);
+    for (const v of s.auth.sessions.values()) v.user.role = "owner";
+    assert.deepStrictEqual((await jsonPost(s, a, `/api/calls/${id}/cancel`, {})).json, { id, status: "cancelled" });
+    assert.strictEqual((await jsonPost(s, a, `/api/calls/${id}/cancel`, {})).status, 404);
+    assert.deepStrictEqual((await req(s.port, { path: "/api/calls/history", headers: { Cookie: a.cookie } })).json.calls, []);
+  } finally { await s.close(); }
+});
+
 test("a line spoken by the computer's speech model reaches the phone in parts; only an owner may fetch it", async () => {
   const L = require("../lib/hub/local");
   const { CallBox } = require("../lib/hub/calls");

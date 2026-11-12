@@ -154,3 +154,23 @@ test("a call nobody answered leaves the agent's line as a silent notification, o
   await until(async () => (await notes()).length === 1, "no notification for the call that just stopped ringing");
   assert.deepStrictEqual(await notes(), [["Missed call from Claude Code", "Tests are red. Look?", false]]);
 });
+
+test("a scheduled call: listed with its time and taken back on Tools; when it rings the app says the line and hangs up", { skip }, async (t) => {
+  const { page, calls } = await phone(t, {
+    app: true,
+    before: (calls) => { calls.schedule({ say: "Good morning. The nightly run passed.", from: "Codex", at: new Date(Date.now() + 3600_000).toISOString() }); },
+  });
+  await page.click("#tab-tools");
+  const row = page.locator("#calls-list details", { hasText: "Scheduled: Codex" });
+  await row.locator("summary", { hasText: /rings \d/ }).click();
+  await row.locator("p", { hasText: "Codex: Good morning. The nightly run passed." }).waitFor();
+  await row.getByRole("button", { name: "Cancel this call" }).click();
+  await page.locator("#calls-list", { hasText: "No calls yet." }).waitFor();
+  assert.strictEqual(calls.timers.size, 0);
+
+  calls.schedule({ say: "It is nine. Stand-up in ten minutes.", from: "Codex", at: new Date(Date.now() + 50).toISOString() });
+  await page.locator("#call-status", { hasText: "A scheduled call" }).waitFor();
+  await page.click("#call-answer");
+  await until(() => calls.current() === null && calls.history().length === 1, "the app did not hang up after the line");
+  assert.deepStrictEqual([calls.history()[0].status, calls.history()[0].why], ["ended", "a scheduled call: the phone said its line"]);
+});

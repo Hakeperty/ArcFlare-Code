@@ -208,3 +208,87 @@ test("past calls: newest first, with what was said and the audio that can be pla
     assert.throws(() => box.kept(i, n, 0), (e) => e.status === 404, `${i} ${n}`);
   }
 });
+
+test("a scheduled call: when it may ring, listed until then, taken back, and kept across a restart", async () => {
+  const dir = tmp();
+  const now = new Date(2026, 0, 5, 10, 0).getTime();   // 10:00 on this computer's clock
+  const box = new CallBox({ dir, now: () => now });
+  const iso = (...a) => new Date(...a).toISOString();
+  assert.strictEqual(box.schedule({ say: "Later today.", at: "10:30" }).at, iso(2026, 0, 5, 10, 30));
+  const morning = box.schedule({ say: " Good morning. The nightly run passed. ", from: "Codex", at: "9:30" });
+  assert.deepStrictEqual([morning.at, morning.folder], [iso(2026, 0, 6, 9, 30), path.join(dir, morning.id)], "a time already past today is tomorrow");
+  for (const at of ["25:00", "soon", "", undefined, 930, iso(2026, 0, 5, 9, 0), iso(2026, 0, 7, 10, 0)]) {
+    assert.throws(() => box.schedule({ say: "x", at }), /at is a time as HH:MM/, String(at));
+  }
+  assert.throws(() => box.schedule({ at: "11:00" }), /say is required/);
+  assert.strictEqual(box.current(), null, "nothing rings yet");
+
+  const listed = box.history()[0];
+  assert.deepStrictEqual([listed.id, listed.from, listed.status, listed.started, listed.turns], [morning.id, "Codex", "scheduled", morning.at, [{ who: "agent", text: "Good morning. The nightly run passed." }]]);
+  assert.deepStrictEqual(box.cancel(morning.id), { id: morning.id, status: "cancelled" });
+  assert.throws(() => box.cancel(morning.id), /No such scheduled call/);
+  assert.deepStrictEqual(box.history().map((c) => c.turns[0].text), ["Later today."]);
+
+  for (let i = 0; i < 9; i++) box.schedule({ say: "x", at: "11:00" });
+  assert.throws(() => box.schedule({ say: "x", at: "11:00" }), /At most 10/);
+  for (const t of box.timers.values()) clearTimeout(t);   // the hub stops
+
+  // After a restart every call still waiting is armed again. One whose time has come rings at once.
+  let later = now;
+  const again = new CallBox({ dir, now: () => later });
+  assert.strictEqual(again.timers.size, 10);
+  for (const t of again.timers.values()) clearTimeout(t);
+  later = new Date(2026, 0, 5, 12, 0).getTime();
+  const events = [];
+  const third = new CallBox({ dir, now: () => later });
+  third.on("event", (e) => events.push(e));
+  await new Promise((r) => setTimeout(r, 50));
+  assert.strictEqual(third.current().status, "ringing", "the first one due rings");
+  assert.strictEqual(third.timers.size, 0);
+  assert.strictEqual(events.filter((e) => e.type === "call").length, 1);
+  assert.strictEqual(events.filter((e) => e.type === "call_end" && /already in a call/.test(e.why)).length, 9, "the phone takes one call at a time: the rest are left as missed calls");
+});
+
+test("a scheduled call rings one-way: the phone is told to hang up after the line, and a typed answer ends it and is kept", async () => {
+  const dir = tmp();
+  const box = new CallBox({ dir });
+  const events = [];
+  box.on("event", (e) => events.push(e));
+  const s = box.schedule({ say: "The nightly run passed.", from: "Codex", at: new Date(Date.now() + 30).toISOString() });
+  await new Promise((r) => setTimeout(r, 120));
+  const cur = box.current();
+  assert.deepStrictEqual([cur.status, cur.from, cur.oneWay, cur.turns], ["ringing", "Codex", true, [{ who: "agent", text: "The nightly run passed." }]]);
+  assert.notStrictEqual(cur.id, s.id);
+  assert.ok(!fs.existsSync(s.folder), "the scheduled entry became the call");
+  assert.deepStrictEqual(events[0], { type: "call", id: cur.id, from: "Codex", say: "The nightly run passed.", line: 0, hangUp: true });
+
+  box.answer(cur.id);
+  const done = box.reply(cur.id, "Thanks.", "text");
+  assert.deepStrictEqual([done.status, done.why], ["ended", "a scheduled call: no agent was waiting, the answer is kept with the call"]);
+  assert.deepStrictEqual(events.at(-1), { type: "call_end", id: cur.id, why: done.why });
+  assert.deepStrictEqual(box.history()[0].turns.map((t) => t.text), ["The nightly run passed.", "Thanks."]);
+
+  // Spoken instead: the phone says the line and hangs up by itself.
+  const s2 = box.schedule({ say: "Second.", at: new Date(Date.now() + 30).toISOString() });
+  await new Promise((r) => setTimeout(r, 120));
+  const id2 = box.current().id;
+  box.answer(id2);
+  assert.strictEqual(box.hangUp(id2, []).why, "a scheduled call: the phone said its line");
+  assert.ok(s2.id);
+});
+
+test("a scheduled call that may not ring then (muted, outside the user's hours) is left as a missed call", async () => {
+  const dir = tmp();
+  let ring = true;
+  const box = new CallBox({ dir, allows: () => (ring ? { ring: true } : { ring: false, why: "the user muted calls and notification sounds" }) });
+  const events = [];
+  box.on("event", (e) => events.push(e));
+  const s = box.schedule({ say: "The nightly run passed.", from: "Codex", at: new Date(Date.now() + 30).toISOString() });
+  ring = false;   // scheduling is allowed at any time; the rule is asked when it rings
+  await new Promise((r) => setTimeout(r, 120));
+  assert.strictEqual(box.current(), null);
+  const why = "a scheduled call: The phone was not rung: the user muted calls and notification sounds";
+  assert.deepStrictEqual(events, [{ type: "call_end", id: s.id, why }]);
+  const h = box.history();
+  assert.deepStrictEqual([h.length, h[0].id, h[0].status, h[0].why, h[0].turns[0].text], [1, s.id, "missed", why, "The nightly run passed."]);
+});
