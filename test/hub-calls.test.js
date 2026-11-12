@@ -17,7 +17,7 @@ test("a call: ring, answer, reply, the agent's next line, hang up, then both rec
   const events = [];
   box.on("event", (e) => events.push(e));
   const { id } = box.start({ say: "The build failed. Retry?", from: "Claude Code" });
-  assert.deepStrictEqual(events[0], { type: "call", id, from: "Claude Code", say: "The build failed. Retry?" });
+  assert.deepStrictEqual(events[0], { type: "call", id, from: "Claude Code", say: "The build failed. Retry?", line: 0 });
   assert.throws(() => box.start({ say: "again" }), /already in a call/);
   assert.throws(() => box.reply(id, "yes"), /The call is ringing/);
 
@@ -29,7 +29,7 @@ test("a call: ring, answer, reply, the agent's next line, hang up, then both rec
   assert.deepStrictEqual([c.status, c.answer], ["waiting", "Yes, retry it"]);
 
   box.say(id, { say: "Retrying. Bye.", hangUp: true });
-  assert.deepStrictEqual(events.at(-1), { type: "call_say", id, say: "Retrying. Bye.", hangUp: true });
+  assert.deepStrictEqual(events.at(-1), { type: "call_say", id, say: "Retrying. Bye.", hangUp: true, line: 2 });
   assert.throws(() => box.say(id, { say: "x" }), /The call is talking/);
 
   box.hangUp(id, ["conversation.wav", "answer-1.wav"]);
@@ -73,4 +73,94 @@ test("declined, missed, and the agent hanging up all end the call and free the l
   assert.deepStrictEqual([(await box.wait(id, -1, 0)).status, events.at(-1).type], ["ended", "call_end"]);
   assert.throws(() => box.start({ say: "" }), /say is required/);
   assert.throws(() => box.start({ say: "x".repeat(1001) }), /too long/);
+});
+
+test("answering or declining with a message: the agent gets the text, marked as typed, and nothing is recorded for it", async () => {
+  const box = new CallBox({ dir: tmp() });
+  let { id } = box.start({ say: "Deploy now?" });
+  assert.throws(() => box.decline(id, "x".repeat(501)), /up to 500/);
+  box.decline(id, " In a meeting, text me ");
+  let c = await box.wait(id, -1, 0);
+  assert.strictEqual(c.why, 'the user declined, with the message "In a meeting, text me"');
+  assert.deepStrictEqual(c.turns.at(-1), { who: "user", text: "In a meeting, text me", via: "text" });
+
+  ({ id } = box.start({ say: "Deploy now?" }));
+  box.answer(id);
+  assert.throws(() => box.reply(id, "yes", "smoke"), /voice or text/);
+  assert.throws(() => box.reply(id, "   ", "text"), /text required/);
+  box.reply(id, "Yes, go", "text");
+  c = await box.wait(id, -1, 0);
+  assert.deepStrictEqual([c.status, c.answer, c.via], ["waiting", "Yes, go", "text"]);
+  box.say(id, { say: "Deploying." });
+  box.reply(id, "thanks");                      // spoken: the default, and it gets a recording name
+  box.hangUp(id, []);
+  assert.deepStrictEqual((await box.wait(id, -1, 0)).turns.map((t) => t.via), [undefined, "text", undefined, "voice"]);
+});
+
+test("what call_phone tells the agent: typed and heard answers, a decline message, and why there is no recording", () => {
+  const { callReport } = require("../lib/mcp/tools");
+  const base = { id: "c1", folder: "/calls/c1", recordings: [], saved: true, why: "the user hung up" };
+  const typed = callReport({ ...base, status: "waiting", answer: "Yes", via: "text", turns: [] });
+  assert.match(typed, /The user typed: "Yes"/);
+  assert.doesNotMatch(typed, /microphone/);
+  assert.match(callReport({ ...base, status: "waiting", answer: "Yes", via: "voice", turns: [] }), /Heard on the phone: "Yes"[\s\S]*anyone near the phone/);
+  const declined = callReport({ ...base, status: "declined", why: 'the user declined, with the message "Busy"', turns: [] });
+  assert.deepStrictEqual([declined.isError, /"Busy"/.test(declined.text)], [true, true]);
+  const ended = (turns) => callReport({ ...base, status: "ended", turns });
+  assert.match(ended([{ who: "agent", text: "Hi" }, { who: "user", text: "ok", via: "text" }]), /Typed: ok[\s\S]*answered by message/);
+  // No answers at all, or spoken ones that came with no recording: never blamed on a message, and no guess at why.
+  assert.match(ended([{ who: "agent", text: "Hi" }]), /the phone sent no recording/);
+  assert.match(ended([{ who: "agent", text: "Hi" }, { who: "user", text: "ok", via: "voice" }]), /Heard: ok[\s\S]*sent no recording/);
+});
+
+test("the computer speaks the agent's lines: the phone fetches each in parts, or speaks it itself when there is none", async () => {
+  const said = [];
+  let fail = false;
+  const box = new CallBox({
+    dir: tmp(),
+    synth: async (text, file) => {
+      said.push(text);
+      if (fail) throw new Error("model crashed");
+      if (text === "phone") return false;          // no model chosen
+      fs.writeFileSync(file, Buffer.alloc(400 * 1024, 7));
+      return true;
+    },
+  });
+  const events = [];
+  box.on("event", (e) => events.push(e));
+  const { id } = box.start({ say: "Hello there" });
+  assert.strictEqual(events[0].line, 0);
+  const p0 = await box.line(id, 0, 0, 1000);
+  assert.deepStrictEqual([p0.part, p0.parts, Buffer.from(p0.data, "base64").length], [0, 2, 384 * 1024]);
+  assert.strictEqual(Buffer.from((await box.line(id, 0, 1, 1000)).data, "base64").length, 16 * 1024);
+  await assert.rejects(box.line(id, 0, 2, 1000), /No such part/);
+  assert.strictEqual(await box.line(id, 5, 0, 10), null, "no such line");
+  box.answer(id);
+  box.reply(id, "hi");
+  box.say(id, { say: "phone" });
+  assert.strictEqual(events.at(-1).line, 2);
+  assert.strictEqual(await box.line(id, 2, 0, 1000), null, "no model: the phone speaks it");
+  box.reply(id, "ok");
+  fail = true;
+  box.say(id, { say: "Bye" });
+  assert.strictEqual(await box.line(id, 4, 0, 1000), null, "a failed model also falls back to the phone");
+  assert.deepStrictEqual(said, ["Hello there", "phone", "Bye"]);
+  // Slow speech: the phone is told to ask again rather than kept waiting forever.
+  const slow = new CallBox({ dir: tmp(), synth: () => new Promise(() => {}) });
+  const s2 = slow.start({ say: "x" });
+  assert.deepStrictEqual(await slow.line(s2.id, 0, 0, 20), { pending: true });
+});
+
+test("a speech model that hangs is cancelled, and the rest of the call uses the phone's own voice at once", async () => {
+  const signals = [];
+  let calls = 0;
+  const box = new CallBox({ dir: tmp(), speakMs: 30, synth: (text, file, signal) => { calls++; signals.push(signal); return new Promise(() => {}); } });
+  const { id } = box.start({ say: "Hello" });
+  assert.strictEqual(await box.line(id, 0, 0, 1000), null, "given up after speakMs");
+  assert.strictEqual(signals[0].aborted, true, "the stuck job is cancelled");
+  box.answer(id);
+  box.reply(id, "hi");
+  box.say(id, { say: "Next" });
+  assert.strictEqual(await box.line(id, 2, 0, 1000), null);
+  assert.strictEqual(calls, 1, "the hung model is not asked again in this call");
 });

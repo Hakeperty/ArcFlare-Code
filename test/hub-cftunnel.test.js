@@ -73,8 +73,12 @@ test("connect install keeps only a download whose SHA-256 matches the one GitHub
 
 test("connect install gives up on a stalled GitHub answer or download and says which one timed out", async () => {
   if (!cf.assetName()) return;
-  // A fetch that never answers on its own, only when its signal fires.
-  const stall = (u, o) => new Promise((_, rej) => o.signal.addEventListener("abort", () => rej(o.signal.reason)));
+  // A fetch that never answers on its own, only when its signal fires. A real fetch holds a socket open; this one
+  // holds a timer, because AbortSignal.timeout does not keep Node running and the test would be cancelled half-way.
+  const stall = (u, o) => new Promise((_, rej) => {
+    const hold = setInterval(() => {}, 1000);
+    o.signal.addEventListener("abort", () => { clearInterval(hold); rej(o.signal.reason); });
+  });
   await assert.rejects(cf.installPortable({ fetchImpl: stall, dir: os.tmpdir(), apiMs: 50 }), /timed out asking GitHub/);
   const name = cf.assetName();
   const rel = new Response(JSON.stringify({ tag_name: "t", assets: [{ name, size: 1, digest: "sha256:" + "0".repeat(64), browser_download_url: `https://github.com/cloudflare/cloudflared/releases/download/t/${name}` }] }));
