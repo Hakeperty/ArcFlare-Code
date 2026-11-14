@@ -33,8 +33,13 @@ Nothing in the native layer has run on a device yet. Each call post says so, and
 tested.
 
 Do: build the APK in CI, install it, and go through "Unverified on a real device" in `android/README.md` (17 items),
-then a full call: ring, answer by voice, by message and by one tap, a missed call, and a timed call. Write down what
-failed. Then replace the APK on the site (`public/downloads/` in ArcFlare), which is still 1.0.450271.
+then a full call: ring, answer by voice, by message and by one tap, a missed call, and a timed call. Also try
+**Update the app** on the pairing screen once a newer APK is on the site. Write down what failed.
+
+To put a new version on the site, so phones can update without a computer: on the computer that has the release key,
+`cd android && node scripts/build-apk.js --release --site ../../ArcFlare`, then commit and push the site. The site
+still offers 1.0.450271, which has no **Update the app** button: phones on it must install the next version by hand
+once.
 
 ## 4. Repository settings only the owner can change
 

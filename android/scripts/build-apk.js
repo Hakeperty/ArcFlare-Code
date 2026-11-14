@@ -2,8 +2,9 @@
 // Build the debug APK with a fresh, increasing versionCode, and optionally publish it to this computer's hub
 // so signed-in phones can update in place (Devices screen -> App update), no uninstall.
 //
-//   node scripts/build-apk.js [--publish] [--release]
+//   node scripts/build-apk.js [--publish] [--release [--site <site repo>]]
 //
+// --site puts the release APK on the website (scripts/site-publish.js), so phones can update without a computer.
 // --release signs with the release key instead of the debug key. Its location and passwords come from the
 // environment (ARCFLARE_KEYSTORE, ARCFLARE_KEYSTORE_PASSWORD, ARCFLARE_KEY_ALIAS, ARCFLARE_KEY_PASSWORD) or from
 // a KEY=VALUE file named by ARCFLARE_SIGNING_ENV (default ~/.arcflare-signing/signing.env), never from this repo.
@@ -26,6 +27,8 @@ const run = (cmd, args, cwd, shell = process.platform === "win32") => {
 };
 
 const release = process.argv.includes("--release");
+const siteAt = process.argv.indexOf("--site");
+if (siteAt !== -1 && (!release || !process.argv[siteAt + 1])) { console.error("--site <site repo> needs --release: phones refuse an update signed with another key"); process.exit(1); }
 if (release && !process.env.ARCFLARE_KEYSTORE) {
   const file = process.env.ARCFLARE_SIGNING_ENV || path.join(require("os").homedir(), ".arcflare-signing", "signing.env");
   if (!fs.existsSync(file)) { console.error("--release: no signing settings (set ARCFLARE_KEYSTORE etc. or ARCFLARE_SIGNING_ENV)"); process.exit(1); }
@@ -42,6 +45,11 @@ const apk = release
   : path.join(root, "android", "app", "build", "outputs", "apk", "debug", "app-debug.apk");
 if (!fs.existsSync(apk)) { console.error("no APK at " + apk); process.exit(1); }
 console.log(`\n  built ${versionName} (code ${versionCode})\n  ${apk}`);
+
+if (siteAt !== -1) {
+  const m = require("./site-publish.js").publishToSite(apk, path.resolve(process.argv[siteAt + 1]), { versionCode, versionName });
+  console.log(`  on the site: public/downloads/${m.apk}; commit and push the site repo`);
+}
 
 if (process.argv.includes("--publish")) {
   run(process.execPath, [path.join(root, "..", "bin", "arcflare.js"), "phone", "app", "publish", apk, "--version-code", String(versionCode), "--version-name", versionName], root, false);
