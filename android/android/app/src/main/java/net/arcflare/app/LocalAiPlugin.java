@@ -110,13 +110,13 @@ public class LocalAiPlugin extends Plugin {
         if (m == null) { call.reject("unknown model"); return; }
         if (dir().getUsableSpace() < m.size + 200L * 1024 * 1024) { call.reject("not enough free space on the phone"); return; }
         cancel.set(false);
+        downloading = m.id;   // set before it is queued, so a Delete pressed meanwhile still cancels it
         downloads.execute(() -> {
             // A download killed with the app leaves its .part behind: clear every one before starting again.
             File[] left = dir().listFiles((d, name) -> name.endsWith(".part"));
             if (left != null) for (File x : left) x.delete();
             File part = new File(dir(), m.file + ".part"), done = new File(dir(), m.file);
             HttpURLConnection c = null;
-            downloading = m.id;
             try {
                 c = open(m.url);
                 long len = c.getContentLengthLong();
@@ -145,6 +145,7 @@ public class LocalAiPlugin extends Plugin {
                 }
                 if (got != m.size) throw new IOException("the download is incomplete");
                 if (!hex(sha.digest()).equals(m.sha256)) throw new IOException("checksum mismatch: this is not the published file");
+                if (cancel.get()) throw new IOException("cancelled");   // a Delete after the last chunk must still win
                 if (!part.renameTo(done)) throw new IOException("could not save the model");
                 call.resolve();
             } catch (Exception e) {
