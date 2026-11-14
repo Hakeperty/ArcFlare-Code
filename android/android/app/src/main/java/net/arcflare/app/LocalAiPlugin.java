@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   download({ id })                     -> fetches a ModelCatalog model; events "progress" { id, done, total }
  *   cancelDownload(), remove({ id })
  *   load({ id, threads, ctx })           -> loads a downloaded model (the page picks threads and ctx from the profile)
- *   chat({ messages, maxTokens })        -> answers; events "token" { text }; resolves { tokens, ms, stopped, error }
+ *   chat({ messages, maxTokens })        -> answers; events "token" { text }; resolves { tokens, ms } or { error }
  *   stop(), unload()
  *
  * Models live in this app's private files (filesDir/models): no storage permission, removed with the app.
@@ -96,6 +96,7 @@ public class LocalAiPlugin extends Plugin {
             o.put("minRamMb", m.minRamMb);
             File f = new File(dir(), m.file);
             o.put("downloaded", f.isFile() && f.length() == m.size);
+            o.put("partial", new File(dir(), m.file + ".part").exists());   // a download that died half-way
             models.put(o);
         }
         r.put("models", models);
@@ -109,6 +110,9 @@ public class LocalAiPlugin extends Plugin {
         if (dir().getUsableSpace() < m.size + 200L * 1024 * 1024) { call.reject("not enough free space on the phone"); return; }
         cancel.set(false);
         downloads.execute(() -> {
+            // A download killed with the app leaves its .part behind: clear every one before starting again.
+            File[] left = dir().listFiles((d, name) -> name.endsWith(".part"));
+            if (left != null) for (File x : left) x.delete();
             File part = new File(dir(), m.file + ".part"), done = new File(dir(), m.file);
             HttpURLConnection c = null;
             try {
@@ -160,6 +164,7 @@ public class LocalAiPlugin extends Plugin {
         engine.execute(() -> {
             if (m.id.equals(loaded)) { LlamaEngine.nFree(); loaded = null; }
             new File(dir(), m.file).delete();
+            new File(dir(), m.file + ".part").delete();
             call.resolve();
         });
     }
@@ -214,6 +219,7 @@ public class LocalAiPlugin extends Plugin {
                 if (System.currentTimeMillis() - sent >= 60 && batch.length() > 0) { emit(batch); sent = System.currentTimeMillis(); }
             }
             if (batch.length() > 0) emit(batch);
+            if (LlamaEngine.nFailed()) { r.put("error", "the phone ran out of memory part-way through the answer"); call.resolve(r); return; }
             r.put("tokens", tokens);
             r.put("ms", System.currentTimeMillis() - t0);
             call.resolve(r);

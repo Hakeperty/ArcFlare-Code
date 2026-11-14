@@ -29,6 +29,7 @@ static std::vector<llama_token> g_cached;  // the tokens in the KV cache, in ord
 static std::atomic<bool> g_stop{false};
 static int g_left = 0;                     // tokens this answer may still add
 static std::string g_pending;              // the start of a UTF-8 character split across two tokens
+static bool g_failed = false;              // the last answer ended because a step failed, not because it was done
 static const int BATCH = 512;
 
 static void log_cb(ggml_log_level level, const char *text, void *) {
@@ -133,7 +134,10 @@ Java_net_arcflare_app_LlamaEngine_nBegin(JNIEnv *env, jclass, jobjectArray roles
         const char *r = env->GetStringUTFChars(jr, nullptr);
         m.role = r;
         env->ReleaseStringUTFChars(jr, r);
-        m.content = from_bytes(env, (jbyteArray) env->GetObjectArrayElement(contents, i));
+        env->DeleteLocalRef(jr);  // ART allows 512 local references per call; a long chat has more messages
+        auto jc = (jbyteArray) env->GetObjectArrayElement(contents, i);
+        m.content = from_bytes(env, jc);
+        env->DeleteLocalRef(jc);
         in.messages.push_back(m);
     }
     common_chat_params p;
@@ -172,6 +176,7 @@ Java_net_arcflare_app_LlamaEngine_nBegin(JNIEnv *env, jclass, jobjectArray roles
     g_left = max_tokens;
     g_pending.clear();
     g_stop = false;
+    g_failed = false;
     return nullptr;
 }
 
@@ -183,7 +188,7 @@ Java_net_arcflare_app_LlamaEngine_nNext(JNIEnv *env, jclass) {
     llama_token t = common_sampler_sample(g_smpl, g_ctx, -1);
     common_sampler_accept(g_smpl, t, true);
     if (llama_vocab_is_eog(llama_model_get_vocab(g_model), t)) return nullptr;
-    if (llama_decode(g_ctx, llama_batch_get_one(&t, 1)) != 0) return nullptr;
+    if (llama_decode(g_ctx, llama_batch_get_one(&t, 1)) != 0) { g_failed = true; return nullptr; }
     g_cached.push_back(t);
     g_left--;
     g_pending += common_token_to_piece(g_ctx, t, false);
@@ -191,6 +196,13 @@ Java_net_arcflare_app_LlamaEngine_nNext(JNIEnv *env, jclass) {
     std::string out = g_pending.substr(0, cut);
     g_pending.erase(0, cut);
     return to_bytes(env, out);
+}
+
+/** Did the last answer end because a step failed (memory), rather than because it was finished or stopped? */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_arcflare_app_LlamaEngine_nFailed(JNIEnv *, jclass) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    return g_failed;
 }
 
 extern "C" JNIEXPORT void JNICALL

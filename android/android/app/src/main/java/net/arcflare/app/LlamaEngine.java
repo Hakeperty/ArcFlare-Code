@@ -38,6 +38,7 @@ final class LlamaEngine {
     static native String nLoad(String path, int threads, int nCtx);
     static native String nBegin(String[] roles, byte[][] contents, int maxTokens);
     static native byte[] nNext();
+    static native boolean nFailed();
     static native void nStop();
     static native void nFree();
 }

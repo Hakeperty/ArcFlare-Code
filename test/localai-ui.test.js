@@ -19,7 +19,7 @@ const FAKE = () => {
   const calls = (window.__calls = []);
   window.__chatResults = [];
   window.__native = {
-    info: async () => ({ available: true, socModel: "SM8550", ramMb: 7600, freeDiskMb: 40000, metered: window.__metered || false, loaded: window.__loaded || null, models: models.map((m) => ({ ...m })) }),
+    info: async () => ({ available: true, socModel: "SM8550", ramMb: 7600, freeDiskMb: 40000, metered: window.__metered || false, loaded: window.__loaded || null, models: models.map((m) => ({ ...m, partial: m.id === window.__partial })) }),
     download: async (id) => {
       calls.push(["download", id]);
       const m = models.find((x) => x.id === id);
@@ -27,7 +27,7 @@ const FAKE = () => {
       m.downloaded = true;
     },
     cancelDownload: async () => calls.push(["cancel"]),
-    remove: async (id) => { calls.push(["remove", id]); models.find((x) => x.id === id).downloaded = false; },
+    remove: async (id) => { calls.push(["remove", id]); models.find((x) => x.id === id).downloaded = false; if (window.__partial === id) window.__partial = null; },
     load: async (o) => { calls.push(["load", o.id, o.threads, o.ctx]); window.__loaded = o.id; },
     chat: async (o) => {
       calls.push(["chat", o.messages.map((m) => m.role).join(","), o.maxTokens]);
@@ -125,6 +125,16 @@ test("Local AI: Models and storage deletes one model, or everything at once", { 
   await page.getByRole("button", { name: "Back" }).click();
   await page.getByText("Before you download").waitFor();
   const c = await calls(page);
-  assert.deepStrictEqual(c.slice(-2), [["unload"], ["remove", "qwen3-1.7b"]]);
+  assert.deepStrictEqual(c.slice(-3), [["unload"], ["remove", "qwen3-0.6b"], ["remove", "qwen3-1.7b"]], "every model, downloaded or not");
   assert.strictEqual(await page.getByLabel(/I understand/).isChecked(), false, "the notice must be accepted again");
+});
+
+test("Local AI: a download that died half-way is listed and removed by Delete all", { skip }, async (t) => {
+  const page = await open(t);
+  await page.evaluate(() => { window.__partial = "qwen3-1.7b"; });
+  await page.getByRole("button", { name: "Models and storage" }).click();
+  await page.getByText("Qwen3 1.7B, 1.8 GB, part of a stopped download").waitFor();
+  await page.getByRole("button", { name: "Delete all Local AI data" }).click();
+  await page.getByText("Qwen3 1.7B, 1.8 GB, not downloaded").waitFor();
+  assert.deepStrictEqual((await calls(page)).map((c) => c.join(" ")), ["unload", "remove qwen3-0.6b", "remove qwen3-1.7b"]);
 });
