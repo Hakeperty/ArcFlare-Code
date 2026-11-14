@@ -329,6 +329,8 @@ test("static assets: fonts and images are served with the right type; near-miss 
     "/assets/mascot-light.png": "image/png",
     "/assets/mascot-dark.png": "image/png",
     "/assets/panda-search.png": "image/png",
+    "/assets/panda-builder.png": "image/png",
+    "/assets/panda-phone.png": "image/png",
   };
   fs.mkdirSync(path.join(uiDir, "assets"), { recursive: true });
   for (const p of Object.keys(assets)) fs.writeFileSync(path.join(uiDir, p.slice(1)), "bytes:" + p);
@@ -881,6 +883,35 @@ test("call_phone round trip: the agent rings, the phone answers and replies, onl
     assert.deepStrictEqual([got.json.status, got.json.answer], ["waiting", "Yes"]);
     assert.strictEqual((await bearerReq(s, "POST", `/api/local/call/${id}/end`, token, {})).json.status, "ended");
     assert.strictEqual((await jsonPost(s, a, `/api/calls/${id}/end`, { files: [] })).json.saved, true);
+    // The call is now in the list of past calls, for owners only.
+    const past = await req(s.port, { path: "/api/calls/history", headers: { Cookie: a.cookie } });
+    assert.deepStrictEqual([past.status, past.json.calls.map((c) => [c.id, c.status, c.turns.map((t) => t.text)])], [200, [[id, "ended", ["Deploy now?", "Yes"]]]]);
+    assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/file/conversation.wav`, headers: { Cookie: a.cookie } })).status, 404);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    assert.strictEqual((await req(s.port, { path: "/api/calls/history", headers: { Cookie: a.cookie } })).status, 403);
+    assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/file/conversation.wav`, headers: { Cookie: a.cookie } })).status, 403);
+  } finally { await s.close(); }
+});
+
+test("a scheduled call: the agent asks for a time, the phone lists it, and only an owner can take it back", async () => {
+  const { s, token } = await localHub();
+  try {
+    // A time that cannot be read is refused: it never turns into a call that rings now.
+    for (const at of ["never", null, "", 800]) assert.strictEqual((await bearerReq(s, "POST", "/api/local/call", token, { say: "Good morning.", at })).status, 400, String(at));
+    const at = new Date(Date.now() + 3600_000).toISOString();
+    const made = await bearerReq(s, "POST", "/api/local/call", token, { say: "Good morning.", at });
+    assert.deepStrictEqual([made.status, made.json.at, typeof made.json.folder], [200, at, "string"]);
+    const id = made.json.id;
+    const a = await login(s);
+    assert.strictEqual((await req(s.port, { path: "/api/calls", headers: { Cookie: a.cookie } })).json.call, null, "it does not ring yet");
+    const past = await req(s.port, { path: "/api/calls/history", headers: { Cookie: a.cookie } });
+    assert.deepStrictEqual(past.json.calls.map((c) => [c.id, c.status, c.started]), [[id, "scheduled", at]]);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    assert.strictEqual((await jsonPost(s, a, `/api/calls/${id}/cancel`, {})).status, 403);
+    for (const v of s.auth.sessions.values()) v.user.role = "owner";
+    assert.deepStrictEqual((await jsonPost(s, a, `/api/calls/${id}/cancel`, {})).json, { id, status: "cancelled" });
+    assert.strictEqual((await jsonPost(s, a, `/api/calls/${id}/cancel`, {})).status, 404);
+    assert.deepStrictEqual((await req(s.port, { path: "/api/calls/history", headers: { Cookie: a.cookie } })).json.calls, []);
   } finally { await s.close(); }
 });
 
@@ -897,6 +928,11 @@ test("a line spoken by the computer's speech model reaches the phone in parts; o
     const r = await req(s.port, { path: `/api/calls/${id}/line/0?part=0`, headers: { Cookie: a.cookie } });
     assert.deepStrictEqual([r.status, Buffer.from(r.json.data, "base64").toString(), r.json.parts], [200, "RIFFDeploy now?", 1]);
     assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/line/3`, headers: { Cookie: a.cookie } })).status, 404);
+    // Once the call is over the same audio can be played back from the list of past calls.
+    calls.end(id);
+    const kept = await req(s.port, { path: `/api/calls/${id}/file/agent-0.wav?part=0`, headers: { Cookie: a.cookie } });
+    assert.deepStrictEqual([kept.status, Buffer.from(kept.json.data, "base64").toString()], [200, "RIFFDeploy now?"]);
+    assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/file/agent-0.wav?part=7`, headers: { Cookie: a.cookie } })).status, 400);
     for (const v of s.auth.sessions.values()) v.user.role = "user";
     assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/line/0`, headers: { Cookie: a.cookie } })).status, 403);
   } finally { await s.close(); }

@@ -151,7 +151,7 @@ test("gradle: minSdk 26, release not debuggable, signing only from environment",
 
 test("native source lint (greps only, cannot catch an inverted condition): MainActivity and NavPolicy", () => {
   const dir = path.join(native, "java", "net", "arcflare", "app");
-  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "CallPlugin.java", "MainActivity.java", "MuLawWav.java", "NavPolicy.java", "NotifierPlugin.java"], "no NavGuard plugin any more");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "CallPlugin.java", "MainActivity.java", "MuLawWav.java", "NavPolicy.java", "NotifierPlugin.java", "OnlineUpdate.java"], "no NavGuard plugin any more");
   const main = read(path.join(dir, "MainActivity.java"));
   // The updater: only ever this app, a private receiver, an explicit intent, size and hash checked before
   // commit, and no file sharing (no FileProvider, no shared storage, no ACTION_VIEW of a file).
@@ -167,6 +167,13 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.doesNotMatch(up, /FileProvider|getExternal|ACTION_VIEW|ACTION_INSTALL_PACKAGE|setDataAndType/);
   assert.match(main, /registerPlugin\(AppUpdaterPlugin\.class\)/);
   assert.ok(!up.includes("call.getLong("), "getLong is null for an Integer-parsed JSON number: every update would fail");
+  // Updates from arcflare.net: the address comes from OnlineUpdate.java, never from the page; no redirects; the
+  // download goes through the same session, so commit() checks its size and hash like a hub update.
+  assert.ok(up.includes("if (!url.startsWith(OnlineUpdate.BASE)) throw new IOException(\"refused address\");"));
+  assert.ok(up.includes("c.setInstanceFollowRedirects(false);"));
+  assert.ok(up.includes("c = open(OnlineUpdate.MANIFEST);") && up.includes("c = open(OnlineUpdate.apkUrl(apk));"));
+  assert.doesNotMatch(up, /call\.getString\("url"\)|getString\("apk"\)/, "no address taken from the page");
+  assert.ok(up.includes("String bad = OnlineUpdate.problem(code, apk, size, sha);"));
   const java = main + read(path.join(dir, "NavPolicy.java"));
   assert.match(main, /FLAG_SECURE/);
   assert.match(main, /setAllowFileAccess\(false\)/);

@@ -53,10 +53,12 @@ test("only lanfetch.js (and its two callers) mention nativeHttp; nothing else in
   assert.deepEqual(hits.sort(), ["native.js", "relay-boot.js", "shell.js"]);
 });
 
-test("appUpdater exposes the six update calls and nothing else, and is null outside the app", () => {
-  const { N } = load();
+test("appUpdater exposes the eight update calls and nothing else, and is null outside the app", () => {
+  const { N, calls } = load();
   const u = N.appUpdater();
-  if (u) assert.deepEqual(Object.keys(u).sort(), ["abort", "begin", "commit", "info", "openInstallSettings", "write"]);
+  assert.deepEqual(Object.keys(u).sort(), ["abort", "begin", "checkOnline", "commit", "downloadOnline", "info", "openInstallSettings", "write"]);
+  u.checkOnline("https://evil.example/x.json"); u.downloadOnline("https://evil.example/x.apk");
+  assert.deepEqual(calls.slice(-2), ["AppUpdater.checkOnline", "AppUpdater.downloadOnline"]);
   const saved = global.window && global.window.Capacitor;
   if (global.window) {
     delete global.window.Capacitor;

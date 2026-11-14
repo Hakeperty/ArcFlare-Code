@@ -219,6 +219,11 @@
           </div>
           <p id="phone-note" class="dev-meta sub" hidden></p>
         </div>
+        <div id="calls-card" class="card arc-card" hidden>
+          <p class="dev-name">Calls from agents</p>
+          <p class="dev-meta sub">The newest 20 calls, kept on your computer. Tap one to read it.</p>
+          <div id="calls-list" class="calls-list"></div>
+        </div>
         <div id="arc-card" class="card arc-card" hidden>
           <label class="dev-name" for="arc-select">Arc</label>
           <p class="dev-meta sub">ArcFlare&#39;s own instructions for the model, in new chats and agents. Remembered on the computer.</p>
@@ -232,6 +237,7 @@
           <li class="card skel"><span class="bar w40"></span><span class="bar w90"></span></li>
         </ul>
         <div id="tools-empty" class="empty" hidden>
+          <img class="panda" src="assets/panda-builder.png" alt="" width="150" height="116">
           <p class="dev-name">No MCP servers yet</p>
           <p class="dev-meta">Add them on the computer in <code>~/.arcflare/mcp.json</code> (or Claude&#39;s config), then come back here. Updating ArcFlare on the computer adds its own web and desktop servers.</p>
         </div>
@@ -500,6 +506,12 @@
       <p id="call-line" class="lead"></p>
       <p id="call-heard" class="call-heard" hidden></p>
       <p id="call-error" class="banner error" role="alert" hidden></p>
+      <div id="call-quick" class="call-quick" role="group" aria-label="Answer with one tap">
+        <button class="btn outline" type="button" data-say="Yes.">Yes</button>
+        <button class="btn outline" type="button" data-say="No.">No</button>
+        <button class="btn outline" type="button" data-say="Not now. Ask me again later.">Later</button>
+        <button class="btn outline" type="button" data-say="Stop what you are doing.">Stop</button>
+      </div>
       <div id="call-ringing">
         <div class="two">
           <button id="call-decline" class="btn danger block lg" type="button">Decline</button>

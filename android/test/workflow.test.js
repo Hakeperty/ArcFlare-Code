@@ -84,3 +84,12 @@ test("every `uses:` is pinned by a full 40-hex commit SHA with a tag comment", (
     assert.match(m[2], /#\s*v\d+\.\d+\.\d+/, "tag comment: " + m[0].trim());
   }
 });
+
+test("both jobs give the APK an increasing version code, the same one build-apk.js uses, or it could not update an installed app", () => {
+  for (const j of [build, release]) {
+    assert.ok(j.includes("VC=$(( ($(date -u +%s) - $(date -u -d 2026-01-01 +%s)) / 60 ))"));
+    assert.match(j, /\.\/gradlew [^\n]*assembleRelease -ParcflareVersionCode=\$VC -ParcflareVersionName=1\.0\.\$VC/);
+  }
+  const script = fs.readFileSync(path.join(__dirname, "..", "scripts", "build-apk.js"), "utf8");
+  assert.ok(script.includes("Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 60000)"), "build-apk.js counts the same way");
+});

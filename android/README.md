@@ -172,6 +172,22 @@ USB debugging on: `adb install app-release.apk`. Requirements: Android 8.0+ (min
 (with a bundled error page), and the shell refuses to start without X25519; it never falls back to a weaker scheme. Debug builds are signed with the
 debug key and are for testing only.
 
+## Updates
+
+- **From the computer (signed in):** `node scripts/build-apk.js --publish` puts the APK on this computer's hub; the
+  Devices screen offers it.
+- **From arcflare.net (no computer, no sign-in):** the pairing screen and the "Can't reach your computer" screen have
+  **Update the app**. `AppUpdaterPlugin.checkOnline()` reads `https://arcflare.net/downloads/android.json` and
+  `downloadOnline()` streams the APK it names from the same folder. Both addresses are fixed in `OnlineUpdate.java`
+  (the page cannot name another), redirects are refused, and the manifest is checked before anything is downloaded
+  (`android/test/onlineupdate.test.js`). To publish: `node scripts/build-apk.js --release --site <ArcFlare site repo>`
+  (or `node scripts/site-publish.js <signed.apk> <site repo> --version-code N --version-name 1.0.N`), then commit and
+  push the site.
+
+Both paths go through the same PackageInstaller session: `commit()` checks the size and SHA-256, and Android installs
+only an APK signed with the installed app's key, after the person confirms. So only release-signed APKs belong on the
+site.
+
 ## Security design
 
 - **Pairing secret.** `ps` exists only in the pasted/launch link and, as a re-built canonical link made from the values
@@ -371,6 +387,9 @@ Nothing below was executed on Android. Check each on a real phone (Android 8+ wi
 16. **FLAG_SECURE** hides the password screen in screenshots and recents (it does not cover dialogs, the keyboard or autofill
     popups); `importantForAutofill` stops the autofill save prompt; `webContentsDebuggingEnabled:false` in debug and release.
 17. **Install and signing:** the release APK signs and installs; icons render (generated, not designed).
+18. **Update the app (arcflare.net):** that `checkOnline()`/`downloadOnline()` reach arcflare.net from a real phone, that
+    Android shows its confirmation and installs over the running app, and that an APK signed with another key is refused
+    with a readable message. The plugin code is linted and OnlineUpdate.java is run by a test; neither has run on a device.
 
 ## What the tests cover (and not)
 

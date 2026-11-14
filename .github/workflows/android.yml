@@ -79,7 +79,11 @@ jobs:
 
       - name: Build debug APK and unsigned release APK
         working-directory: android/android
-        run: ./gradlew --no-daemon assembleDebug assembleRelease
+        # The same increasing version code as scripts/build-apk.js (minutes since 2026-01-01 UTC): Android refuses to
+        # install an APK with a lower one over the app, so without it a CI build could never be an update.
+        run: |
+          VC=$(( ($(date -u +%s) - $(date -u -d 2026-01-01 +%s)) / 60 ))
+          ./gradlew --no-daemon assembleDebug assembleRelease -ParcflareVersionCode=$VC -ParcflareVersionName=1.0.$VC
 
       # The merged manifest is what ships. Fail the build if it is not what the README claims (backup off, only the
       # INTERNET permission, one exported launcher, one arcflare://pair link, release not debuggable).
@@ -167,7 +171,9 @@ jobs:
           ARCFLARE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ARCFLARE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ARCFLARE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon --no-build-cache assembleRelease
+        run: |
+          VC=$(( ($(date -u +%s) - $(date -u -d 2026-01-01 +%s)) / 60 ))
+          ./gradlew --no-daemon --no-build-cache assembleRelease -ParcflareVersionCode=$VC -ParcflareVersionName=1.0.$VC
 
       - name: Remove release keystore
         if: always()

@@ -23,13 +23,20 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
 /**
  * Installs an update of this app, handed over in chunks by the web layer (which downloads it from the
- * signed-in hub). Nothing is written to shared storage and no file is shared with another app: the bytes go straight
+ * signed-in hub), or reads it itself from arcflare.net (OnlineUpdate) when no computer is at hand. Nothing is written to shared storage and no file is shared with another app: the bytes go straight
  * into a PackageInstaller session. Before committing, the size and SHA-256 must equal what the hub's
  * /api/app/version announced; Android then refuses the update unless it is signed with this app's own key,
  * and always asks the user to confirm.
@@ -40,6 +47,8 @@ import java.security.MessageDigest;
  *   commit()                       -> verifies, commits; resolves { status } once Android has answered
  *   abort()                        -> abandons the session
  *   openInstallSettings()          -> the "install unknown apps" switch for this app
+ *   checkOnline()                  -> { versionCode, versionName, size } from arcflare.net (OnlineUpdate.MANIFEST)
+ *   downloadOnline()               -> reads that APK into a new session; then commit() as above
  */
 @CapacitorPlugin(name = "AppUpdater")
 public class AppUpdaterPlugin extends Plugin {
@@ -56,6 +65,8 @@ public class AppUpdaterPlugin extends Plugin {
     private long written;
     private PluginCall pendingCommit;
     private BroadcastReceiver receiver;
+    private String onlineApk, onlineSha;   // the last manifest checkOnline() accepted
+    private long onlineSize;
 
     @PluginMethod
     public void info(PluginCall call) {
@@ -91,21 +102,113 @@ public class AppUpdaterPlugin extends Plugin {
         if (size < 1024 || size > MAX_SIZE) { call.reject("bad size"); return; }
         if (sha == null || !sha.matches("^[0-9a-f]{64}$")) { call.reject("bad sha256"); return; }
         try {
-            PackageInstaller pi = getContext().getPackageManager().getPackageInstaller();
-            PackageInstaller.SessionParams p = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
-            p.setAppPackageName(getContext().getPackageName()); // only ever an update of this app
-            p.setSize(size);
-            sessionId = pi.createSession(p);
-            session = pi.openSession(sessionId);
-            out = session.openWrite("base.apk", 0, size);
-            digest = MessageDigest.getInstance("SHA-256");
-            expectedSize = size;
-            expectedSha = sha;
-            written = 0;
+            start(size, sha);
             call.resolve();
         } catch (Exception e) {
             abandon();
             call.reject("could not start the install: " + e.getMessage());
+        }
+    }
+
+    private void start(long size, String sha) throws Exception {
+        PackageInstaller pi = getContext().getPackageManager().getPackageInstaller();
+        PackageInstaller.SessionParams p = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        p.setAppPackageName(getContext().getPackageName()); // only ever an update of this app
+        p.setSize(size);
+        sessionId = pi.createSession(p);
+        session = pi.openSession(sessionId);
+        out = session.openWrite("base.apk", 0, size);
+        digest = MessageDigest.getInstance("SHA-256");
+        expectedSize = size;
+        expectedSha = sha;
+        written = 0;
+    }
+
+    @PluginMethod
+    public void checkOnline(PluginCall call) {
+        new Thread(() -> {
+            HttpURLConnection c = null;
+            try {
+                c = open(OnlineUpdate.MANIFEST);
+                JSONObject j = new JSONObject(new String(readAll(c, OnlineUpdate.MAX_MANIFEST), StandardCharsets.UTF_8));
+                long code = j.optLong("versionCode", -1);
+                String apk = j.optString("apk", null), sha = j.optString("sha256", null);
+                long size = j.optLong("size", -1);
+                String bad = OnlineUpdate.problem(code, apk, size, sha);
+                if (bad != null) { call.reject("arcflare.net offered a malformed update (" + bad + ")"); return; }
+                synchronized (this) { onlineApk = apk; onlineSha = sha; onlineSize = size; }
+                JSObject r = new JSObject();
+                r.put("versionCode", code);
+                r.put("versionName", j.optString("versionName", String.valueOf(code)));
+                r.put("size", size);
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject("could not reach arcflare.net: " + e.getMessage());
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void downloadOnline(PluginCall call) {
+        final String apk, sha;
+        final long size;
+        synchronized (this) { apk = onlineApk; sha = onlineSha; size = onlineSize; }
+        if (apk == null) { call.reject("check for an update first"); return; }
+        new Thread(() -> {
+            HttpURLConnection c = null;
+            try {
+                synchronized (this) { abandon(); start(size, sha); }
+                c = open(OnlineUpdate.apkUrl(apk));
+                long len = c.getContentLengthLong();
+                if (len != -1 && len != size) throw new IOException("the file is not the size arcflare.net announced");
+                try (InputStream in = c.getInputStream()) {
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        synchronized (this) {
+                            if (out == null) throw new IOException("cancelled");
+                            if (written + n > expectedSize) throw new IOException("the download is larger than announced");
+                            out.write(buf, 0, n);
+                            digest.update(buf, 0, n);
+                            written += n;
+                        }
+                    }
+                }
+                call.resolve(); // commit() checks the size and the SHA-256 before Android sees the file
+            } catch (Exception e) {
+                synchronized (this) { abandon(); }
+                call.reject("download failed: " + e.getMessage());
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }).start();
+    }
+
+    /** HTTPS only, no redirects (the address must stay the one in OnlineUpdate), 200 or an error. */
+    private static HttpURLConnection open(String url) throws IOException {
+        if (!url.startsWith(OnlineUpdate.BASE)) throw new IOException("refused address");
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setInstanceFollowRedirects(false);
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(30000);
+        c.setUseCaches(false);
+        int code = c.getResponseCode();
+        if (code != 200) { c.disconnect(); throw new IOException("HTTP " + code); }
+        return c;
+    }
+
+    private static byte[] readAll(HttpURLConnection c, int max) throws IOException {
+        try (InputStream in = c.getInputStream()) {
+            ByteArrayOutputStream b = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                if (b.size() + n > max) throw new IOException("answer too large");
+                b.write(buf, 0, n);
+            }
+            return b.toByteArray();
         }
     }
 

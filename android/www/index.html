@@ -66,6 +66,7 @@
           </label>
           <p id="pair-error" class="banner error" role="alert" hidden></p>
           <button id="pair-go" type="submit" class="btn primary block lg">Continue</button>
+          <button id="pair-update" type="button" class="btn outline block upd-open" hidden>Update the app</button>
         </form>
         <details id="pair-licenses" class="licenses">
           <summary>Open-source licenses</summary>
@@ -132,6 +133,23 @@
             <button id="st-retry" type="button" class="btn primary block lg">Retry</button>
             <button id="st-repair" type="button" class="btn outline block lg">Re-pair</button>
             <button id="st-forget" type="button" class="btn danger block lg">Forget this computer</button>
+            <button id="st-update" type="button" class="btn outline block lg" hidden>Update the app</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Update the app from arcflare.net: no computer and no sign-in needed (AppUpdaterPlugin.checkOnline) -->
+      <section id="v-update" class="view view-login" data-view hidden>
+        <div class="login-card">
+          <div class="login-brand">
+            <img class="panda" src="ui/assets/panda-phone.png" alt="" width="150" height="117">
+          </div>
+          <h1 class="title">Update ArcFlare</h1>
+          <p id="upd-text" class="lead center">Gets the newest version of this app from arcflare.net. No computer or sign-in needed. Android asks you before it installs.</p>
+          <p id="upd-error" class="banner error" role="alert" hidden></p>
+          <div class="btn-row stack-btns">
+            <button id="upd-go" type="button" class="btn primary block lg">Check for an update</button>
+            <button id="upd-back" type="button" class="btn outline block lg">Back</button>
           </div>
         </div>
       </section>

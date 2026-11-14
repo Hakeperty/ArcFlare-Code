@@ -204,6 +204,63 @@
     await leaveFlow();                       // discards the in-memory device; the stored pairing was never touched
   }
 
+  // ------------------------------------------- app update from arcflare.net (no computer, no sign-in)
+
+  // The address is fixed in AppUpdaterPlugin/OnlineUpdate.java; this only drives the screen. Android installs the
+  // download only if it is signed with this app's key, and asks the person first.
+  var UPD_INTRO = "Gets the newest version of this app from arcflare.net. No computer or sign-in needed. Android asks you before it installs.";
+  var upd = { offer: null, busy: false, back: "v-pair" };
+
+  function openUpdate(back) {
+    if (!upd.busy) {
+      upd.back = back; upd.offer = null;
+      $("upd-text").textContent = UPD_INTRO;
+      $("upd-go").textContent = "Check for an update";
+      setError("upd-error", "");
+    }
+    show("v-update");
+  }
+
+  async function updateStep() {
+    var u = Native.appUpdater();
+    if (!u || upd.busy) return;
+    var go = $("upd-go");
+    upd.busy = true; go.disabled = true; $("upd-back").disabled = true;
+    setError("upd-error", "");
+    try {
+      var mine = await u.info();
+      if (!upd.offer) {
+        go.textContent = "Checking...";
+        var o = await u.checkOnline();
+        if (!(Number(o.versionCode) > Number(mine.versionCode))) {
+          $("upd-text").textContent = "You have the newest version (" + mine.versionName + ").";
+          go.textContent = "Check again";
+          return;
+        }
+        upd.offer = o;
+        $("upd-text").textContent = "Version " + o.versionName + " is ready (" + (o.size / 1048576).toFixed(1) + " MB). You have " +
+          mine.versionName + "." + (mine.canInstall ? "" : " First allow ArcFlare to install apps: the button opens that setting.");
+        go.textContent = mine.canInstall ? "Install update" : "Allow installs";
+        return;
+      }
+      if (!mine.canInstall) { await u.openInstallSettings(); go.textContent = "Install update"; return; }
+      go.textContent = "Downloading...";
+      await u.downloadOnline();
+      go.textContent = "Installing...";
+      var r = await u.commit();   // Android shows its own confirmation; resolves once it has answered
+      if (!r || r.status !== "installed") throw new Error("The update was not installed" + (r && r.message ? ": " + r.message : "."));
+      upd.offer = null;
+      $("upd-text").textContent = "Installed.";
+      go.textContent = "Check again";
+    } catch (e) {
+      if (upd.offer) { try { await u.abort(); } catch (x) { /* nothing to abandon */ } }
+      setError("upd-error", (e && e.message) || String(e));
+      go.textContent = upd.offer ? "Install update" : "Check for an update";
+    } finally {
+      upd.busy = false; go.disabled = false; $("upd-back").disabled = false;
+    }
+  }
+
   // ----------------------------------------------------------------- launch
 
   function shortFp(rec) { return FP.fingerprint(rec.hubKey).catch(function () { return ""; }); }
@@ -377,6 +434,13 @@
     $("st-forget").addEventListener("click", function () { setError("fg-error", ""); show("v-forget"); });
     $("fg-cancel").addEventListener("click", function () { boot({ settings: true }); });
     $("fg-go").addEventListener("click", forgetAll);
+    var canUpdate = !!Native.appUpdater();
+    $("pair-update").hidden = !canUpdate;
+    $("st-update").hidden = !canUpdate;
+    $("pair-update").addEventListener("click", function () { openUpdate("v-pair"); });
+    $("st-update").addEventListener("click", function () { openUpdate("v-status"); });
+    $("upd-go").addEventListener("click", updateStep);
+    $("upd-back").addEventListener("click", function () { if (!upd.busy) show(upd.back); });
     document.addEventListener("visibilitychange", function () { if (!document.hidden) onForeground(); });
     Native.onForeground(onForeground);
     Native.onAppUrl(function (url) { onDeepLink(url, now()); });

@@ -21,6 +21,7 @@
 @media (max-width: 359px) { .btn-row:not(.stack-btns) { flex-direction: column; } .code-digits { font-size: 36px; } }
 .hint.center { text-align: center; }
 #pair-go { margin-top: 24px; }
+.upd-open { margin-top: 12px; }
 
 /* Open-source licences on the pairing screen. */
 .licenses { margin: 16px auto 0; max-width: 420px; padding: 0 16px; font-size: 14px; }
