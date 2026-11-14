@@ -25,7 +25,7 @@ const vendor = path.join(root, "www", "vendor");
 const FILES = [
   "index.html", "app.js", "style.css", "tunnel-client.js",
   "assets/bitcount-single.ttf", "assets/geist-latin.woff2", "assets/geist-mono-latin.woff2",
-  "assets/mascot-light.png", "assets/mascot-dark.png", "assets/panda-search.png", "assets/LICENSES.txt",
+  "assets/mascot-light.png", "assets/mascot-dark.png", "assets/panda-search.png", "assets/panda-builder.png", "assets/LICENSES.txt",
 ];
 
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https:; base-uri 'none'; form-action 'none'";
