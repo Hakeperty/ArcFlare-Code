@@ -93,6 +93,29 @@
         downloadOnline: function () { return p.downloadOnline(); },
       };
     },
+    /**
+     * Local AI (LocalAiPlugin.java): a chat model on the phone. Model files and addresses are fixed in ModelCatalog.java;
+     * the page names a model only by id. on(event, fn) returns a function that removes the listener. null outside the app.
+     */
+    localAI: function () {
+      var p;
+      try { p = plugin("LocalAI"); } catch (e) { return null; }
+      return {
+        info: function () { return p.info(); },
+        download: function (id) { return p.download({ id: id }); },
+        cancelDownload: function () { return p.cancelDownload(); },
+        remove: function (id) { return p.remove({ id: id }); },
+        load: function (o) { return p.load({ id: o.id, threads: o.threads, ctx: o.ctx }); },
+        chat: function (o) { return p.chat({ messages: o.messages, maxTokens: o.maxTokens }); },
+        stop: function () { return p.stop(); },
+        unload: function () { return p.unload(); },
+        on: function (event, fn) {
+          if (event !== "progress" && event !== "token") throw new Error("unknown event");
+          var h = p.addListener(event, fn);
+          return function () { Promise.resolve(h).then(function (x) { if (x && x.remove) x.remove(); }); };
+        },
+      };
+    },
     /** TUNNEL.md section 2: feature-detect X25519; never fall back. */
     supportsX25519: async function () {
       try { await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]); return true; } catch (e) { return false; }

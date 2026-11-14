@@ -88,7 +88,8 @@ test("bundled UI page: CSP meta, and transport scripts run BEFORE app.js", () =>
   const html = read(path.join(www, "ui", "index.html"));
   assert.match(html, /http-equiv="Content-Security-Policy"/);
   const order = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(order, ["tunnel-client.js", "../vendor/capacitor.js", "../link.js", "../mode.js", "../native.js", "../lanfetch.js", "../store.js", "../connector.js", "../transport.js", "../relay-boot.js", "app.js", "../relay-chip.js"]);
+  // localai.js only defines window.ArcFlareLocalAI; it touches nothing until app.js mounts it.
+  assert.deepEqual(order, ["localai.js", "tunnel-client.js", "../vendor/capacitor.js", "../link.js", "../mode.js", "../native.js", "../lanfetch.js", "../store.js", "../connector.js", "../transport.js", "../relay-boot.js", "app.js", "../relay-chip.js"]);
 });
 
 // ---------------------------------------------------------------- native lint
@@ -151,7 +152,7 @@ test("gradle: minSdk 26, release not debuggable, signing only from environment",
 
 test("native source lint (greps only, cannot catch an inverted condition): MainActivity and NavPolicy", () => {
   const dir = path.join(native, "java", "net", "arcflare", "app");
-  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "CallPlugin.java", "MainActivity.java", "MuLawWav.java", "NavPolicy.java", "NotifierPlugin.java", "OnlineUpdate.java"], "no NavGuard plugin any more");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "CallPlugin.java", "MainActivity.java", "MuLawWav.java", "NavPolicy.java", "NotifierPlugin.java", "OnlineUpdate.java"].concat(["LlamaEngine.java", "LocalAiPlugin.java", "ModelCatalog.java"]).sort(), "no NavGuard plugin any more");
   const main = read(path.join(dir, "MainActivity.java"));
   // The updater: only ever this app, a private receiver, an explicit intent, size and hash checked before
   // commit, and no file sharing (no FileProvider, no shared storage, no ACTION_VIEW of a file).
@@ -174,6 +175,24 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.ok(up.includes("c = open(OnlineUpdate.MANIFEST);") && up.includes("c = open(OnlineUpdate.apkUrl(apk));"));
   assert.doesNotMatch(up, /call\.getString\("url"\)|getString\("apk"\)/, "no address taken from the page");
   assert.ok(up.includes("String bad = OnlineUpdate.problem(code, apk, size, sha);"));
+  // Local AI: models only from ModelCatalog (the page names an id), redirects followed only to Hugging Face hosts,
+  // size and SHA-256 checked before the file is kept, files in the app's private storage, roles limited.
+  const ai = read(path.join(dir, "LocalAiPlugin.java"));
+  assert.ok(ai.includes("ModelCatalog.Model m = ModelCatalog.find(call.getString(\"id\"));"));
+  assert.doesNotMatch(ai, /call\.getString\("(url|path|file)"\)/, "no address or path taken from the page");
+  assert.ok(ai.includes("if (!ModelCatalog.allowedHost(url)) throw new IOException(\"refused address\");"));
+  assert.ok(ai.includes("c.setInstanceFollowRedirects(false);"));
+  assert.ok(ai.includes("if (!hex(sha.digest()).equals(m.sha256))") && ai.includes("if (got != m.size)"));
+  assert.ok(ai.includes("new File(getContext().getFilesDir(), \"models\")"));
+  assert.doesNotMatch(ai, /getExternal|Environment\.|MediaStore|READ_EXTERNAL|WRITE_EXTERNAL/);
+  assert.ok(ai.includes("!role.equals(\"system\") && !role.equals(\"user\") && !role.equals(\"assistant\")"));
+  assert.ok(ai.includes("if (LlamaEngine.nFailed())"), "a failed step is an error, not the end of the answer");
+  assert.ok(ai.includes("new File(dir(), m.file + \".part\").delete();") && ai.includes('name.endsWith(".part")'), "half downloads are removed");
+  assert.ok(ai.includes("if (m.id.equals(downloading)) cancel.set(true);"), "deleting a model that is downloading stops the download");
+  assert.ok(ai.includes('if (downloading != null) { call.reject("another model is downloading"); return; }'), "one download at a time");
+  assert.ok(/if \(cancel\.get\(\)\) throw new IOException\("cancelled"\);[^\n]*\n\s*if \(!part\.renameTo\(done\)\)/.test(ai), "a cancel is checked right before the file is kept");
+  const cpp = read(path.join(native, "cpp", "arcflare_llm.cpp"));
+  assert.equal([...cpp.matchAll(/env->DeleteLocalRef\(/g)].length, 2, "nBegin releases each message's references (ART allows 512 per call)");
   const java = main + read(path.join(dir, "NavPolicy.java"));
   assert.match(main, /FLAG_SECURE/);
   assert.match(main, /setAllowFileAccess\(false\)/);
@@ -189,7 +208,7 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.match(main, /bridge\.setWebViewClient\(new GuardedClient\(bridge\)\)/);
   // there is no way to add an exception, no plugin, no settable state
   // The one native plugin is the updater; MainActivity registers it and nothing else, NavPolicy none.
-  assert.deepEqual([...java.matchAll(/registerPlugin\((\w+)\.class\)/g)].map((x) => x[1]), ["AppUpdaterPlugin", "NotifierPlugin", "CallPlugin"]);
+  assert.deepEqual([...java.matchAll(/registerPlugin\((\w+)\.class\)/g)].map((x) => x[1]), ["AppUpdaterPlugin", "NotifierPlugin", "CallPlugin", "LocalAiPlugin"]);
   assert.doesNotMatch(java, /@CapacitorPlugin|@PluginMethod|setLan|lanOrigin|static\s+(volatile\s+)?String\s+\w+\s*=\s*null/);
   assert.doesNotMatch(java, /addJavascriptInterface|@JavascriptInterface|setWebContentsDebuggingEnabled\(true\)|android\.util\.Log|\bLog\.|System\.out|printStackTrace/);
   assert.doesNotMatch(java, /startActivity|ACTION_VIEW|launchIntent/, "external links must open nothing");

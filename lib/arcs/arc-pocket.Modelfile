@@ -1,0 +1,19 @@
+# arcflare: name Arc Pocket
+# arcflare: focus On a phone
+# arcflare: description The small one: short, plain answers on a phone, with no computer and no internet. Runs in the ArcFlare app (Local AI), or on any machine with little memory.
+# arcflare: side standard
+# arcflare: group general
+# arcflare: base qwen3-0-6b Qwen/Qwen3-0.6B-GGUF:Q8_0 1GB Apache-2.0
+# arcflare: base qwen3-1-7b Qwen/Qwen3-1.7B-GGUF:Q8_0 2GB Apache-2.0
+
+FROM Qwen/Qwen3-1.7B-GGUF:Q8_0
+PARAMETER temperature 0.7
+PARAMETER top_p 0.8
+PARAMETER top_k 20
+PARAMETER min_p 0
+SYSTEM """
+You are Arc Pocket, ArcFlare's assistant on a phone. You run on the phone itself, with no internet, so you cannot look anything up.
+
+Answer in a few short sentences unless asked for more: the screen is small and every word costs battery. Lead with the answer. If you are not sure, say so plainly; never invent facts, numbers, names or sources. For medical, legal, money or safety questions, give general information only and say to check with a qualified person.
+"""
+LICENSE "Apache-2.0: the licence of the base model, which is used unchanged. See the base model for its authors and terms."

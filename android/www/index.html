@@ -30,6 +30,7 @@
   <script src="native.js" defer></script>
   <script src="lanfetch.js" defer></script>
   <script src="connector.js" defer></script>
+  <script src="ui/localai.js" defer></script>
   <script src="shell.js" defer></script>
 </head>
 <body>
@@ -67,6 +68,7 @@
           <p id="pair-error" class="banner error" role="alert" hidden></p>
           <button id="pair-go" type="submit" class="btn primary block lg">Continue</button>
           <button id="pair-update" type="button" class="btn outline block upd-open" hidden>Update the app</button>
+          <button id="pair-local" type="button" class="btn outline block upd-open" hidden>Use AI on this phone</button>
         </form>
         <details id="pair-licenses" class="licenses">
           <summary>Open-source licenses</summary>
@@ -150,6 +152,16 @@
           <div class="btn-row stack-btns">
             <button id="upd-go" type="button" class="btn primary block lg">Check for an update</button>
             <button id="upd-back" type="button" class="btn outline block lg">Back</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Local AI without a computer (ui/localai.js): optional, nothing is downloaded until the person asks -->
+      <section id="v-local" class="view view-login" data-view hidden>
+        <div class="login-card">
+          <div id="local-root" class="local-root" data-assets="ui/assets/"></div>
+          <div class="btn-row stack-btns">
+            <button id="local-back" type="button" class="btn outline block lg">Back</button>
           </div>
         </div>
       </section>
