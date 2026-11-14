@@ -77,6 +77,41 @@ Each is ahead of main and was never merged. Merge it, take what is still useful,
 | `claude/ui-review-workflow-optimize-3krdjx` | 2026-11-10 | Phone UI layout fixes (13 commits) |
 | `lmstudio-engine` | 2026-11-06 | LM Studio engine |
 
+## 8. AI on the phone: what is done and what comes next
+
+Done on `ccr-567071cc-cm0onr`: Local AI in the app (Arc Pocket on Qwen3 0.6B or 1.7B, llama.cpp on the CPU), with
+the notice before download, Models and storage, and settings per chip. See "Local AI" in `android/README.md`.
+
+Next, in this order, each as its own commit:
+
+1. **Test Local AI on real phones** (step 3 above): a Galaxy S22 or later, a Pixel, and one MediaTek phone. Write down
+   speed, heat and battery for each, and adjust `CHIPS` in `lib/hub/ui/localai.js` from what you see.
+2. **Two Android builds from one project** (owner's decision, 2026-11-14): Gradle product flavors.
+   - `chat`: what exists now, `net.arcflare.app`, the build on /android.
+   - `agent`: "ArcFlare Agent", `net.arcflare.app.agent`, installable next to the chat build. Its permissions and services
+     live only in `src/agent/AndroidManifest.xml`, so the chat build never asks for them. Its own download on the site,
+     behind extra warnings. CI builds both; `inspect-apk.js` checks each build's manifest.
+3. **The on-phone agent (agent build only)**: the person picks the model for each chat: the phone's Arc Pocket, or the
+   paired computer's model when it can be reached. Tools always run on the phone, each one shown and approved like
+   approvals on the computer. Tools, safest first, each with its own warning screen:
+   1. Files, only in folders picked with Android's folder picker (Storage Access Framework); writes ask first.
+   2. Phone actions the person finishes: open apps and links, alarms and timers, calendar events, drafted texts and
+      emails, sharing. Each opens Android's own screen.
+   3. Reading notifications (NotificationListenerService, switched on in Android settings). It can see message
+      previews from every app, so the warning says so.
+   4. Controlling other apps (AccessibilityService): tap, type, read the screen. It can see everything, passwords
+      included, and Google Play allows it only for uses an app declares and Google approves, so plan on the agent
+      build coming from arcflare.net only. It gets
+      the loudest warning, an off switch in the app, and a notice while it is active.
+   It runs an **Arc Pocket Agent** Arc (`lib/arcs`): the same bases, instructions for phone tools. Qwen3 supports tool
+      calls through its chat template (`common_chat_templates_apply` with `tools`).
+4. **NPU (Snapdragon)**: ONNX Runtime with Qualcomm's QNN libraries. Read Qualcomm's licence for those libraries
+   before anything ships ([rule 6](rules/06-licensing.md)): if it does not allow bundling them in a free app, stop
+   and ask the owner. Models for the NPU are compiled per chip.
+5. **Faster model files**: 4-bit files (Q4_0) run faster on ARM than Q8_0, but Qwen's own repos publish only Q8_0 for
+   these sizes. Community quants need their licence read (rule 6) and a measured speed and quality gain on a phone
+   before they are offered.
+
 ## The pandas in the phone app
 
 The pictures are in `lib/hub/ui/assets/`. All are the owner's own art, so no licence entry is owed:
