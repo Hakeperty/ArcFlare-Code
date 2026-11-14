@@ -43,7 +43,7 @@ function makeEl(spec) {
   return el;
 }
 
-/** opts: tunnel(behave), launchUrl, x25519, store (initial record), hidden */
+/** opts: tunnel(behave), launchUrl, x25519, store (initial record), hidden, updater (a fake AppUpdater plugin) */
 function makeShell(opts = {}) {
   const specs = parseHtml();
   const els = Object.fromEntries(Object.entries(specs).map(([id, s]) => [id, makeEl(s)]));
@@ -77,6 +77,7 @@ function makeShell(opts = {}) {
       },
       CapacitorHttp: { get: async (o) => { nativeCalls.push(["get", o.url]); throw new Error("offline"); }, post: async (o) => { nativeCalls.push(["post", o.url]); throw new Error("offline"); } },
       CapacitorCookies: { clearAllCookies: async () => { log.push("cookies cleared"); if (opts.cookiesFail) throw new Error("no"); } },
+      ...(opts.updater ? { AppUpdater: opts.updater } : {}),
     } },
   };
   ctx.window = ctx; ctx.globalThis = ctx;

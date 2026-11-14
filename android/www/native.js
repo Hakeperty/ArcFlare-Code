@@ -43,6 +43,8 @@
      * Self-update (AppUpdaterPlugin.java): info(), begin({size, sha256}), write({data}), commit(), abort(),
      * openInstallSettings(). The native side checks size and SHA-256 before Android sees the file, and
      * Android installs only an APK signed with this app's key, after the user confirms. null outside the app.
+     * checkOnline() and downloadOnline() do the same from arcflare.net (OnlineUpdate.java), with no computer or sign-in;
+     * the address is fixed in Java, so nothing here can point them elsewhere.
      */
     /** Local notifications (NotifierPlugin.java): state(), request(), notify({id, title, body, kind, sound}). null outside the app. */
     notifier: function () {
@@ -87,6 +89,8 @@
         commit: function () { return p.commit(); },
         abort: function () { return p.abort(); },
         openInstallSettings: function () { return p.openInstallSettings(); },
+        checkOnline: function () { return p.checkOnline(); },
+        downloadOnline: function () { return p.downloadOnline(); },
       };
     },
     /** TUNNEL.md section 2: feature-detect X25519; never fall back. */
