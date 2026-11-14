@@ -48,6 +48,7 @@ public class LocalAiPlugin extends Plugin {
     private final ExecutorService downloads = Executors.newSingleThreadExecutor();
     private final AtomicBoolean cancel = new AtomicBoolean();
     private volatile String loaded;   // id of the model in memory
+    private volatile String downloading;   // id of the model being downloaded
 
     private File dir() {
         File d = new File(getContext().getFilesDir(), "models");
@@ -115,6 +116,7 @@ public class LocalAiPlugin extends Plugin {
             if (left != null) for (File x : left) x.delete();
             File part = new File(dir(), m.file + ".part"), done = new File(dir(), m.file);
             HttpURLConnection c = null;
+            downloading = m.id;
             try {
                 c = open(m.url);
                 long len = c.getContentLengthLong();
@@ -149,6 +151,7 @@ public class LocalAiPlugin extends Plugin {
                 part.delete();
                 call.reject("download failed: " + e.getMessage());
             } finally {
+                downloading = null;
                 if (c != null) c.disconnect();
             }
         });
@@ -161,6 +164,7 @@ public class LocalAiPlugin extends Plugin {
     public void remove(PluginCall call) {
         ModelCatalog.Model m = ModelCatalog.find(call.getString("id"));
         if (m == null) { call.reject("unknown model"); return; }
+        if (m.id.equals(downloading)) cancel.set(true);   // the other screen may still be writing it
         engine.execute(() -> {
             if (m.id.equals(loaded)) { LlamaEngine.nFree(); loaded = null; }
             new File(dir(), m.file).delete();

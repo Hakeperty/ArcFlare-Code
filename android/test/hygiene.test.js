@@ -188,6 +188,7 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.ok(ai.includes("!role.equals(\"system\") && !role.equals(\"user\") && !role.equals(\"assistant\")"));
   assert.ok(ai.includes("if (LlamaEngine.nFailed())"), "a failed step is an error, not the end of the answer");
   assert.ok(ai.includes("new File(dir(), m.file + \".part\").delete();") && ai.includes('name.endsWith(".part")'), "half downloads are removed");
+  assert.ok(ai.includes("if (m.id.equals(downloading)) cancel.set(true);"), "deleting a model that is downloading stops the download");
   const cpp = read(path.join(native, "cpp", "arcflare_llm.cpp"));
   assert.equal([...cpp.matchAll(/env->DeleteLocalRef\(/g)].length, 2, "nBegin releases each message's references (ART allows 512 per call)");
   const java = main + read(path.join(dir, "NavPolicy.java"));

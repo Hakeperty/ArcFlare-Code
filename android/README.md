@@ -176,7 +176,10 @@ debug key and are for testing only.
 
 Optional. **Use AI on this phone** on the pairing screen, and the **On phone** tab once signed in (app only), open
 `lib/hub/ui/localai.js`. Nothing is downloaded until the person has read the notice (size, heat, battery, speed,
-memory, mistakes) and ticked the box; **Models and storage** deletes one model or all Local AI data.
+memory, mistakes) and ticked the box; **Models and storage** deletes one model or all Local AI data, including a
+download that stopped half-way (its `.part` file, also cleared before the next download; deleting a model that is
+still downloading cancels that download first). An answer cut off by a failed step (memory) says so; that path has no
+behavioural test, because a real out-of-memory failure cannot be made here.
 
 - **Engine:** llama.cpp `b12387` (MIT), fetched by `src/main/cpp/CMakeLists.txt` with git; the build stops unless the tag
   is commit `a956a852`. arm64 only (`abiFilters`); on other phones the app runs without it. One CPU backend per ARM
