@@ -172,6 +172,26 @@ USB debugging on: `adb install app-release.apk`. Requirements: Android 8.0+ (min
 (with a bundled error page), and the shell refuses to start without X25519; it never falls back to a weaker scheme. Debug builds are signed with the
 debug key and are for testing only.
 
+## Local AI (Arc Pocket on the phone)
+
+Optional. **Use AI on this phone** on the pairing screen, and the **On phone** tab once signed in (app only), open
+`lib/hub/ui/localai.js`. Nothing is downloaded until the person has read the notice (size, heat, battery, speed,
+memory, mistakes) and ticked the box; **Models and storage** deletes one model or all Local AI data.
+
+- **Engine:** llama.cpp `b12387` (MIT), fetched by `src/main/cpp/CMakeLists.txt` with git; the build stops unless the tag
+  is commit `a956a852`. arm64 only (`abiFilters`); on other phones the app runs without it. One CPU backend per ARM
+  generation (`GGML_CPU_ALL_VARIANTS`), loaded at start; ggml uses the best one the CPU supports. About 6.6 MB more in
+  the APK, about 17 MB unpacked. `arcflare_llm.cpp` + `LlamaEngine.java` are the JNI; `LocalAiPlugin.java` the plugin.
+- **Models:** `ModelCatalog.java`: Qwen3 0.6B and 1.7B (Apache-2.0), Q8_0, from Qwen's own Hugging Face repos at pinned
+  commits, size and SHA-256 checked; redirects followed only to `huggingface.co` and `*.hf.co`. Kept in `filesDir/models`.
+  The page names a model by id only.
+- **Arc Pocket:** the instructions and sampling are `lib/arcs/arc-pocket.Modelfile`'s (`test/localai.test.js` keeps them equal).
+- **Per phone:** `profile()` in `localai.js` maps the chip (SOC_MODEL, HARDWARE, BOARD) to threads, context and the
+  suggested model: Snapdragon 8 Gen 1 and later, Exynos 2200/2400/2500, Tensor G1-G5, Dimensity, Kirin 9000. Unknown
+  chips get settings from RAM and core speeds.
+- **Checked here:** the engine was built for arm64 with the NDK, and the same `arcflare_llm.cpp` and `LlamaEngine.java`
+  were run on a Linux x86 machine with the real Qwen3 0.6B (load, a two-turn chat, stop, a too-long conversation, free).
+
 ## Updates
 
 - **From the computer (signed in):** `node scripts/build-apk.js --publish` puts the APK on this computer's hub; the
@@ -390,6 +410,9 @@ Nothing below was executed on Android. Check each on a real phone (Android 8+ wi
 18. **Update the app (arcflare.net):** that `checkOnline()`/`downloadOnline()` reach arcflare.net from a real phone, that
     Android shows its confirmation and installs over the running app, and that an APK signed with another key is refused
     with a readable message. The plugin code is linted and OnlineUpdate.java is run by a test; neither has run on a device.
+19. **Local AI on a phone:** that the arm64 engine loads its CPU variants from `nativeLibraryDir` on a real phone, the
+    download from Hugging Face completes and verifies, answers stream, Stop works, and how hot and fast it is on each
+    chip family. No speed or heat has been measured on any phone.
 
 ## What the tests cover (and not)
 

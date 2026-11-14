@@ -23,7 +23,7 @@ const vendor = path.join(root, "www", "vendor");
 // so a stray file in the source directory can never end up in the APK. test/sync-ui.test.js checks this list
 // against the STATIC table.
 const FILES = [
-  "index.html", "app.js", "style.css", "tunnel-client.js",
+  "index.html", "app.js", "localai.js", "style.css", "tunnel-client.js",
   "assets/bitcount-single.ttf", "assets/geist-latin.woff2", "assets/geist-mono-latin.woff2",
   "assets/mascot-light.png", "assets/mascot-dark.png", "assets/panda-search.png", "assets/panda-builder.png", "assets/panda-phone.png", "assets/LICENSES.txt",
 ];
