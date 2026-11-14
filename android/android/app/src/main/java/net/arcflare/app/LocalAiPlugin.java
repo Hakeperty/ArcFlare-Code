@@ -109,8 +109,10 @@ public class LocalAiPlugin extends Plugin {
         ModelCatalog.Model m = ModelCatalog.find(call.getString("id"));
         if (m == null) { call.reject("unknown model"); return; }
         if (dir().getUsableSpace() < m.size + 200L * 1024 * 1024) { call.reject("not enough free space on the phone"); return; }
+        // One download at a time, so `downloading` and `cancel` always mean the same one. (Plugin calls arrive on one thread.)
+        if (downloading != null) { call.reject("another model is downloading"); return; }
         cancel.set(false);
-        downloading = m.id;   // set before it is queued, so a Delete pressed meanwhile still cancels it
+        downloading = m.id;
         downloads.execute(() -> {
             // A download killed with the app leaves its .part behind: clear every one before starting again.
             File[] left = dir().listFiles((d, name) -> name.endsWith(".part"));
