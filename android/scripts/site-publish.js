@@ -12,8 +12,11 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
+const MAX_SIZE = 200 * 1024 * 1024;
+
 function publishToSite(apk, siteDir, { versionCode, versionName }) {
-  if (!Number.isInteger(versionCode) || versionCode < 1) throw new Error("--version-code must be a positive integer");
+  // The same limits as OnlineUpdate.problem(): anything else is published and then refused by every phone.
+  if (!Number.isInteger(versionCode) || versionCode < 1 || versionCode > 2147483647) throw new Error("--version-code must be a positive integer of at most 2147483647");
   if (!/^[0-9][0-9.]{0,30}$/.test(String(versionName))) throw new Error("--version-name must look like 1.0.123");
   const dl = path.join(siteDir, "public", "downloads");
   if (!fs.existsSync(dl)) throw new Error(`${dl} does not exist: give the path of the ArcFlare site repo`);
@@ -22,6 +25,7 @@ function publishToSite(apk, siteDir, { versionCode, versionName }) {
   const file = `ArcFlare-android-${versionName}.apk`;
   const buf = fs.readFileSync(apk);
   if (buf.length < 1024 || buf.readUInt32LE(0) !== 0x04034b50) throw new Error(`${apk} is not an APK`);
+  if (buf.length > MAX_SIZE) throw new Error(`${apk} is larger than the 200 MB phones accept`);
   const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
   fs.writeFileSync(path.join(dl, file), buf);
   fs.writeFileSync(path.join(dl, file + ".sha256"), `${sha256}  ${file}\n`);
@@ -30,7 +34,7 @@ function publishToSite(apk, siteDir, { versionCode, versionName }) {
   return manifest;
 }
 
-module.exports = { publishToSite };
+module.exports = { publishToSite, MAX_SIZE };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

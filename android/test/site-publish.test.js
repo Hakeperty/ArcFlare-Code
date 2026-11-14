@@ -37,5 +37,9 @@ test("refuses an older or equal version, a non-APK, a wrong folder and a bad ver
   assert.throws(() => publishToSite(s.apk, os.tmpdir(), { versionCode: 11, versionName: "1.0.11" }), /does not exist/);
   assert.throws(() => publishToSite(s.apk, s.dir, { versionCode: 11, versionName: "../x" }), /version-name/);
   assert.throws(() => publishToSite(s.apk, s.dir, { versionCode: 1.5, versionName: "1.0.11" }), /version-code/);
+  assert.throws(() => publishToSite(s.apk, s.dir, { versionCode: 2147483648, versionName: "1.0.11" }), /version-code/);
+  const big = path.join(s.dir, "big.apk");
+  fs.writeFileSync(big, Buffer.alloc(200 * 1024 * 1024 + 1)); fs.writeFileSync(big, Buffer.from([0x50, 0x4b, 0x03, 0x04]), { flag: "r+" });
+  assert.throws(() => publishToSite(big, s.dir, { versionCode: 11, versionName: "1.0.11" }), /larger than the 200 MB/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(s.dl, "android.json"), "utf8")).versionCode, 10, "a refused publish changes nothing");
 });
