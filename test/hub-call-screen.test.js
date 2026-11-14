@@ -166,6 +166,7 @@ test("a scheduled call: listed with its time and taken back on Tools; when it ri
   await row.locator("p", { hasText: "Codex: Good morning. The nightly run passed." }).waitFor();
   await row.getByRole("button", { name: "Cancel this call" }).click();
   await page.locator("#calls-list", { hasText: "No calls yet." }).waitFor();
+  await until(() => page.locator("#calls-list img.panda").evaluate((i) => i.complete && i.naturalWidth > 0), "the empty call list shows no phone panda");
   assert.strictEqual(calls.timers.size, 0);
 
   calls.schedule({ say: "It is nine. Stand-up in ten minutes.", from: "Codex", at: new Date(Date.now() + 50).toISOString() });

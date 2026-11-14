@@ -922,6 +922,7 @@ progress.load-bar::-moz-progress-bar { background: var(--accent-bright); border-
 .call-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
 .call-quick .btn { padding: 0 4px; }
 .calls-list { margin-top: 8px; }
+.calls-empty { padding: 16px 0 8px; }
 .call-log { border-top: 1px solid var(--border); }
 .call-log summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; cursor: pointer; list-style: none; }
 .call-log-who { min-width: 0; font-size: 14px; line-height: 20px; font-weight: 600; overflow-wrap: anywhere; }
