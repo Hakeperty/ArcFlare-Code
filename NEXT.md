@@ -1,20 +1,16 @@
 # Next updates for the CLI and the phone app
 
 What is waiting, in order, and what to do for each. Update this file in the same commit as the work it describes.
-Last checked: 2026-11-14.
+Last checked: 2026-11-15.
 
-## 1. Land the phone call work on main
+## 1. Land AI on the phone on main
 
-Branch `ccr-567071cc-cm0onr` is main plus:
+The phone call work (one-tap answers, the call list, missed-call messages, timed calls, updates from arcflare.net)
+is on main since pull request #18. Branch `ccr-0fc581e7-7ocf3s` is main plus Local AI (Arc Pocket). The site's branch
+of the same name has its pages, its post and the signed 1.0.457825 download.
 
-- the 11 commits from `ccr-35d915d6-r4870h` that never reached main: one-tap answers (Yes, No, Later, Stop), the
-  call list with playback, missed-call messages, and calls at a set time;
-- the phone panda on the empty call list.
-
-The blog already describes these features, so main is behind the site.
-
-Do: open a pull request from `ccr-567071cc-cm0onr` to main when the owner agrees, then delete
-`ccr-35d915d6-r4870h`.
+Do: merge the pull requests from `ccr-0fc581e7-7ocf3s` in this repo and in the site repo, then delete
+`ccr-567071cc-cm0onr` and `ccr-35d915d6-r4870h`, which are fully contained in it.
 
 ## 2. Release CLI 1.3.0
 
@@ -36,10 +32,13 @@ Do: build the APK in CI, install it, and go through "Unverified on a real device
 then a full call: ring, answer by voice, by message and by one tap, a missed call, and a timed call. Also try
 **Update the app** on the pairing screen once a newer APK is on the site. Write down what failed.
 
-To put a new version on the site, so phones can update without a computer: on the computer that has the release key,
-`cd android && node scripts/build-apk.js --release --site ../../ArcFlare`, then commit and push the site. The site
-still offers 1.0.450271, which has no **Update the app** button: phones on it must install the next version by hand
-once.
+The owner has a Galaxy S24 Ultra (Snapdragon 8 Gen 3) to test on, once the download is on arcflare.net.
+
+To put a new version on the site, so phones can update without a computer: build it unsigned in CI, sign it with the
+release key and publish it with `scripts/site-publish.js`. Rule 9 in `Hakeperty/Arcflare-rules-for-claude`
+(`rules/09-android-signing.md`) has the steps and says where the key is kept. Never make a new key: the keys of
+1.0.450271 and of the first 1.0.457825 build were lost, so 1.0.450271 has to be uninstalled once, and it has no
+**Update the app** button either.
 
 ## 4. Repository settings only the owner can change
 
@@ -105,12 +104,21 @@ Next, in this order, each as its own commit:
       the loudest warning, an off switch in the app, and a notice while it is active.
    It runs an **Arc Pocket Agent** Arc (`lib/arcs`): the same bases, instructions for phone tools. Qwen3 supports tool
       calls through its chat template (`common_chat_templates_apply` with `tools`).
-4. **NPU (Snapdragon)**: ONNX Runtime with Qualcomm's QNN libraries. Read Qualcomm's licence for those libraries
-   before anything ships ([rule 6](rules/06-licensing.md)): if it does not allow bundling them in a free app, stop
-   and ask the owner. Models for the NPU are compiled per chip.
+4. **NPU (Snapdragon)**: ONNX Runtime with Qualcomm's QNN libraries. Stopped until the owner decides
+   ([rule 6](rules/06-licensing.md)). Read on 2026-11-14: the POM of `com.qualcomm.qti:qnn-runtime` 2.51.0 on Maven
+   Central names the "Qualcomm AI Hub Model License" (softwarecenter.qualcomm.com, `licenses/ai_model_hub/v1/LICENSE.pdf`).
+   That text allows distributing "the Software solely in object code format and as incorporated in Your software
+   application", never by itself, and has us indemnify Qualcomm for apps we post for download (section 9a), forbids
+   reverse engineering (2a) and lists uses the software may not be put to (2c). It does not name the QNN libraries,
+   and the licence of the QNN SDK itself (Qualcomm AI Engine Direct) could not be opened without an account. So we
+   cannot yet say the libraries may be bundled. Models for the NPU are compiled per chip.
 5. **Faster model files**: 4-bit files (Q4_0) run faster on ARM than Q8_0, but Qwen's own repos publish only Q8_0 for
-   these sizes. Community quants need their licence read (rule 6) and a measured speed and quality gain on a phone
-   before they are offered.
+   these sizes (checked on Hugging Face, 2026-11-14). Community quants need their licence read (rule 6) and a measured
+   speed and quality gain on a phone before they are offered. Read on 2026-11-14: `unsloth/Qwen3-0.6B-GGUF` and
+   `unsloth/Qwen3-1.7B-GGUF` have Q4_0 and Q4_K_M, say apache-2.0 on the card and link Qwen's LICENSE, but carry no
+   LICENSE file of their own. `ggml-org` says apache-2.0 and has one 4-bit file per size. `bartowski` and
+   `MaziyarPanahi` state no licence, so they are out. Read the card again and take the size and SHA-256 from the file
+   page on the day a file is added; nothing has been measured on a phone.
 
 ## The pandas in the phone app
 
