@@ -41,13 +41,13 @@ import java.security.MessageDigest;
  * /api/app/version announced; Android then refuses the update unless it is signed with this app's own key,
  * and always asks the user to confirm.
  *
- *   info()                         -> { versionCode, versionName, canInstall }
+ *   info()                         -> { versionCode, versionName, agent, canInstall }
  *   begin({ size, sha256 })        -> starts a session (any previous one is abandoned)
  *   write({ data })                -> base64 chunk, in order
  *   commit()                       -> verifies, commits; resolves { status } once Android has answered
  *   abort()                        -> abandons the session
  *   openInstallSettings()          -> the "install unknown apps" switch for this app
- *   checkOnline()                  -> { versionCode, versionName, size } from arcflare.net (OnlineUpdate.MANIFEST)
+ *   checkOnline()                  -> { versionCode, versionName, size } from arcflare.net (OnlineUpdate.manifest(Edition.AGENT))
  *   downloadOnline()               -> reads that APK into a new session; then commit() as above
  */
 @CapacitorPlugin(name = "AppUpdater")
@@ -76,6 +76,7 @@ public class AppUpdaterPlugin extends Plugin {
             long code = Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode;
             r.put("versionCode", code);
             r.put("versionName", pi.versionName);
+            r.put("agent", Edition.AGENT);   // the page offers the computer's app file to the chat app only
         } catch (PackageManager.NameNotFoundException e) {
             call.reject("cannot read this app's version");
             return;
@@ -129,12 +130,12 @@ public class AppUpdaterPlugin extends Plugin {
         new Thread(() -> {
             HttpURLConnection c = null;
             try {
-                c = open(OnlineUpdate.MANIFEST);
+                c = open(OnlineUpdate.manifest(Edition.AGENT));
                 JSONObject j = new JSONObject(new String(readAll(c, OnlineUpdate.MAX_MANIFEST), StandardCharsets.UTF_8));
                 long code = j.optLong("versionCode", -1);
                 String apk = j.optString("apk", null), sha = j.optString("sha256", null);
                 long size = j.optLong("size", -1);
-                String bad = OnlineUpdate.problem(code, apk, size, sha);
+                String bad = OnlineUpdate.problem(code, apk, size, sha, Edition.AGENT);
                 if (bad != null) { call.reject("arcflare.net offered a malformed update (" + bad + ")"); return; }
                 synchronized (this) { onlineApk = apk; onlineSha = sha; onlineSize = size; }
                 JSObject r = new JSObject();

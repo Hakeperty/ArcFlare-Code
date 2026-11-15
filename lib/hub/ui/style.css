@@ -1060,3 +1060,28 @@ fieldset.muted-off { opacity: 0.5; }
 /* Tools: the Arc picker sits above the server list. */
 .arc-card { display: grid; gap: 6px; margin: 4px var(--pr) 16px var(--pl); padding: 14px 16px 16px; }
 .arc-card .field-select { width: 100%; }
+
+/* ---------- On phone: Local AI (localai.js) ---------- */
+.local-root { display: flex; flex-direction: column; gap: 12px; padding: 0 var(--pr) 16px var(--pl); }
+.login-card .local-root { padding: 0; }
+.local-head { display: flex; align-items: center; gap: 12px; }
+.local-head .panda { width: 96px; height: auto; flex: none; }
+.local-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.local-card .btn { margin: 0; }
+.local-warn { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; line-height: 20px; color: var(--muted); }
+.local-models { display: grid; gap: 8px; }
+.local-model, .local-agree { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 20px; }
+.local-model input, .local-agree input { flex: none; margin-top: 3px; width: 18px; height: 18px; }
+.local-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; line-height: 20px; min-height: 48px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.local-chat { display: flex; flex-direction: column; gap: 8px; }
+.local-log { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; }
+.local-msg { margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 15px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.local-msg.user { align-self: flex-end; max-width: 85%; background: var(--accent-soft, var(--surface-2)); }
+.local-msg.assistant { align-self: flex-start; max-width: 100%; background: var(--surface-2); }
+.local-msg.tool { align-self: flex-start; max-width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: 14px; line-height: 20px; }
+.local-approve { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; }
+.local-approve .btn { flex: 1; margin: 0; }
+.local-pre { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-family: var(--mono); font-size: 13px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 40vh; overflow: auto; }
+.local-send { display: flex; gap: 8px; align-items: flex-end; }
+.local-input { flex: 1; min-width: 0; resize: vertical; font: inherit; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--foreground); }
+.local-tools { display: flex; gap: 8px; flex-wrap: wrap; }

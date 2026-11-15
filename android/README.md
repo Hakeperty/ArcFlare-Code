@@ -109,6 +109,14 @@ android/
   test/                   node:test tests + Playwright shell.e2e.js
 ```
 
+## Two builds: ArcFlare and ArcFlare Agent
+
+The project builds two apps with Gradle product flavors. `chat` is ArcFlare (`net.arcflare.app`). `agent` is
+ArcFlare Agent (`net.arcflare.app.agent`) and installs next to it. Code only the agent has lives in
+`android/app/src/agent`, and `Edition.java` in each flavor registers what that build needs. `node scripts/build-apk.js --agent`
+builds the agent app. CI builds and inspects both. Both apps answer `arcflare://pair` links, so with both installed
+Android asks which one to open.
+
 ## Build
 
 ### CI (the supported way)
@@ -117,13 +125,14 @@ android/
 
 - **`build`** (push to main, pull requests, manual runs, tags): **no secrets at all**, `permissions: contents: read`.
   `npm ci --ignore-scripts`, `npm test`, `sync-ui`, `npx cap sync android`, then `assembleDebug` and an
-  **unsigned** `assembleRelease`. Uploads only `*.apk` (`arcflare-debug-apk`, `arcflare-unsigned-release-apk`).
+  **unsigned** `assembleRelease` (both build the chat and the agent app). Inspects all four APKs and uploads only
+  `*.apk` (`arcflare-debug-apk`, `arcflare-unsigned-release-apk`).
   Pull requests and branches never sign anything, and no workflow uses `pull_request_target`.
 - **`release`** (only `push` of a tag `v*`; `needs: build`; `environment: android-release`;
   `permissions: contents: read`): checks out the exact tagged commit, no dependency cache, installs with
   `--ignore-scripts`, decodes the keystore as the last step before the signing build, runs
-  `assembleRelease`, deletes the keystore under `always()`, uploads only the signed `app-release.apk`
-  (`arcflare-release-apk`). It fails if the keystore secret is missing instead of producing an unsigned build.
+  `assembleRelease`, deletes the keystore under `always()`, uploads only the two signed APKs
+  (`app-chat-release.apk`, `app-agent-release.apk`) as `arcflare-release-apk`. It fails if the keystore secret is missing instead of producing an unsigned build.
 
 Both jobs run `gradle/actions/wrapper-validation` before any `./gradlew`, and the wrapper's Gradle distribution is
 pinned with `distributionSha256Sum` (8.14.3 `-bin`, from Gradle's official release-checksums page; the committed
@@ -149,8 +158,11 @@ cd android
 npm ci
 node scripts/sync-ui.js          # or: npm run sync-ui
 npx cap sync android
-cd android && ./gradlew assembleDebug      # app/build/outputs/apk/debug/app-debug.apk
+cd android && ./gradlew assembleChatDebug  # app/build/outputs/apk/chat/debug/app-chat-debug.apk
 ```
+
+`./gradlew assembleAgentDebug` builds ArcFlare Agent instead (`app/build/outputs/apk/agent/debug/app-agent-debug.apk`).
+Plain `assembleDebug` builds both.
 
 Release signing locally: export `ARCFLARE_KEYSTORE` (path), `ARCFLARE_KEYSTORE_PASSWORD`,
 `ARCFLARE_KEY_ALIAS`, `ARCFLARE_KEY_PASSWORD`, then `./gradlew assembleRelease`. Without them no signing
@@ -167,10 +179,57 @@ npm run test:e2e    # Playwright + Chromium with a fake Capacitor bridge and fak
 
 Download `arcflare-release-apk` (or `arcflare-debug-apk`) from the workflow run's artifacts, unzip, copy the
 `.apk` to the phone and open it (allow "install unknown apps" for your file manager or browser once), or with
-USB debugging on: `adb install app-release.apk`. Requirements: Android 8.0+ (minSdk 26) and
+USB debugging on: `adb install app-chat-release.apk`. The `app-agent-*.apk` files are ArcFlare Agent. Requirements: Android 8.0+ (minSdk 26) and
 **Android System WebView / Chrome 133 or newer** (WebCrypto X25519). Capacitor's `android.minWebViewVersion` is 133
 (with a bundled error page), and the shell refuses to start without X25519; it never falls back to a weaker scheme. Debug builds are signed with the
 debug key and are for testing only.
+
+## Local AI (Arc Pocket on the phone)
+
+Optional. **Use AI on this phone** on the pairing screen, and the **On phone** tab once signed in (app only), open
+`lib/hub/ui/localai.js`. Nothing is downloaded until the person has read the notice (size, heat, battery, speed,
+memory, mistakes) and ticked the box; **Models and storage** deletes one model or all Local AI data, including a
+download that stopped half-way (its `.part` file, also cleared before the next download; deleting a model that is
+still downloading cancels that download first). An answer cut off by a failed step (memory) says so; that path has no
+behavioural test, because a real out-of-memory failure cannot be made here.
+
+- **Engine:** llama.cpp `b12387` (MIT), fetched by `src/main/cpp/CMakeLists.txt` with git; the build stops unless the tag
+  is commit `a956a852`. arm64 only (`abiFilters`); on other phones the app runs without it. One CPU backend per ARM
+  generation (`GGML_CPU_ALL_VARIANTS`), loaded at start; ggml uses the best one the CPU supports. About 6.6 MB more in
+  the APK, about 17 MB unpacked. `arcflare_llm.cpp` + `LlamaEngine.java` are the JNI; `LocalAiPlugin.java` the plugin.
+- **Models:** `ModelCatalog.java`: Qwen3 0.6B and 1.7B (Apache-2.0), Q8_0, from Qwen's own Hugging Face repos at pinned
+  commits, size and SHA-256 checked; redirects followed only to `huggingface.co` and `*.hf.co`. Kept in `filesDir/models`.
+  The page names a model by id only.
+- **Arc Pocket:** the instructions and sampling are `lib/arcs/arc-pocket.Modelfile`'s (`test/localai.test.js` keeps them equal).
+- **Per phone:** `profile()` in `localai.js` maps the chip (SOC_MODEL, HARDWARE, BOARD) to threads, context and the
+  suggested model: Snapdragon 8 Gen 1 and later, Exynos 2200/2400/2500, Tensor G1-G5, Dimensity, Kirin 9000. Unknown
+  chips get settings from RAM and core speeds.
+- **Checked here:** the engine was built for arm64 with the NDK, and the same `arcflare_llm.cpp` and `LlamaEngine.java`
+  were run on a Linux x86 machine with the real Qwen3 0.6B (load, a two-turn chat, stop, a too-long conversation, free).
+
+### Files for Arc Pocket (ArcFlare Agent only)
+
+In the agent build the chat has a **Files** button. The person reads a warning, ticks a box and picks a folder with
+Android's own folder picker (Storage Access Framework; no storage permission). Arc Pocket can then ask to list, read
+or write text files in that folder. Every call is shown first (**Allow** or **Do not allow**), a write shows the whole
+new text, and nothing runs without a tap. **Stop sharing** forgets a folder.
+
+- **Native:** `src/agent/java/.../PhoneFilesPlugin.java` (folders, pickFolder, forget, list, read, write) and
+  `PhonePath.java` (refuses `..`, backslashes, control characters, over-long paths). Reads stop at 64 KB, writes at
+  256 KB, lists at 200 entries. A file with a zero byte is refused as not text.
+- **Page:** `lib/hub/ui/phoneagent.js` (the instructions, the three tools in Qwen3's own tool format, the parser for
+  `<tool_call>` blocks, the sentence shown before a call) and the tool loop in `localai.js`: at most 4 rounds per
+  question and 3 calls per answer. Tool results go back to the model as `<tool_response>` messages.
+- **Arc Pocket Agent:** the instructions are `lib/arcs/arc-pocket-agent.Modelfile`'s (`test/phoneagent.test.js` keeps
+  them equal).
+- **Only Qwen3 1.7B gets tools** (`MODELS` in `phoneagent.js`). Measured on 2026-11-15 on a Linux machine with
+  llama.cpp `b12387` and the real model files, three runs of each of six file requests and two plain questions: Qwen3
+  1.7B made a call the app runs correctly in 15 of 18 file requests (in 3 of those it named a folder inside the shared
+  one as the folder, which `describe()` resolves; it answered one phrasing of "save a file" in words instead, three
+  times), used the file's text correctly in 3 of 3 follow-ups, and called no tool for the 6 plain questions. Qwen3
+  0.6B made the right call in 7 of 18, and in none of the 9 reads and lists. One wording per request and three
+  runs each: a first look, not a benchmark.
+- **Not built yet:** choosing the computer's model for a chat, and the other tools in `NEXT.md` 8.3.
 
 ## Updates
 
@@ -390,6 +449,13 @@ Nothing below was executed on Android. Check each on a real phone (Android 8+ wi
 18. **Update the app (arcflare.net):** that `checkOnline()`/`downloadOnline()` reach arcflare.net from a real phone, that
     Android shows its confirmation and installs over the running app, and that an APK signed with another key is refused
     with a readable message. The plugin code is linted and OnlineUpdate.java is run by a test; neither has run on a device.
+19. **Local AI on a phone:** that the arm64 engine loads its CPU variants from `nativeLibraryDir` on a real phone, the
+    download from Hugging Face completes and verifies, answers stream, Stop works, and how hot and fast it is on each
+    chip family. No speed or heat has been measured on any phone.
+20. **Files for Arc Pocket (ArcFlare Agent):** that Android's folder picker opens and the grant survives a restart, that
+    list, read and write work on real storage (the phone's own, an SD card, a cloud provider's folder), that a new
+    file keeps the name it was given, and how often Qwen3 1.7B calls the tools correctly on a phone. The plugin's Java
+    is compiled in CI; none of it has run on a device.
 
 ## What the tests cover (and not)
 

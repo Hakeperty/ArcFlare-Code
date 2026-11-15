@@ -11,10 +11,24 @@ android {
         versionCode((project.findProperty("arcflareVersionCode") ?: "1") as Integer)
         versionName((project.findProperty("arcflareVersionName") ?: "1.0") as String)
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // Local AI (LocalAiPlugin): llama.cpp for 64-bit ARM phones only. Elsewhere the app installs and runs without it.
+        ndk { abiFilters 'arm64-v8a' }
+        externalNativeBuild { cmake { arguments '-DCMAKE_BUILD_TYPE=Release' } }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    // Two apps from one project. chat: ArcFlare (net.arcflare.app), the build on arcflare.net/android. agent: ArcFlare
+    // Agent (net.arcflare.app.agent), installable next to it. The agent's tools live in src/agent, so the chat build
+    // never contains them.
+    flavorDimensions = ["edition"]
+    productFlavors {
+        chat { dimension "edition" }
+        agent {
+            dimension "edition"
+            applicationIdSuffix ".agent"
         }
     }
     // Release signing: only when CI/local env provides a keystore. Nothing secret is in the repo.
@@ -31,6 +45,9 @@ android {
             }
         }
     }
+    externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' } }
+    // ggml opens its CPU variants by path from nativeLibraryDir, so the .so files must be unpacked on install.
+    packaging { jniLibs { useLegacyPackaging true } }
     buildTypes {
         release {
             debuggable false

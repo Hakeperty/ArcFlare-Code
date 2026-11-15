@@ -93,6 +93,46 @@
         downloadOnline: function () { return p.downloadOnline(); },
       };
     },
+    /**
+     * Local AI (LocalAiPlugin.java): a chat model on the phone. Model files and addresses are fixed in ModelCatalog.java;
+     * the page names a model only by id. on(event, fn) returns a function that removes the listener. null outside the app.
+     */
+    localAI: function () {
+      var p;
+      try { p = plugin("LocalAI"); } catch (e) { return null; }
+      return {
+        info: function () { return p.info(); },
+        download: function (id) { return p.download({ id: id }); },
+        cancelDownload: function () { return p.cancelDownload(); },
+        remove: function (id) { return p.remove({ id: id }); },
+        load: function (o) { return p.load({ id: o.id, threads: o.threads, ctx: o.ctx }); },
+        chat: function (o) { return p.chat({ messages: o.messages, maxTokens: o.maxTokens }); },
+        stop: function () { return p.stop(); },
+        unload: function () { return p.unload(); },
+        on: function (event, fn) {
+          if (event !== "progress" && event !== "token") throw new Error("unknown event");
+          var h = p.addListener(event, fn);
+          return function () { Promise.resolve(h).then(function (x) { if (x && x.remove) x.remove(); }); };
+        },
+      };
+    },
+    /**
+     * Files for the on-phone agent (PhoneFilesPlugin.java, the agent build only): list, read and write text files, only
+     * inside folders the person picked with Android's folder picker. null in the chat build and outside the app.
+     */
+    phoneFiles: function () {
+      var p;
+      // plugin() never throws for a name the build lacks (Capacitor returns a proxy for any name), so ask Capacitor first.
+      try { if (!window.Capacitor.isPluginAvailable("PhoneFiles")) return null; p = plugin("PhoneFiles"); } catch (e) { return null; }
+      return {
+        folders: function () { return p.folders(); },
+        pickFolder: function () { return p.pickFolder(); },
+        forget: function (id) { return p.forget({ id: id }); },
+        list: function (id, path) { return p.list({ id: id, path: path }); },
+        read: function (id, path) { return p.read({ id: id, path: path }); },
+        write: function (id, path, content) { return p.write({ id: id, path: path, content: content }); },
+      };
+    },
     /** TUNNEL.md section 2: feature-detect X25519; never fall back. */
     supportsX25519: async function () {
       try { await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]); return true; } catch (e) { return false; }

@@ -440,6 +440,13 @@
     $("pair-update").addEventListener("click", function () { openUpdate("v-pair"); });
     $("st-update").addEventListener("click", function () { openUpdate("v-status"); });
     $("upd-go").addEventListener("click", updateStep);
+    var local = Native.localAI && Native.localAI(), localView = null;
+    $("pair-local").hidden = !(local && window.ArcFlareLocalAI);
+    $("pair-local").addEventListener("click", function () {
+      show("v-local");
+      if (!localView) localView = window.ArcFlareLocalAI.mount($("local-root"), local, Native.phoneFiles ? Native.phoneFiles() : null); else localView.refresh();
+    });
+    $("local-back").addEventListener("click", function () { showPairScreen(""); });
     $("upd-back").addEventListener("click", function () { if (!upd.busy) show(upd.back); });
     document.addEventListener("visibilitychange", function () { if (!document.hidden) onForeground(); });
     Native.onForeground(onForeground);

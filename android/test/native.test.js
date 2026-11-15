@@ -30,7 +30,46 @@ test("navigate: only the bundled UI (with the optional via hint); everything els
 
 test("the native bridge surface is small: no NavGuard, no setLan, no generic http, no cookie setter", () => {
   const { N } = load();
-  assert.deepEqual(Object.keys(N).sort(), ["appUpdater", "call", "clearCookies", "getLaunchUrl", "nativeHttp", "navigate", "notifier", "onAppUrl", "onForeground", "supportsX25519"]);
+  assert.deepEqual(Object.keys(N).sort(), ["appUpdater", "call", "clearCookies", "getLaunchUrl", "localAI", "nativeHttp", "navigate", "notifier", "onAppUrl", "onForeground", "phoneFiles", "supportsX25519"]);
+});
+
+// A build's Capacitor: a plugin record for every name (as the real registerPlugin gives), and isPluginAvailable says
+// which names this build really has.
+function phoneFilesBuild(has) {
+  const seen = [];
+  // { ...arg } copies the vm-realm object into this realm, so deepStrictEqual compares prototypes fairly.
+  const plugin = new Proxy({}, { get: (_, m) => (arg) => { seen.push([String(m), arg === undefined ? undefined : { ...arg }]); return Promise.resolve({}); } });
+  const cap = { registerPlugin: () => plugin, isPluginAvailable: (n) => has.includes(n) };
+  const { N } = load({ Capacitor: cap });
+  return { P: N.phoneFiles(), seen };
+}
+
+test("phoneFiles: null outside the app and in a build without the agent plugin", () => {
+  const outside = load({ Capacitor: undefined });
+  assert.equal(outside.N.phoneFiles(), null);
+  assert.equal(phoneFilesBuild([]).P, null);
+  assert.equal(phoneFilesBuild(["LocalAI", "Call"]).P, null);
+  // An old WebView without isPluginAvailable: the wrapper fails closed too.
+  assert.equal(load({ Capacitor: { registerPlugin: () => ({}) } }).N.phoneFiles(), null);
+});
+
+test("phoneFiles: exposes the six calls and nothing else", () => {
+  const { P } = phoneFilesBuild(["PhoneFiles"]);
+  assert.deepEqual(Object.keys(P).sort(), ["folders", "forget", "list", "pickFolder", "read", "write"]);
+});
+
+test("phoneFiles: each call passes exactly the arguments the plugin takes", () => {
+  const { P, seen } = phoneFilesBuild(["PhoneFiles"]);
+  P.folders(); P.pickFolder(); P.forget("content://tree/x"); P.list("content://tree/x", "a/b");
+  P.read("content://tree/x", "notes.txt"); P.write("content://tree/x", "a/notes.txt", "hello");
+  assert.deepEqual(seen, [
+    ["folders", undefined],
+    ["pickFolder", undefined],
+    ["forget", { id: "content://tree/x" }],
+    ["list", { id: "content://tree/x", path: "a/b" }],
+    ["read", { id: "content://tree/x", path: "notes.txt" }],
+    ["write", { id: "content://tree/x", path: "a/notes.txt", content: "hello" }],
+  ]);
 });
 
 test("nativeHttp exposes get and post only (what lanfetch.js wraps), nothing else of CapacitorHttp", () => {

@@ -2,7 +2,7 @@
 #
 # Trust model: the release signing key must never be reachable from code nobody reviewed.
 #   - job `build`   : runs for push, pull_request and workflow_dispatch. NO secrets, read-only token. Builds debug
-#                     and an UNSIGNED release; uploads only *.apk.
+#                     and UNSIGNED release APKs of both apps (chat and agent); uploads only *.apk.
 #   - job `release` : the ONLY job that references secrets. Runs only for a pushed tag v*, behind the protected
 #                     environment `android-release` (required reviewers are configured in the repository settings).
 #                     Signs, uploads the signed APK, deletes the keystore.
@@ -77,7 +77,7 @@ jobs:
         working-directory: android
         run: npx --no-install cap sync android
 
-      - name: Build debug APK and unsigned release APK
+      - name: Build debug and unsigned release APKs of both apps
         working-directory: android/android
         # The same increasing version code as scripts/build-apk.js (minutes since 2026-01-01 UTC): Android refuses to
         # install an APK with a lower one over the app, so without it a CI build could never be an update.
@@ -90,19 +90,21 @@ jobs:
       - name: Inspect the built APKs
         working-directory: android
         run: |
-          node scripts/inspect-apk.js android/app/build/outputs/apk/debug/app-debug.apk --debug
-          node scripts/inspect-apk.js android/app/build/outputs/apk/release/app-release-unsigned.apk --release
+          node scripts/inspect-apk.js android/app/build/outputs/apk/chat/debug/app-chat-debug.apk --debug
+          node scripts/inspect-apk.js android/app/build/outputs/apk/chat/release/app-chat-release-unsigned.apk --release
+          node scripts/inspect-apk.js android/app/build/outputs/apk/agent/debug/app-agent-debug.apk --debug --package net.arcflare.app.agent
+          node scripts/inspect-apk.js android/app/build/outputs/apk/agent/release/app-agent-release-unsigned.apk --release --package net.arcflare.app.agent
 
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: arcflare-debug-apk
-          path: android/android/app/build/outputs/apk/debug/*.apk
+          path: android/android/app/build/outputs/apk/*/debug/*.apk
           if-no-files-found: error
 
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: arcflare-unsigned-release-apk
-          path: android/android/app/build/outputs/apk/release/*.apk
+          path: android/android/app/build/outputs/apk/*/release/*.apk
           if-no-files-found: error
 
   release:
@@ -179,13 +181,15 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/arcflare-release.jks"
 
-      - name: Inspect the signed APK
+      - name: Inspect the signed APKs
         working-directory: android
-        run: node scripts/inspect-apk.js android/app/build/outputs/apk/release/app-release.apk --release
+        run: |
+          node scripts/inspect-apk.js android/app/build/outputs/apk/chat/release/app-chat-release.apk --release
+          node scripts/inspect-apk.js android/app/build/outputs/apk/agent/release/app-agent-release.apk --release --package net.arcflare.app.agent
 
-      # app-release.apk exists only when signing was configured (an unsigned build is app-release-unsigned.apk).
+      # A signed build is app-<flavor>-release.apk; an unsigned one is app-<flavor>-release-unsigned.apk (not uploaded here).
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: arcflare-release-apk
-          path: android/android/app/build/outputs/apk/release/app-release.apk
+          path: android/android/app/build/outputs/apk/*/release/app-*-release.apk
           if-no-files-found: error
