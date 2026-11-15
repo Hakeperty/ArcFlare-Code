@@ -30,6 +30,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(CallPlugin.class);
         // A small chat model on the phone itself, only when the person asks for it (see LocalAiPlugin).
         registerPlugin(LocalAiPlugin.class);
+        // What only one of the two builds has (see Edition in src/chat and src/agent).
+        Edition.register(this);
         super.onCreate(savedInstanceState);
         WebView webView = bridge.getWebView();
         // The app never needs file:// or content:// access from the WebView.

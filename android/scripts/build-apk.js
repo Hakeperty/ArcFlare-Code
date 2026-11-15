@@ -2,8 +2,9 @@
 // Build the debug APK with a fresh, increasing versionCode, and optionally publish it to this computer's hub
 // so signed-in phones can update in place (Devices screen -> App update), no uninstall.
 //
-//   node scripts/build-apk.js [--publish] [--release [--site <site repo>]]
+//   node scripts/build-apk.js [--agent] [--publish] [--release [--site <site repo>]]
 //
+// --agent builds ArcFlare Agent (net.arcflare.app.agent, the agent flavor) instead of ArcFlare (the chat flavor).
 // --site puts the release APK on the website (scripts/site-publish.js), so phones can update without a computer.
 // --release signs with the release key instead of the debug key. Its location and passwords come from the
 // environment (ARCFLARE_KEYSTORE, ARCFLARE_KEYSTORE_PASSWORD, ARCFLARE_KEY_ALIAS, ARCFLARE_KEY_PASSWORD) or from
@@ -29,6 +30,11 @@ const run = (cmd, args, cwd, shell = process.platform === "win32") => {
 const release = process.argv.includes("--release");
 const siteAt = process.argv.indexOf("--site");
 if (siteAt !== -1 && (!release || !process.argv[siteAt + 1])) { console.error("--site <site repo> needs --release: phones refuse an update signed with another key"); process.exit(1); }
+const agent = process.argv.includes("--agent");
+if (agent && process.argv.includes("--publish")) { console.error("--publish is for the chat build: the hub offers one app to signed-in phones"); process.exit(1); }
+const flavor = agent ? "agent" : "chat";
+const type = release ? "release" : "debug";
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
 if (release && !process.env.ARCFLARE_KEYSTORE) {
   const file = process.env.ARCFLARE_SIGNING_ENV || path.join(require("os").homedir(), ".arcflare-signing", "signing.env");
   if (!fs.existsSync(file)) { console.error("--release: no signing settings (set ARCFLARE_KEYSTORE etc. or ARCFLARE_SIGNING_ENV)"); process.exit(1); }
@@ -39,15 +45,13 @@ if (release && !process.env.ARCFLARE_KEYSTORE) {
 }
 run("npm", ["run", "cap:sync"], root);
 const gradlew = path.join(root, "android", process.platform === "win32" ? "gradlew.bat" : "gradlew");
-run(gradlew, [release ? "assembleRelease" : "assembleDebug", "--console=plain", `-ParcflareVersionCode=${versionCode}`, `-ParcflareVersionName=${versionName}`], path.join(root, "android"));
-const apk = release
-  ? path.join(root, "android", "app", "build", "outputs", "apk", "release", "app-release.apk")
-  : path.join(root, "android", "app", "build", "outputs", "apk", "debug", "app-debug.apk");
+run(gradlew, [`assemble${cap(flavor)}${cap(type)}`, "--console=plain", `-ParcflareVersionCode=${versionCode}`, `-ParcflareVersionName=${versionName}`], path.join(root, "android"));
+const apk = path.join(root, "android", "app", "build", "outputs", "apk", flavor, type, `app-${flavor}-${type}.apk`);
 if (!fs.existsSync(apk)) { console.error("no APK at " + apk); process.exit(1); }
 console.log(`\n  built ${versionName} (code ${versionCode})\n  ${apk}`);
 
 if (siteAt !== -1) {
-  const m = require("./site-publish.js").publishToSite(apk, path.resolve(process.argv[siteAt + 1]), { versionCode, versionName });
+  const m = require("./site-publish.js").publishToSite(apk, path.resolve(process.argv[siteAt + 1]), { versionCode, versionName, agent });
   console.log(`  on the site: public/downloads/${m.apk}; commit and push the site repo`);
 }
 

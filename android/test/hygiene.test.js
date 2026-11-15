@@ -150,6 +150,23 @@ test("gradle: minSdk 26, release not debuggable, signing only from environment",
   assert.doesNotMatch(g, /storePassword\s+["'][^"']+["']/);
 });
 
+test("two apps from one project: chat and agent flavors; only agent changes the application id; each flavor has its Edition", () => {
+  const g = read(path.join(root, "android", "app", "build.gradle"));
+  assert.match(g, /flavorDimensions = \["edition"\]/);
+  assert.match(g, /chat \{ dimension "edition" \}/);
+  assert.match(g, /agent \{\s*dimension "edition"\s*applicationIdSuffix "\.agent"\s*\}/);
+  assert.equal([...g.matchAll(/applicationIdSuffix/g)].length, 1);
+  assert.match(g, /namespace = "net\.arcflare\.app"/);
+  const chat = read(path.join(root, "android", "app", "src", "chat", "java", "net", "arcflare", "app", "Edition.java"));
+  assert.match(chat, /static final boolean AGENT = false;/);
+  assert.doesNotMatch(chat, /registerPlugin/);
+  const agent = read(path.join(root, "android", "app", "src", "agent", "java", "net", "arcflare", "app", "Edition.java"));
+  assert.match(agent, /static final boolean AGENT = true;/);
+  assert.match(agent, /registerPlugin\(PhoneFilesPlugin\.class\)/);
+  // the agent-only Java never sits in the shared source set, so the chat build cannot compile it in
+  assert.equal(fs.existsSync(path.join(native, "java", "net", "arcflare", "app", "PhoneFilesPlugin.java")), false);
+});
+
 test("native source lint (greps only, cannot catch an inverted condition): MainActivity and NavPolicy", () => {
   const dir = path.join(native, "java", "net", "arcflare", "app");
   assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "CallPlugin.java", "MainActivity.java", "MuLawWav.java", "NavPolicy.java", "NotifierPlugin.java", "OnlineUpdate.java"].concat(["LlamaEngine.java", "LocalAiPlugin.java", "ModelCatalog.java"]).sort(), "no NavGuard plugin any more");
@@ -172,9 +189,9 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   // download goes through the same session, so commit() checks its size and hash like a hub update.
   assert.ok(up.includes("if (!url.startsWith(OnlineUpdate.BASE)) throw new IOException(\"refused address\");"));
   assert.ok(up.includes("c.setInstanceFollowRedirects(false);"));
-  assert.ok(up.includes("c = open(OnlineUpdate.MANIFEST);") && up.includes("c = open(OnlineUpdate.apkUrl(apk));"));
+  assert.ok(up.includes("c = open(OnlineUpdate.manifest(Edition.AGENT));") && up.includes("c = open(OnlineUpdate.apkUrl(apk));"));
   assert.doesNotMatch(up, /call\.getString\("url"\)|getString\("apk"\)/, "no address taken from the page");
-  assert.ok(up.includes("String bad = OnlineUpdate.problem(code, apk, size, sha);"));
+  assert.ok(up.includes("String bad = OnlineUpdate.problem(code, apk, size, sha, Edition.AGENT);"));
   // Local AI: models only from ModelCatalog (the page names an id), redirects followed only to Hugging Face hosts,
   // size and SHA-256 checked before the file is kept, files in the app's private storage, roles limited.
   const ai = read(path.join(dir, "LocalAiPlugin.java"));

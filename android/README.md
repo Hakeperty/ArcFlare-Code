@@ -109,6 +109,14 @@ android/
   test/                   node:test tests + Playwright shell.e2e.js
 ```
 
+## Two builds: ArcFlare and ArcFlare Agent
+
+The project builds two apps with Gradle product flavors. `chat` is ArcFlare (`net.arcflare.app`). `agent` is
+ArcFlare Agent (`net.arcflare.app.agent`) and installs next to it. Code only the agent has lives in
+`android/app/src/agent`, and `Edition.java` in each flavor registers what that build needs. `node scripts/build-apk.js --agent`
+builds the agent app. CI builds and inspects both. Both apps answer `arcflare://pair` links, so with both installed
+Android asks which one to open.
+
 ## Build
 
 ### CI (the supported way)
@@ -117,13 +125,14 @@ android/
 
 - **`build`** (push to main, pull requests, manual runs, tags): **no secrets at all**, `permissions: contents: read`.
   `npm ci --ignore-scripts`, `npm test`, `sync-ui`, `npx cap sync android`, then `assembleDebug` and an
-  **unsigned** `assembleRelease`. Uploads only `*.apk` (`arcflare-debug-apk`, `arcflare-unsigned-release-apk`).
+  **unsigned** `assembleRelease` (both build the chat and the agent app). Inspects all four APKs and uploads only
+  `*.apk` (`arcflare-debug-apk`, `arcflare-unsigned-release-apk`).
   Pull requests and branches never sign anything, and no workflow uses `pull_request_target`.
 - **`release`** (only `push` of a tag `v*`; `needs: build`; `environment: android-release`;
   `permissions: contents: read`): checks out the exact tagged commit, no dependency cache, installs with
   `--ignore-scripts`, decodes the keystore as the last step before the signing build, runs
-  `assembleRelease`, deletes the keystore under `always()`, uploads only the signed `app-release.apk`
-  (`arcflare-release-apk`). It fails if the keystore secret is missing instead of producing an unsigned build.
+  `assembleRelease`, deletes the keystore under `always()`, uploads only the two signed APKs
+  (`app-chat-release.apk`, `app-agent-release.apk`) as `arcflare-release-apk`. It fails if the keystore secret is missing instead of producing an unsigned build.
 
 Both jobs run `gradle/actions/wrapper-validation` before any `./gradlew`, and the wrapper's Gradle distribution is
 pinned with `distributionSha256Sum` (8.14.3 `-bin`, from Gradle's official release-checksums page; the committed
@@ -149,8 +158,11 @@ cd android
 npm ci
 node scripts/sync-ui.js          # or: npm run sync-ui
 npx cap sync android
-cd android && ./gradlew assembleDebug      # app/build/outputs/apk/debug/app-debug.apk
+cd android && ./gradlew assembleChatDebug  # app/build/outputs/apk/chat/debug/app-chat-debug.apk
 ```
+
+`./gradlew assembleAgentDebug` builds ArcFlare Agent instead (`app/build/outputs/apk/agent/debug/app-agent-debug.apk`).
+Plain `assembleDebug` builds both.
 
 Release signing locally: export `ARCFLARE_KEYSTORE` (path), `ARCFLARE_KEYSTORE_PASSWORD`,
 `ARCFLARE_KEY_ALIAS`, `ARCFLARE_KEY_PASSWORD`, then `./gradlew assembleRelease`. Without them no signing
@@ -167,7 +179,7 @@ npm run test:e2e    # Playwright + Chromium with a fake Capacitor bridge and fak
 
 Download `arcflare-release-apk` (or `arcflare-debug-apk`) from the workflow run's artifacts, unzip, copy the
 `.apk` to the phone and open it (allow "install unknown apps" for your file manager or browser once), or with
-USB debugging on: `adb install app-release.apk`. Requirements: Android 8.0+ (minSdk 26) and
+USB debugging on: `adb install app-chat-release.apk`. The `app-agent-*.apk` files are ArcFlare Agent. Requirements: Android 8.0+ (minSdk 26) and
 **Android System WebView / Chrome 133 or newer** (WebCrypto X25519). Capacitor's `android.minWebViewVersion` is 133
 (with a bundled error page), and the shell refuses to start without X25519; it never falls back to a weaker scheme. Debug builds are signed with the
 debug key and are for testing only.

@@ -57,7 +57,7 @@ test("release job checks out the tagged commit, deletes the keystore under alway
   assert.match(release, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(release, /if: always\(\)[\s\S]*rm -f/);
   const paths = [...release.matchAll(/^\s+path: (.+)$/gm)].map((m) => m[1].trim());
-  assert.deepEqual(paths, ["android/android/app/build/outputs/apk/release/app-release.apk"]);
+  assert.deepEqual(paths, ["android/android/app/build/outputs/apk/*/release/app-*-release.apk"]);
   assert.doesNotMatch(release, /cache:/);
   assert.doesNotMatch(release, /actions\/cache/);
   assert.doesNotMatch(release, /(echo|printf)[^\n]*\$\{?(KEYSTORE_B64|ARCFLARE_\w+)\}?[^\n]*(?<!base64 -d > "\$RUNNER_TEMP\/arcflare-release\.jks")$/im);
@@ -92,4 +92,27 @@ test("both jobs give the APK an increasing version code, the same one build-apk.
   }
   const script = fs.readFileSync(path.join(__dirname, "..", "scripts", "build-apk.js"), "utf8");
   assert.ok(script.includes("Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 60000)"), "build-apk.js counts the same way");
+});
+
+test("build job inspects all four APKs at their flavor paths; the agent ones with the agent package", () => {
+  const inspect = [...build.matchAll(/^\s+(node scripts\/inspect-apk\.js .+)$/gm)].map((m) => m[1].trim());
+  assert.deepEqual(inspect, [
+    "node scripts/inspect-apk.js android/app/build/outputs/apk/chat/debug/app-chat-debug.apk --debug",
+    "node scripts/inspect-apk.js android/app/build/outputs/apk/chat/release/app-chat-release-unsigned.apk --release",
+    "node scripts/inspect-apk.js android/app/build/outputs/apk/agent/debug/app-agent-debug.apk --debug --package net.arcflare.app.agent",
+    "node scripts/inspect-apk.js android/app/build/outputs/apk/agent/release/app-agent-release-unsigned.apk --release --package net.arcflare.app.agent",
+  ]);
+});
+
+test("build job uploads the debug and unsigned release APKs of both flavors", () => {
+  const paths = [...build.matchAll(/^\s+path: (.+)$/gm)].map((m) => m[1].trim());
+  assert.deepEqual(paths, ["android/android/app/build/outputs/apk/*/debug/*.apk", "android/android/app/build/outputs/apk/*/release/*.apk"]);
+});
+
+test("release job inspects both signed APKs, the agent one with the agent package", () => {
+  const inspect = [...release.matchAll(/^\s+(node scripts\/inspect-apk\.js .+)$/gm)].map((m) => m[1].trim());
+  assert.deepEqual(inspect, [
+    "node scripts/inspect-apk.js android/app/build/outputs/apk/chat/release/app-chat-release.apk --release",
+    "node scripts/inspect-apk.js android/app/build/outputs/apk/agent/release/app-agent-release.apk --release --package net.arcflare.app.agent",
+  ]);
 });

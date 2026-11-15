@@ -116,6 +116,23 @@
         },
       };
     },
+    /**
+     * Files for the on-phone agent (PhoneFilesPlugin.java, the agent build only): list, read and write text files, only
+     * inside folders the person picked with Android's folder picker. null in the chat build and outside the app.
+     */
+    phoneFiles: function () {
+      var p;
+      // plugin() never throws for a name the build lacks (Capacitor returns a proxy for any name), so ask Capacitor first.
+      try { if (!window.Capacitor.isPluginAvailable("PhoneFiles")) return null; p = plugin("PhoneFiles"); } catch (e) { return null; }
+      return {
+        folders: function () { return p.folders(); },
+        pickFolder: function () { return p.pickFolder(); },
+        forget: function (id) { return p.forget({ id: id }); },
+        list: function (id, path) { return p.list({ id: id, path: path }); },
+        read: function (id, path) { return p.read({ id: id, path: path }); },
+        write: function (id, path, content) { return p.write({ id: id, path: path, content: content }); },
+      };
+    },
     /** TUNNEL.md section 2: feature-detect X25519; never fall back. */
     supportsX25519: async function () {
       try { await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]); return true; } catch (e) { return false; }

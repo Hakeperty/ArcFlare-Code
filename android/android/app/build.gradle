@@ -20,6 +20,17 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Two apps from one project. chat: ArcFlare (net.arcflare.app), the build on arcflare.net/android. agent: ArcFlare
+    // Agent (net.arcflare.app.agent), installable next to it. The agent's tools live in src/agent, so the chat build
+    // never contains them.
+    flavorDimensions = ["edition"]
+    productFlavors {
+        chat { dimension "edition" }
+        agent {
+            dimension "edition"
+            applicationIdSuffix ".agent"
+        }
+    }
     // Release signing: only when CI/local env provides a keystore. Nothing secret is in the repo.
     // ARCFLARE_KEYSTORE (path), ARCFLARE_KEYSTORE_PASSWORD, ARCFLARE_KEY_ALIAS, ARCFLARE_KEY_PASSWORD.
     def haveSigning = System.getenv("ARCFLARE_KEYSTORE") && System.getenv("ARCFLARE_KEYSTORE_PASSWORD") &&
