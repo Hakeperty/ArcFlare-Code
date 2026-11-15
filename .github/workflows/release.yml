@@ -1,0 +1,52 @@
+# Publishes a GitHub release when a new CLI version reaches main. `arcflare update` already finds a new version by
+# reading package.json on main; this adds the tag and the release notes on GitHub, which /changelog on arcflare.net
+# shows. A version bump ("CLI 1.3.0: ...") must add release-notes/<version>.md, the notes for that release.
+# Nothing is built and no project code runs: the job only reads package.json and the notes.
+
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Two quick pushes to main must not both publish the same version: the second waits for the first.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            package.json
+            release-notes
+          sparse-checkout-cone-mode: false
+      - id: v
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          tag=v$version
+          # Exit 2 is "no such tag". Anything else (a network error) must not publish a version twice.
+          rc=0; git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY" "refs/tags/$tag" >/dev/null || rc=$?
+          if [ "$rc" = 0 ]; then echo "$tag is already released; nothing to do"; exit 0; fi
+          if [ "$rc" != 2 ]; then echo "::error::could not ask GitHub whether $tag exists (git exit $rc)"; exit 1; fi
+          if [ ! -s "release-notes/$version.md" ]; then
+            echo "::warning::release-notes/$version.md is missing, so $tag is not published; add it to publish"; exit 0
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "notes=release-notes/$version.md" >> "$GITHUB_OUTPUT"
+      - if: steps.v.outputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.v.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ArcFlare ${{ steps.v.outputs.tag }}
+          body_path: ${{ steps.v.outputs.notes }}
