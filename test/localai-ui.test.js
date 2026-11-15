@@ -138,3 +138,44 @@ test("Local AI: a download that died half-way is listed and removed by Delete al
   await page.getByText("Qwen3 1.7B, 1.8 GB, not downloaded").waitFor();
   assert.deepStrictEqual((await calls(page)).map((c) => c.join(" ")), ["unload", "remove qwen3-0.6b", "remove qwen3-1.7b"]);
 });
+
+test("Local AI: a failed answer gives the message back and leaves no question without an answer", { skip }, async (t) => {
+  const page = await open(t);
+  await page.getByLabel(/I understand/).check();
+  await page.getByRole("button", { name: /^Download Qwen3 1\.7B/ }).click();
+  await page.evaluate(() => window.__chatResults.push({ error: "the phone ran out of memory part-way through the answer" }));
+  await page.getByPlaceholder("Message").fill("What is 2+2?");
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByText("the phone ran out of memory part-way through the answer").waitFor();
+  assert.strictEqual(await page.locator(".local-msg").count(), 0, "both the question and the empty answer are removed");
+  assert.strictEqual(await page.getByPlaceholder("Message").inputValue(), "What is 2+2?", "the question is back in the box");
+  await page.getByRole("button", { name: "Send" }).click();   // no typing: the draft is still in the box
+  await page.locator(".local-msg.assistant", { hasText: "Paris is the capital." }).waitFor();
+  const chats = (await calls(page)).filter((x) => x[0] === "chat").map((x) => x[1]);
+  assert.strictEqual(chats.at(-1), "system,user");
+});
+
+test("Local AI: the chat says when older messages are forgotten, and does not ask the model for them again", { skip }, async (t) => {
+  const page = await open(t);
+  await page.getByLabel(/I understand/).check();
+  await page.getByRole("button", { name: /^Download Qwen3 1\.7B/ }).click();
+  await page.getByPlaceholder("Message").fill("one");
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.locator(".local-msg.assistant", { hasText: "Paris is the capital." }).waitFor();
+  await page.evaluate(() => window.__chatResults.push({ error: "TOO_LONG" }));
+  await page.getByPlaceholder("Message").fill("two");
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.locator(".local-msg.assistant").nth(1).filter({ hasText: "Paris" }).waitFor();
+  await page.getByText("Older messages no longer fit in the model's memory, so Arc Pocket has forgotten them. Start a new chat to begin again.").waitFor();
+  let chats = (await calls(page)).filter((x) => x[0] === "chat").map((x) => x[1]);
+  assert.deepStrictEqual(chats.slice(1), ["system,user,assistant,user", "system,user"], "the first exchange was dropped after TOO_LONG");
+  await page.getByPlaceholder("Message").fill("three");
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.locator(".local-msg.assistant").nth(2).filter({ hasText: "Paris" }).waitFor();
+  chats = (await calls(page)).filter((x) => x[0] === "chat").map((x) => x[1]);
+  assert.strictEqual(chats.at(-1), "system,user,assistant,user", "starts from the second exchange, not the first");
+  await page.getByRole("button", { name: "Send" }).waitFor();   // the answer is done: the button reads Send again
+  await page.getByRole("button", { name: "New chat" }).click();
+  await page.getByText("Older messages no longer fit").waitFor({ state: "detached" });
+  assert.strictEqual(await page.getByText("Older messages no longer fit").count(), 0);
+});
