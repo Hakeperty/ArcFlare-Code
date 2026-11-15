@@ -88,8 +88,8 @@ test("bundled UI page: CSP meta, and transport scripts run BEFORE app.js", () =>
   const html = read(path.join(www, "ui", "index.html"));
   assert.match(html, /http-equiv="Content-Security-Policy"/);
   const order = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
-  // localai.js only defines window.ArcFlareLocalAI; it touches nothing until app.js mounts it.
-  assert.deepEqual(order, ["localai.js", "tunnel-client.js", "../vendor/capacitor.js", "../link.js", "../mode.js", "../native.js", "../lanfetch.js", "../store.js", "../connector.js", "../transport.js", "../relay-boot.js", "app.js", "../relay-chip.js"]);
+  // localai.js and phoneagent.js only define window.ArcFlareLocalAI and window.ArcFlarePhoneAgent; they touch nothing until app.js mounts them.
+  assert.deepEqual(order, ["localai.js", "phoneagent.js", "tunnel-client.js", "../vendor/capacitor.js", "../link.js", "../mode.js", "../native.js", "../lanfetch.js", "../store.js", "../connector.js", "../transport.js", "../relay-boot.js", "app.js", "../relay-chip.js"]);
 });
 
 // ---------------------------------------------------------------- native lint

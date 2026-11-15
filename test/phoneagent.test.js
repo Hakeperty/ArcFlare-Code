@@ -1,0 +1,264 @@
+"use strict";
+// Phone agent (lib/hub/ui/phoneagent.js): the instructions, the tool calls and running them. Loaded the way
+// android/test/localai.test.js loads localai.js. No DOM, files or network: `files` is a fake here.
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const repo = path.join(__dirname, "..");
+const win = {};
+win.window = win;
+vm.createContext(win);
+const src = fs.readFileSync(path.join(repo, "lib", "hub", "ui", "phoneagent.js"), "utf8");
+vm.runInContext(src, win);
+const A = win.ArcFlarePhoneAgent;
+
+// Objects made inside the vm context have another realm's prototypes, so compare plain copies.
+const plain = (x) => JSON.parse(JSON.stringify(x));
+
+const FOLDERS = [{ id: "a", name: "Notes" }, { id: "b", name: "Work" }];
+const ONE = [{ id: "n1", name: "Notes" }];
+const call = (name, args) => ({ name: name, args: args });
+const DETAIL = " characters. If the file exists it is replaced, and the old text is gone.";
+
+const mfAgent = fs.readFileSync(path.join(repo, "lib", "arcs", "arc-pocket-agent.Modelfile"), "utf8");
+const mfPocket = fs.readFileSync(path.join(repo, "lib", "arcs", "arc-pocket.Modelfile"), "utf8");
+const lines = (mf, re) => mf.split("\n").filter((l) => re.test(l));
+
+test("SYSTEM is the agent Modelfile's instructions, word for word, in three paragraphs", () => {
+  const block = /SYSTEM """\n([\s\S]*?)\n"""/.exec(mfAgent)[1];
+  assert.equal(A.SYSTEM, block);
+  assert.equal(A.SYSTEM.split("\n\n").length, 3);
+});
+
+test("the agent Modelfile's header says what it is, and its sampling, bases, FROM and licence are Arc Pocket's", () => {
+  assert.deepEqual(lines(mfAgent, /^# arcflare: (name|focus) /), [
+    "# arcflare: name Arc Pocket Agent",
+    "# arcflare: focus Tools on a phone",
+  ]);
+  assert.deepEqual(lines(mfAgent, /^# arcflare: description /), [
+    "# arcflare: description Arc Pocket with tools: it can list, read and write text files in folders you share with it, asking you each time. Made for the ArcFlare Agent app on a phone.",
+  ]);
+  assert.deepEqual(lines(mfAgent, /^PARAMETER /), lines(mfPocket, /^PARAMETER /));
+  assert.equal(lines(mfAgent, /^PARAMETER /).length, 4);
+  assert.deepEqual(lines(mfAgent, /^# arcflare: base /), lines(mfPocket, /^# arcflare: base /));
+  assert.equal(lines(mfAgent, /^# arcflare: base /).length, 2);
+  assert.deepEqual(lines(mfAgent, /^FROM /), lines(mfPocket, /^FROM /));
+  assert.deepEqual(lines(mfAgent, /^LICENSE /), lines(mfPocket, /^LICENSE /));
+});
+
+test("prompt: instructions, the shared folders, then Qwen3's tools block, exactly", () => {
+  const p = A.prompt(FOLDERS);
+  const toolLines = A.TOOLS.map((t) => JSON.stringify(t));
+  const expected = A.SYSTEM + "\n\nShared folders: Notes, Work." +
+    "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n" +
+    toolLines.join("\n") +
+    "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call>";
+  assert.equal(p, expected);
+  assert.ok(p.startsWith(A.SYSTEM));
+  assert.ok(p.includes("Shared folders: Notes, Work."));
+  const block = p.slice(p.indexOf("<tools>\n") + 8, p.indexOf("\n</tools>")).split("\n");
+  assert.equal(block.length, 3);
+  block.forEach((line, i) => assert.deepEqual(JSON.parse(line), plain(A.TOOLS[i])));
+  assert.ok(p.endsWith("</tool_call>"));
+});
+
+test("TOOLS: three functions in the OpenAI format, with the required fields", () => {
+  assert.deepEqual(plain(A.TOOLS.map((t) => t.function.name)), ["list_files", "read_file", "write_file"]);
+  assert.deepEqual(plain(A.TOOLS.map((t) => t.type)), ["function", "function", "function"]);
+  assert.deepEqual(plain(A.TOOLS[0].function.parameters.required), ["folder"]);
+  assert.deepEqual(plain(A.TOOLS[1].function.parameters.required), ["folder", "path"]);
+  assert.deepEqual(plain(A.TOOLS[2].function.parameters.required), ["folder", "path", "content"]);
+  assert.equal(A.TOOLS[2].function.parameters.properties.content.description, "The whole new text of the file");
+  assert.equal(A.MAX_STEPS, 4);
+  assert.equal(A.MAX_CALLS, 3);
+});
+
+test("parse: an answer with no calls is just its text", () => {
+  assert.deepEqual(plain(A.parse("Hello there.")), { text: "Hello there.", calls: [], bad: 0 });
+});
+
+test("parse: one call, with the text before it", () => {
+  const r = A.parse('Let me check.\n<tool_call>\n{"name": "list_files", "arguments": {"folder": "Notes"}}\n</tool_call>');
+  assert.deepEqual(plain(r), { text: "Let me check.", calls: [{ name: "list_files", args: { folder: "Notes" } }], bad: 0 });
+});
+
+test("parse: two calls, in order, with nothing else left", () => {
+  const r = A.parse('<tool_call>{"name":"list_files","arguments":{"folder":"Notes"}}</tool_call>\n' +
+    '<tool_call>{"name":"read_file","arguments":{"folder":"Notes","path":"todo.txt"}}</tool_call>');
+  assert.deepEqual(plain(r), {
+    text: "",
+    calls: [{ name: "list_files", args: { folder: "Notes" } }, { name: "read_file", args: { folder: "Notes", path: "todo.txt" } }],
+    bad: 0,
+  });
+});
+
+test("parse: arguments given as a JSON string are read", () => {
+  const r = A.parse('<tool_call>{"name":"read_file","arguments":"{\\"folder\\":\\"Notes\\",\\"path\\":\\"a.txt\\"}"}</tool_call>');
+  assert.deepEqual(plain(r), { text: "", calls: [{ name: "read_file", args: { folder: "Notes", path: "a.txt" } }], bad: 0 });
+});
+
+test("parse: invalid JSON inside a block is bad, and no call", () => {
+  assert.deepEqual(plain(A.parse("<tool_call>\n{name: bad}\n</tool_call>")), { text: "", calls: [], bad: 1 });
+});
+
+test("parse: arguments that are an array are bad", () => {
+  assert.deepEqual(plain(A.parse('<tool_call>{"name":"list_files","arguments":[]}</tool_call>')), { text: "", calls: [], bad: 1 });
+});
+
+test("parse: a missing name is bad", () => {
+  assert.deepEqual(plain(A.parse('<tool_call>{"arguments":{"folder":"Notes"}}</tool_call>')), { text: "", calls: [], bad: 1 });
+});
+
+test("parse: an unterminated call at the end is bad, and its partial text is dropped", () => {
+  const r = A.parse('Sure.\n<tool_call>\n{"name":"read_file","arguments":{"folder":"Notes","path":"a');
+  assert.deepEqual(plain(r), { text: "Sure.", calls: [], bad: 1 });
+  assert.equal(r.text.includes("read_file"), false);
+});
+
+test("parse: a think block is removed, and a call inside it is not a call", () => {
+  const r = A.parse('<think>I should call <tool_call>{"name":"list_files","arguments":{"folder":"Notes"}}</tool_call> now</think>Done.');
+  assert.deepEqual(plain(r), { text: "Done.", calls: [], bad: 0 });
+});
+
+test("parse: an unterminated think block runs to the end of the text", () => {
+  assert.deepEqual(plain(A.parse("Answer.<think>hmm, a file")), { text: "Answer.", calls: [], bad: 0 });
+});
+
+test("parse: a non-string answer gives no text and no calls", () => {
+  assert.deepEqual(plain(A.parse(null)), { text: "", calls: [], bad: 0 });
+  assert.deepEqual(plain(A.parse(42)), { text: "", calls: [], bad: 0 });
+});
+
+test("response wraps the text in a tool_response block", () => {
+  assert.equal(A.response("x"), "<tool_response>\nx\n</tool_response>");
+});
+
+test("describe: list_files, with and without a path", () => {
+  assert.deepEqual(plain(A.describe(call("list_files", { folder: "Notes" }), FOLDERS)),
+    { ok: true, title: "List the files in Notes", detail: "", body: "", folder: { id: "a", name: "Notes" }, path: "" });
+  const d = A.describe(call("list_files", { folder: "Work", path: " docs " }), FOLDERS);
+  assert.equal(d.title, "List the files in Work/docs");
+  assert.equal(d.path, "docs");
+});
+
+test("describe: read_file", () => {
+  assert.deepEqual(plain(A.describe(call("read_file", { folder: "Work", path: "notes/todo.txt" }), FOLDERS)),
+    { ok: true, title: "Read notes/todo.txt in Work", detail: "", body: "", folder: { id: "b", name: "Work" }, path: "notes/todo.txt" });
+});
+
+test("describe: write_file shows the length, the replacing warning and the content", () => {
+  assert.deepEqual(plain(A.describe(call("write_file", { folder: "Notes", path: "a.txt", content: "Hello" }), FOLDERS)),
+    { ok: true, title: "Write a.txt in Notes", detail: "5" + DETAIL, body: "Hello", folder: { id: "a", name: "Notes" }, path: "a.txt" });
+});
+
+test("describe: folder names match case-insensitively, ignoring spaces around them", () => {
+  assert.equal(A.describe(call("read_file", { folder: "  work ", path: "x" }), FOLDERS).folder.id, "b");
+  assert.equal(A.describe(call("read_file", { folder: "NOTES", path: "x" }), FOLDERS).title, "Read x in Notes");
+});
+
+test("describe: with one folder shared, a missing or empty folder means that one", () => {
+  assert.equal(A.describe(call("list_files", {}), ONE).folder.id, "n1");
+  assert.equal(A.describe(call("list_files", { folder: "" }), ONE).title, "List the files in Notes");
+});
+
+test("describe: an unknown folder, or none named with two shared, lists the shared ones", () => {
+  assert.deepEqual(plain(A.describe(call("read_file", { folder: "Photos", path: "x" }), FOLDERS)),
+    { ok: false, error: 'No shared folder is called "Photos". Shared folders: Notes, Work.' });
+  assert.deepEqual(plain(A.describe(call("list_files", {}), FOLDERS)),
+    { ok: false, error: 'No shared folder is called "". Shared folders: Notes, Work.' });
+});
+
+test("describe: no folder shared at all", () => {
+  assert.deepEqual(plain(A.describe(call("list_files", { folder: "Notes" }), [])), { ok: false, error: "No folder is shared." });
+});
+
+test("describe: a read or write without a file path is refused", () => {
+  const no = { ok: false, error: "The tool call has no file path." };
+  assert.deepEqual(plain(A.describe(call("read_file", { folder: "Notes" }), FOLDERS)), no);
+  assert.deepEqual(plain(A.describe(call("write_file", { folder: "Notes", path: "   ", content: "x" }), FOLDERS)), no);
+});
+
+test("describe: a list with no path means the top of the folder", () => {
+  assert.equal(A.describe(call("list_files", { folder: "Notes" }), FOLDERS).path, "");
+});
+
+test("describe: a write without content is refused", () => {
+  assert.deepEqual(plain(A.describe(call("write_file", { folder: "Notes", path: "a.txt" }), FOLDERS)),
+    { ok: false, error: "The tool call has no text to write." });
+});
+
+test("describe: an unknown tool is refused", () => {
+  assert.deepEqual(plain(A.describe(call("delete_all", { folder: "Notes" }), FOLDERS)),
+    { ok: false, error: "There is no tool called delete_all." });
+});
+
+// A fake native `files` object: each method records its arguments and returns its reply, or throws it if it is an Error.
+function fake(reply) {
+  const calls = [];
+  const files = {};
+  for (const m of ["list", "read", "write"]) {
+    files[m] = async (...args) => {
+      calls.push([m, ...args]);
+      if (reply[m] instanceof Error) throw reply[m];
+      return reply[m];
+    };
+  }
+  return { files, calls };
+}
+
+test("run list_files: one line per entry, folders with a slash, and the empty and truncated cases", async () => {
+  let f = fake({ list: { entries: [{ name: "todo.txt", dir: false, size: 120 }, { name: "notes", dir: true, size: 0 }], truncated: false } });
+  assert.equal(await A.run(call("list_files", { folder: "Notes" }), FOLDERS, f.files, 100), "todo.txt (120 bytes)\nnotes/");
+  assert.deepEqual(plain(f.calls), [["list", "a", ""]]);
+
+  f = fake({ list: { entries: [], truncated: false } });
+  assert.equal(await A.run(call("list_files", { folder: "Notes", path: "docs" }), FOLDERS, f.files, 100), "(empty folder)");
+  assert.deepEqual(plain(f.calls), [["list", "a", "docs"]]);
+
+  f = fake({ list: { entries: [{ name: "a.txt", dir: false, size: 1 }], truncated: true } });
+  assert.equal(await A.run(call("list_files", { folder: "Notes" }), FOLDERS, f.files, 100), "a.txt (1 bytes)\n(more files are not shown)");
+});
+
+test("run read_file: cut to the limit, with the cut-off line", async () => {
+  let f = fake({ read: { text: "abcdefghij", bytes: 10, truncated: false } });
+  assert.equal(await A.run(call("read_file", { folder: "Notes", path: "x.txt" }), FOLDERS, f.files, 4), "abcd\n(cut off: the file is longer)");
+  assert.deepEqual(plain(f.calls), [["read", "a", "x.txt"]]);
+
+  f = fake({ read: { text: "abcd", bytes: 4, truncated: false } });
+  assert.equal(await A.run(call("read_file", { folder: "Notes", path: "x.txt" }), FOLDERS, f.files, 4), "abcd", "exactly the limit is not cut");
+});
+
+test("run read_file: a truncated result from the plugin gets the cut-off line too", async () => {
+  const f = fake({ read: { text: "abc", bytes: 900, truncated: true } });
+  assert.equal(await A.run(call("read_file", { folder: "Notes", path: "x.txt" }), FOLDERS, f.files, 10), "abc\n(cut off: the file is longer)");
+});
+
+test("run write_file: created, and replaced", async () => {
+  let f = fake({ write: { created: true, name: "todo.txt", bytes: 5 } });
+  assert.equal(await A.run(call("write_file", { folder: "Work", path: "todo.txt", content: "Hello" }), FOLDERS, f.files, 100), "Created todo.txt (5 bytes).");
+  assert.deepEqual(plain(f.calls), [["write", "b", "todo.txt", "Hello"]]);
+
+  f = fake({ write: { created: false, name: "todo.txt", bytes: 5 } });
+  assert.equal(await A.run(call("write_file", { folder: "Work", path: "todo.txt", content: "Hello" }), FOLDERS, f.files, 100), "Replaced todo.txt (5 bytes).");
+});
+
+test("run: a files method that rejects gives Error with its message", async () => {
+  const f = fake({ read: new Error("Permission denied") });
+  assert.equal(await A.run(call("read_file", { folder: "Notes", path: "x" }), FOLDERS, f.files, 100), "Error: Permission denied");
+});
+
+test("run: a call that describe refuses never touches files", async () => {
+  const f = fake({ list: { entries: [], truncated: false }, read: { text: "", truncated: false }, write: { created: true, name: "x", bytes: 0 } });
+  assert.equal(await A.run(call("read_file", { folder: "Photos", path: "x" }), FOLDERS, f.files, 100),
+    'Error: No shared folder is called "Photos". Shared folders: Notes, Work.');
+  assert.equal(await A.run(call("write_file", { folder: "Notes", path: "x.txt" }), FOLDERS, f.files, 100), "Error: The tool call has no text to write.");
+  assert.equal(await A.run(call("delete_all", {}), FOLDERS, f.files, 100), "Error: There is no tool called delete_all.");
+  assert.equal(f.calls.length, 0);
+});
+
+test("the module touches no DOM, storage, console or network", () => {
+  assert.doesNotMatch(src, /localStorage|sessionStorage|indexedDB|document\.|console\.|fetch\(|XMLHttpRequest|WebSocket/);
+});
