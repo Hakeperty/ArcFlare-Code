@@ -2,7 +2,6 @@ package net.arcflare.app;
 
 import android.app.ActivityManager;
 import android.content.Context;
-import android.net.ConnectivityManager;
 import android.os.Build;
 
 import com.getcapacitor.JSArray;
@@ -56,8 +55,15 @@ public class LocalAiPlugin extends Plugin {
         return d;
     }
 
+    // Capacitor turns an exception thrown by a plugin method into a crash of the whole app, and so does one thrown on
+    // the two threads below. So info(), the download and all engine work answer the page with reject() instead.
     @PluginMethod
     public void info(PluginCall call) {
+        try { call.resolve(facts()); }
+        catch (Throwable t) { call.reject("could not read this phone's details: " + t); }
+    }
+
+    private JSObject facts() {
         JSObject r = new JSObject();
         r.put("available", LlamaEngine.AVAILABLE);
         r.put("manufacturer", Build.MANUFACTURER);
@@ -83,8 +89,8 @@ public class LocalAiPlugin extends Plugin {
             catch (Exception ignored) { }
         }
         r.put("maxFreqsKHz", freqs);
-        ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
-        r.put("metered", cm != null && cm.isActiveNetworkMetered());
+        // Whether the connection is metered is not asked: that needs ACCESS_NETWORK_STATE, which this app does not hold,
+        // and asking without it closed the app (1.0.457825). The notice says to use Wi-Fi instead.
         r.put("freeDiskMb", dir().getUsableSpace() / (1024 * 1024));
         r.put("loaded", loaded);
         JSArray models = new JSArray();
@@ -101,7 +107,7 @@ public class LocalAiPlugin extends Plugin {
             models.put(o);
         }
         r.put("models", models);
-        call.resolve(r);
+        return r;
     }
 
     @PluginMethod
@@ -150,7 +156,7 @@ public class LocalAiPlugin extends Plugin {
                 if (cancel.get()) throw new IOException("cancelled");   // a Delete after the last chunk must still win
                 if (!part.renameTo(done)) throw new IOException("could not save the model");
                 call.resolve();
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 part.delete();
                 call.reject("download failed: " + e.getMessage());
             } finally {
@@ -168,7 +174,7 @@ public class LocalAiPlugin extends Plugin {
         ModelCatalog.Model m = ModelCatalog.find(call.getString("id"));
         if (m == null) { call.reject("unknown model"); return; }
         if (m.id.equals(downloading)) cancel.set(true);   // the other screen may still be writing it
-        engine.execute(() -> {
+        onEngine(call, () -> {
             if (m.id.equals(loaded)) { LlamaEngine.nFree(); loaded = null; }
             new File(dir(), m.file).delete();
             new File(dir(), m.file + ".part").delete();
@@ -185,7 +191,7 @@ public class LocalAiPlugin extends Plugin {
         if (!f.isFile() || f.length() != m.size) { call.reject("download the model first"); return; }
         int threads = Math.max(1, Math.min(8, call.getInt("threads", 4)));
         int ctx = Math.max(512, Math.min(8192, call.getInt("ctx", 2048)));
-        engine.execute(() -> {
+        onEngine(call, () -> {
             LlamaEngine.start(getContext().getApplicationInfo().nativeLibraryDir);
             String err = LlamaEngine.nLoad(f.getAbsolutePath(), threads, ctx);
             if (err != null) { loaded = null; call.reject(err); return; }
@@ -211,7 +217,7 @@ public class LocalAiPlugin extends Plugin {
             roles[i] = role;
             contents[i] = o.optString("content");
         }
-        engine.execute(() -> {
+        onEngine(call, () -> {
             long t0 = System.currentTimeMillis();
             String err = LlamaEngine.begin(roles, contents, maxTokens);
             JSObject r = new JSObject();
@@ -233,6 +239,14 @@ public class LocalAiPlugin extends Plugin {
         });
     }
 
+    /** Engine work on its own thread. A failure there (a native method that is missing, no memory) is told to the page. */
+    private void onEngine(PluginCall call, Runnable work) {
+        engine.execute(() -> {
+            try { work.run(); }
+            catch (Throwable t) { call.reject("Local AI stopped: " + t); }
+        });
+    }
+
     private void emit(StringBuilder batch) {
         JSObject t = new JSObject();
         t.put("text", batch.toString());
@@ -241,13 +255,18 @@ public class LocalAiPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void stop(PluginCall call) { LlamaEngine.nStop(); call.resolve(); }
+    public void stop(PluginCall call) { stopEngine(); call.resolve(); }
+
+    /** Asks a running answer to stop. Never throws: a phone without the engine has nothing to stop. */
+    private static void stopEngine() {
+        try { if (LlamaEngine.AVAILABLE) LlamaEngine.nStop(); } catch (Throwable t) { /* nothing is running */ }
+    }
 
     @PluginMethod
     public void unload(PluginCall call) {
         if (!LlamaEngine.AVAILABLE) { call.resolve(); return; }
-        LlamaEngine.nStop();
-        engine.execute(() -> { LlamaEngine.nFree(); loaded = null; call.resolve(); });
+        stopEngine();
+        onEngine(call, () -> { LlamaEngine.nFree(); loaded = null; call.resolve(); });
     }
 
     /** HTTPS to the model's repo, following its redirects only to Hugging Face hosts (ModelCatalog.allowedHost). */
@@ -278,7 +297,7 @@ public class LocalAiPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         cancel.set(true);
-        if (LlamaEngine.AVAILABLE) LlamaEngine.nStop();
+        stopEngine();
         engine.execute(() -> { if (LlamaEngine.AVAILABLE) LlamaEngine.nFree(); });
         engine.shutdown();
         downloads.shutdown();

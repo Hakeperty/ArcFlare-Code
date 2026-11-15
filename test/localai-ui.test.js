@@ -19,7 +19,7 @@ const FAKE = () => {
   const calls = (window.__calls = []);
   window.__chatResults = [];
   window.__native = {
-    info: async () => ({ available: true, socModel: "SM8550", ramMb: 7600, freeDiskMb: 40000, metered: window.__metered || false, loaded: window.__loaded || null, models: models.map((m) => ({ ...m, partial: m.id === window.__partial })) }),
+    info: async () => ({ available: true, socModel: "SM8550", ramMb: 7600, freeDiskMb: 40000, loaded: window.__loaded || null, models: models.map((m) => ({ ...m, partial: m.id === window.__partial })) }),
     download: async (id) => {
       calls.push(["download", id]);
       const m = models.find((x) => x.id === id);
@@ -58,13 +58,12 @@ const FILES = () => {
   };
 };
 
-async function open(t, { scheme = "light", metered = false, files = false, folders = [] } = {}) {
+async function open(t, { scheme = "light", files = false, folders = [] } = {}) {
   const browser = await pw.chromium.launch();
   t.after(() => browser.close());
   const page = await (await browser.newContext({ ...pw.devices["Pixel 7"], colorScheme: scheme })).newPage();
   await page.setContent('<!doctype html><html><head><meta charset="utf-8"></head><body><main class="page"><section class="view"><div id="root" class="local-root" data-assets="assets/"></div></section></main></body></html>');
   await page.addStyleTag({ path: path.join(UI, "style.css") });
-  await page.evaluate((m) => { window.__metered = m; }, metered);
   await page.evaluate(FAKE);
   if (files) {
     await page.addScriptTag({ path: path.join(UI, "phoneagent.js") });
@@ -88,9 +87,9 @@ const toolCall = (name, args) => `<tool_call>\n${JSON.stringify({ name, argument
 const APPROVE = (page) => page.getByRole("group", { name: "Arc Pocket asks to use a tool" });
 
 test("Local AI: the notice says what it costs, and nothing downloads until the box is ticked", { skip }, async (t) => {
-  const page = await open(t, { metered: true });
+  const page = await open(t);
   const text = await page.locator("#root").innerText();
-  for (const s of ["Size:", "Heat and battery:", "Speed:", "Memory:", "Mistakes:", "metered connection", "goes when you uninstall ArcFlare",
+  for (const s of ["Size:", "Heat and battery:", "Speed:", "Memory:", "Mistakes:", "Use Wi-Fi if you pay for mobile data", "goes when you uninstall ArcFlare",
     "Snapdragon 8 Gen 2", "Arc Pocket on Qwen3 1.7B (1.8 GB), suggested for this phone"]) assert.ok(text.includes(s), s);
   await page.getByRole("button", { name: /^Download Qwen3 1\.7B/ }).click();
   await page.getByText("Tick the box first").waitFor();
