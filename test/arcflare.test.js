@@ -712,3 +712,23 @@ test("a quote or newline in a model id cannot add TOML keys", () => {
   }
   fs.rmSync(d, { recursive: true, force: true });
 });
+
+// Hugging Face's and llama.cpp's caches hold the weights in blobs/ and a link to them in snapshots/. A model reached
+// only through such a link was not found at all ("not installed" for a model that is).
+test("a model reached through a link, like the Hugging Face cache, is found", { skip: process.platform === "win32" && "links need extra rights on Windows" }, () => {
+  const d = tmpdir("hf-links");
+  const blob = put(d, "models--vendorc--Linktest-3L-GGUF", "blobs", "0123abcd");
+  const snap = repo(d, "vendorc", "Linktest-3L");
+  fs.mkdirSync(snap, { recursive: true });
+  fs.symlinkSync(path.relative(snap, blob), path.join(snap, "Linktest-3L-Q4_K_M.gguf"));
+  fs.symlinkSync(path.join(d, "nowhere.gguf"), path.join(snap, "Broken-Q4_K_M.gguf"));   // a broken link is skipped
+  // a model folder linked in from another disk
+  const other = tmpdir("hf-links-other");
+  put(other, "Elsewhere-7E-Q8_0.gguf");
+  fs.symlinkSync(other, path.join(d, "linked-folder"), "dir");
+
+  const names = discoverIn(d).map((m) => path.basename(m.file)).sort();
+  assert.deepStrictEqual(names, ["Elsewhere-7E-Q8_0.gguf", "Linktest-3L-Q4_K_M.gguf"]);
+  fs.rmSync(d, { recursive: true, force: true });
+  fs.rmSync(other, { recursive: true, force: true });
+});
