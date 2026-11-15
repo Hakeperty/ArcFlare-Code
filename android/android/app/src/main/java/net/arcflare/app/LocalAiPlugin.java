@@ -56,11 +56,11 @@ public class LocalAiPlugin extends Plugin {
     }
 
     // Capacitor turns an exception thrown by a plugin method into a crash of the whole app, and so does one thrown on
-    // the two threads below. Every method therefore answers the page with reject() instead.
+    // the two threads below. So info(), the download and all engine work answer the page with reject() instead.
     @PluginMethod
     public void info(PluginCall call) {
         try { call.resolve(facts()); }
-        catch (Exception e) { call.reject("could not read this phone's details: " + e); }
+        catch (Throwable t) { call.reject("could not read this phone's details: " + t); }
     }
 
     private JSObject facts() {
@@ -156,7 +156,7 @@ public class LocalAiPlugin extends Plugin {
                 if (cancel.get()) throw new IOException("cancelled");   // a Delete after the last chunk must still win
                 if (!part.renameTo(done)) throw new IOException("could not save the model");
                 call.resolve();
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 part.delete();
                 call.reject("download failed: " + e.getMessage());
             } finally {
@@ -255,12 +255,17 @@ public class LocalAiPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void stop(PluginCall call) { if (LlamaEngine.AVAILABLE) LlamaEngine.nStop(); call.resolve(); }
+    public void stop(PluginCall call) { stopEngine(); call.resolve(); }
+
+    /** Asks a running answer to stop. Never throws: a phone without the engine has nothing to stop. */
+    private static void stopEngine() {
+        try { if (LlamaEngine.AVAILABLE) LlamaEngine.nStop(); } catch (Throwable t) { /* nothing is running */ }
+    }
 
     @PluginMethod
     public void unload(PluginCall call) {
         if (!LlamaEngine.AVAILABLE) { call.resolve(); return; }
-        LlamaEngine.nStop();
+        stopEngine();
         onEngine(call, () -> { LlamaEngine.nFree(); loaded = null; call.resolve(); });
     }
 
@@ -292,7 +297,7 @@ public class LocalAiPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         cancel.set(true);
-        if (LlamaEngine.AVAILABLE) LlamaEngine.nStop();
+        stopEngine();
         engine.execute(() -> { if (LlamaEngine.AVAILABLE) LlamaEngine.nFree(); });
         engine.shutdown();
         downloads.shutdown();

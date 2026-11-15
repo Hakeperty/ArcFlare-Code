@@ -269,11 +269,14 @@ test("native source lint: no Android call that needs a permission the manifest d
 
 test("native source lint: Local AI answers the page with an error instead of throwing (an exception there closes the app)", () => {
   const p = read(path.join(native, "java", "net", "arcflare", "app", "LocalAiPlugin.java"));
-  assert.match(p, /public void info\(PluginCall call\) \{\s*try \{ call\.resolve\(facts\(\)\); \}\s*catch \(Exception e\) \{ call\.reject\(/);
+  assert.match(p, /public void info\(PluginCall call\) \{\s*try \{ call\.resolve\(facts\(\)\); \}\s*catch \(Throwable t\) \{ call\.reject\(/);
   // engine work runs through onEngine(), which catches everything; only the shutdown in handleOnDestroy may bypass it
   assert.match(p, /private void onEngine\(PluginCall call, Runnable work\) \{\s*engine\.execute\(\(\) -> \{\s*try \{ work\.run\(\); \}\s*catch \(Throwable t\) \{ call\.reject\(/);
   assert.equal([...strip(p).matchAll(/engine\.execute\(/g)].length, 2);
-  assert.match(p, /public void stop\(PluginCall call\) \{ if \(LlamaEngine\.AVAILABLE\) LlamaEngine\.nStop\(\);/);
+  // the only direct call into the engine outside onEngine() is inside stopEngine(), which catches everything
+  assert.match(p, /try \{ if \(LlamaEngine\.AVAILABLE\) LlamaEngine\.nStop\(\); \} catch \(Throwable t\)/);
+  assert.equal([...strip(p).matchAll(/LlamaEngine\.nStop\(/g)].length, 1);
+  assert.match(p, /\} catch \(Throwable e\) \{\s*part\.delete\(\);/);
 });
 
 test("native source lint: cleartext is allowed only in the network security config, and the plain-HTTP page path is gone from the project", () => {
