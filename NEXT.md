@@ -85,25 +85,26 @@ Next, in this order, each as its own commit:
 
 1. **Test Local AI on real phones** (step 3 above): a Galaxy S22 or later, a Pixel, and one MediaTek phone. Write down
    speed, heat and battery for each, and adjust `CHIPS` in `lib/hub/ui/localai.js` from what you see.
-2. **Two Android builds from one project** (owner's decision, 2026-11-14): Gradle product flavors.
-   - `chat`: what exists now, `net.arcflare.app`, the build on /android.
-   - `agent`: "ArcFlare Agent", `net.arcflare.app.agent`, installable next to the chat build. Its permissions and services
-     live only in `src/agent/AndroidManifest.xml`, so the chat build never asks for them. Its own download on the site,
-     behind extra warnings. CI builds both; `inspect-apk.js` checks each build's manifest.
-3. **The on-phone agent (agent build only)**: the person picks the model for each chat: the phone's Arc Pocket, or the
-   paired computer's model when it can be reached. Tools always run on the phone, each one shown and approved like
-   approvals on the computer. Tools, safest first, each with its own warning screen:
-   1. Files, only in folders picked with Android's folder picker (Storage Access Framework); writes ask first.
-   2. Phone actions the person finishes: open apps and links, alarms and timers, calendar events, drafted texts and
+2. **Two Android builds from one project**: done. Gradle product flavors `chat` (ArcFlare, `net.arcflare.app`) and
+   `agent` (ArcFlare Agent, `net.arcflare.app.agent`); the agent's code is in `android/android/app/src/agent`. CI builds
+   and inspects both. ArcFlare Agent updates from its own `android-agent.json` on the site.
+   Still to do: sign the agent APK and put it on the site behind its own warnings (rule 9 has the signing steps;
+   `site-publish.js --agent`), with its section on /android, its docs and its post.
+3. **The on-phone agent (agent build only)**: tools always run on the phone, each one shown and approved.
+   1. Files, only in folders picked with Android's folder picker: done (see "Files for Arc Pocket" in
+      `android/README.md`). Only Qwen3 1.7B gets tools; the measurements are in that section.
+   2. Next: the person picks the model for each chat, the phone's Arc Pocket or the paired computer's model when it
+      can be reached.
+   3. Phone actions the person finishes: open apps and links, alarms and timers, calendar events, drafted texts and
       emails, sharing. Each opens Android's own screen.
-   3. Reading notifications (NotificationListenerService, switched on in Android settings). It can see message
+   4. Reading notifications (NotificationListenerService, switched on in Android settings). It can see message
       previews from every app, so the warning says so.
-   4. Controlling other apps (AccessibilityService): tap, type, read the screen. It can see everything, passwords
+   5. Controlling other apps (AccessibilityService): tap, type, read the screen. It can see everything, passwords
       included, and Google Play allows it only for uses an app declares and Google approves, so plan on the agent
-      build coming from arcflare.net only. It gets
-      the loudest warning, an off switch in the app, and a notice while it is active.
-   It runs an **Arc Pocket Agent** Arc (`lib/arcs`): the same bases, instructions for phone tools. Qwen3 supports tool
-      calls through its chat template (`common_chat_templates_apply` with `tools`).
+      build coming from arcflare.net only. It gets the loudest warning, an off switch in the app, and a notice while
+      it is active.
+   Each new tool gets its own warning screen, and its permission or service goes in `src/agent/AndroidManifest.xml`
+   only, so the chat build never asks for it.
 4. **NPU (Snapdragon)**: ONNX Runtime with Qualcomm's QNN libraries. Stopped until the owner decides
    ([rule 6](rules/06-licensing.md)). Read on 2026-11-14: the POM of `com.qualcomm.qti:qnn-runtime` 2.51.0 on Maven
    Central names the "Qualcomm AI Hub Model License" (softwarecenter.qualcomm.com, `licenses/ai_model_hub/v1/LICENSE.pdf`).

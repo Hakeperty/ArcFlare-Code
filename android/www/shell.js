@@ -444,7 +444,7 @@
     $("pair-local").hidden = !(local && window.ArcFlareLocalAI);
     $("pair-local").addEventListener("click", function () {
       show("v-local");
-      if (!localView) localView = window.ArcFlareLocalAI.mount($("local-root"), local); else localView.refresh();
+      if (!localView) localView = window.ArcFlareLocalAI.mount($("local-root"), local, Native.phoneFiles ? Native.phoneFiles() : null); else localView.refresh();
     });
     $("local-back").addEventListener("click", function () { showPairScreen(""); });
     $("upd-back").addEventListener("click", function () { if (!upd.busy) show(upd.back); });

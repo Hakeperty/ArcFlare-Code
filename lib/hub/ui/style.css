@@ -1078,6 +1078,10 @@ fieldset.muted-off { opacity: 0.5; }
 .local-msg { margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 15px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .local-msg.user { align-self: flex-end; max-width: 85%; background: var(--accent-soft, var(--surface-2)); }
 .local-msg.assistant { align-self: flex-start; max-width: 100%; background: var(--surface-2); }
+.local-msg.tool { align-self: flex-start; max-width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: 14px; line-height: 20px; }
+.local-approve { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; }
+.local-approve .btn { flex: 1; margin: 0; }
+.local-pre { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-family: var(--mono); font-size: 13px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 40vh; overflow: auto; }
 .local-send { display: flex; gap: 8px; align-items: flex-end; }
 .local-input { flex: 1; min-width: 0; resize: vertical; font: inherit; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--foreground); }
 .local-tools { display: flex; gap: 8px; flex-wrap: wrap; }

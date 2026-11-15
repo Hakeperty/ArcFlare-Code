@@ -192,6 +192,10 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.ok(up.includes("c = open(OnlineUpdate.manifest(Edition.AGENT));") && up.includes("c = open(OnlineUpdate.apkUrl(apk));"));
   assert.doesNotMatch(up, /call\.getString\("url"\)|getString\("apk"\)/, "no address taken from the page");
   assert.ok(up.includes("String bad = OnlineUpdate.problem(code, apk, size, sha, Edition.AGENT);"));
+  // The computer's app file is the chat app's: ArcFlare Agent says which app it is, and the page does not offer it there.
+  assert.ok(up.includes('r.put("agent", Edition.AGENT);'));
+  const page = read(path.join(root, "..", "lib", "hub", "ui", "app.js"));
+  assert.match(page, /if \(mine\.agent \|\| !offer \|\| !offer\.available \|\|/);
   // Local AI: models only from ModelCatalog (the page names an id), redirects followed only to Hugging Face hosts,
   // size and SHA-256 checked before the file is kept, files in the app's private storage, roles limited.
   const ai = read(path.join(dir, "LocalAiPlugin.java"));

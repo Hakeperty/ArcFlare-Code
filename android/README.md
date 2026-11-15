@@ -207,6 +207,30 @@ behavioural test, because a real out-of-memory failure cannot be made here.
 - **Checked here:** the engine was built for arm64 with the NDK, and the same `arcflare_llm.cpp` and `LlamaEngine.java`
   were run on a Linux x86 machine with the real Qwen3 0.6B (load, a two-turn chat, stop, a too-long conversation, free).
 
+### Files for Arc Pocket (ArcFlare Agent only)
+
+In the agent build the chat has a **Files** button. The person reads a warning, ticks a box and picks a folder with
+Android's own folder picker (Storage Access Framework; no storage permission). Arc Pocket can then ask to list, read
+or write text files in that folder. Every call is shown first (**Allow** or **Do not allow**), a write shows the whole
+new text, and nothing runs without a tap. **Stop sharing** forgets a folder.
+
+- **Native:** `src/agent/java/.../PhoneFilesPlugin.java` (folders, pickFolder, forget, list, read, write) and
+  `PhonePath.java` (refuses `..`, backslashes, control characters, over-long paths). Reads stop at 64 KB, writes at
+  256 KB, lists at 200 entries. A file with a zero byte is refused as not text.
+- **Page:** `lib/hub/ui/phoneagent.js` (the instructions, the three tools in Qwen3's own tool format, the parser for
+  `<tool_call>` blocks, the sentence shown before a call) and the tool loop in `localai.js`: at most 4 rounds per
+  question and 3 calls per answer. Tool results go back to the model as `<tool_response>` messages.
+- **Arc Pocket Agent:** the instructions are `lib/arcs/arc-pocket-agent.Modelfile`'s (`test/phoneagent.test.js` keeps
+  them equal).
+- **Only Qwen3 1.7B gets tools** (`MODELS` in `phoneagent.js`). Measured on 2026-11-15 on a Linux machine with
+  llama.cpp `b12387` and the real model files, three runs of each of six file requests and two plain questions: Qwen3
+  1.7B made a call the app runs correctly in 15 of 18 file requests (in 3 of those it named a folder inside the shared
+  one as the folder, which `describe()` resolves; it answered one phrasing of "save a file" in words instead, three
+  times), used the file's text correctly in 3 of 3 follow-ups, and called no tool for the 6 plain questions. Qwen3
+  0.6B made the right call in 7 of 18, and in none of the 9 reads and lists. One wording per request and three
+  runs each: a first look, not a benchmark.
+- **Not built yet:** choosing the computer's model for a chat, and the other tools in `NEXT.md` 8.3.
+
 ## Updates
 
 - **From the computer (signed in):** `node scripts/build-apk.js --publish` puts the APK on this computer's hub; the
@@ -428,6 +452,10 @@ Nothing below was executed on Android. Check each on a real phone (Android 8+ wi
 19. **Local AI on a phone:** that the arm64 engine loads its CPU variants from `nativeLibraryDir` on a real phone, the
     download from Hugging Face completes and verifies, answers stream, Stop works, and how hot and fast it is on each
     chip family. No speed or heat has been measured on any phone.
+20. **Files for Arc Pocket (ArcFlare Agent):** that Android's folder picker opens and the grant survives a restart, that
+    list, read and write work on real storage (the phone's own, an SD card, a cloud provider's folder), that a new
+    file keeps the name it was given, and how often Qwen3 1.7B calls the tools correctly on a phone. The plugin's Java
+    is compiled in CI; none of it has run on a device.
 
 ## What the tests cover (and not)
 

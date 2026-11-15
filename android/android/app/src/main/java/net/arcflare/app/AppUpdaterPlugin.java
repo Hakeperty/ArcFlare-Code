@@ -41,7 +41,7 @@ import java.security.MessageDigest;
  * /api/app/version announced; Android then refuses the update unless it is signed with this app's own key,
  * and always asks the user to confirm.
  *
- *   info()                         -> { versionCode, versionName, canInstall }
+ *   info()                         -> { versionCode, versionName, agent, canInstall }
  *   begin({ size, sha256 })        -> starts a session (any previous one is abandoned)
  *   write({ data })                -> base64 chunk, in order
  *   commit()                       -> verifies, commits; resolves { status } once Android has answered
@@ -76,6 +76,7 @@ public class AppUpdaterPlugin extends Plugin {
             long code = Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode;
             r.put("versionCode", code);
             r.put("versionName", pi.versionName);
+            r.put("agent", Edition.AGENT);   // the page offers the computer's app file to the chat app only
         } catch (PackageManager.NameNotFoundException e) {
             call.reject("cannot read this app's version");
             return;

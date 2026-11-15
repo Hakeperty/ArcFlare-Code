@@ -262,3 +262,18 @@ test("run: a call that describe refuses never touches files", async () => {
 test("the module touches no DOM, storage, console or network", () => {
   assert.doesNotMatch(src, /localStorage|sessionStorage|indexedDB|document\.|console\.|fetch\(|XMLHttpRequest|WebSocket/);
 });
+
+test("describe: with one shared folder, a folder name it does not know is a folder inside it", () => {
+  const d = plain(A.describe(call("read_file", { folder: "work", path: "ideas.md" }), ONE));
+  assert.equal(d.ok, true);
+  assert.equal(d.title, "Read work/ideas.md in Notes");
+  assert.deepEqual(d.folder, { id: "n1", name: "Notes" });
+  assert.equal(d.path, "work/ideas.md");
+  assert.equal(plain(A.describe(call("list_files", { folder: "work" }), ONE)).path, "work");
+  // with two folders shared it stays an error: nothing says which one was meant
+  assert.equal(A.describe(call("read_file", { folder: "photos", path: "ideas.md" }), FOLDERS).ok, false);
+});
+
+test("only the model that passed the tool measurements gets tools", () => {
+  assert.deepEqual(plain(A.MODELS), ["qwen3-1.7b"]);
+});
