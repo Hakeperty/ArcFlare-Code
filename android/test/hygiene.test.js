@@ -236,6 +236,46 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.equal(read(path.join(native, "res", "layout", "activity_main.xml")).includes('android:importantForAutofill="noExcludeDescendants"'), true);
 });
 
+// 1.0.457825 closed when Local AI opened: LocalAiPlugin asked whether the connection was metered, which needs a
+// permission the app does not hold, and Capacitor turns an exception in a plugin method into a crash.
+test("native source lint: no Android call that needs a permission the manifest does not ask for", () => {
+  const manifest = read(path.join(native, "AndroidManifest.xml"));
+  const NEEDS = {
+    ACCESS_NETWORK_STATE: /\bConnectivityManager\b|\bNetworkCapabilities\b|\bNetworkRequest\b|isActiveNetworkMetered|getActiveNetwork/,
+    ACCESS_WIFI_STATE: /\bWifiManager\b/,
+    READ_PHONE_STATE: /\bTelephonyManager\b/,
+    VIBRATE: /\bVibrator\b|\bVibrationEffect\b|\.vibrate\(/,
+    WAKE_LOCK: /\bWakeLock\b|newWakeLock/,
+    MODIFY_AUDIO_SETTINGS: /setSpeakerphoneOn|\.setMode\(|setCommunicationDevice/,
+    ACCESS_FINE_LOCATION: /\bLocationManager\b|FusedLocation/,
+    BLUETOOTH_CONNECT: /\bBluetoothAdapter\b|\bBluetoothManager\b/,
+    READ_CONTACTS: /\bContactsContract\b/,
+    CAMERA: /\bCameraManager\b|android\.hardware\.Camera/,
+    FOREGROUND_SERVICE: /startForeground\(/,
+    SCHEDULE_EXACT_ALARM: /setExact\(|setExactAndAllowWhileIdle|setAlarmClock/,
+  };
+  const src = path.join(root, "android", "app", "src");
+  const files = [];
+  for (const set of ["main", "chat", "agent"]) {
+    const dir = path.join(src, set, "java", "net", "arcflare", "app");
+    for (const f of fs.readdirSync(dir)) if (f.endsWith(".java")) files.push(path.join(dir, f));
+  }
+  assert.ok(files.length >= 12, "the app's Java was found");
+  for (const [permission, api] of Object.entries(NEEDS)) {
+    if (manifest.includes("android.permission." + permission + '"')) continue;
+    for (const f of files) assert.doesNotMatch(strip(read(f)), api, path.basename(f) + " uses an API that needs " + permission);
+  }
+});
+
+test("native source lint: Local AI answers the page with an error instead of throwing (an exception there closes the app)", () => {
+  const p = read(path.join(native, "java", "net", "arcflare", "app", "LocalAiPlugin.java"));
+  assert.match(p, /public void info\(PluginCall call\) \{\s*try \{ call\.resolve\(facts\(\)\); \}\s*catch \(Exception e\) \{ call\.reject\(/);
+  // engine work runs through onEngine(), which catches everything; only the shutdown in handleOnDestroy may bypass it
+  assert.match(p, /private void onEngine\(PluginCall call, Runnable work\) \{\s*engine\.execute\(\(\) -> \{\s*try \{ work\.run\(\); \}\s*catch \(Throwable t\) \{ call\.reject\(/);
+  assert.equal([...strip(p).matchAll(/engine\.execute\(/g)].length, 2);
+  assert.match(p, /public void stop\(PluginCall call\) \{ if \(LlamaEngine\.AVAILABLE\) LlamaEngine\.nStop\(\);/);
+});
+
 test("native source lint: cleartext is allowed only in the network security config, and the plain-HTTP page path is gone from the project", () => {
   const nsc = read(path.join(native, "res", "xml", "network_security_config.xml"));
   assert.match(nsc, /cleartextTrafficPermitted="true"/);
