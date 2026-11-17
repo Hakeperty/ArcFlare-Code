@@ -477,6 +477,9 @@ Nothing below was executed on Android. Check each on a real phone (Android 8+ wi
     assistant app with only the `ASSIST` filter (we expect not), what the gesture sends (`ACTION_ASSIST` with extras?)
     on a Galaxy S24 Ultra, that `consume()` and the `assist` event reach the page, and that Back from the chat connects.
     The plugin's Java is compiled in CI; it has not run on a device.
+    Also: `AssistPlugin` keeps its "started by the gesture" flag until the page asks for it, so check that a gesture
+    while the hub UI is on screen does not open the chat the next time the shell loads, and that an activity restored
+    from recents after a gesture does not reopen it.
 
 ## What the tests cover (and not)
 

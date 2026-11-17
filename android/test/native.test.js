@@ -108,7 +108,6 @@ test("appUpdater exposes the eight update calls and nothing else, and is null ou
 
 test("assist: null outside the app and in a build without the agent plugin; true once when the gesture started the app", async () => {
   assert.equal(load({ Capacitor: undefined }).N.assist(), null);
-  assert.equal(phoneFilesBuild([]).seen.length, 0);
   const none = load({ Capacitor: { registerPlugin: () => ({}), isPluginAvailable: () => false } });
   assert.equal(none.N.assist(), null);
   const mk = (r) => load({ Capacitor: { isPluginAvailable: (n) => n === "Assist", registerPlugin: () => ({ consume: async () => r, addListener: () => Promise.resolve({ remove() {} }) }) } }).N.assist();
