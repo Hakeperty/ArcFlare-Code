@@ -242,11 +242,12 @@ the Local AI chat. **None of this has run on a phone yet.**
 - **The assistant:** `ArcVoiceService` (a `VoiceInteractionService`, described by `res/xml/arcflare_voice_interaction.xml`)
   and `ArcVoiceSessionService`. Both require `BIND_VOICE_INTERACTION`, which only the system holds. A gesture starts a
   session that opens `MainActivity` with `ACTION_ASSIST` (`startAssistantActivity`, else an ordinary start) and closes.
-- **Voice input:** Android requires an assistant to name a recognition service, and makes it the phone's speech
-  recognizer while the app is the assistant. `ArcRecognitionService` hands each request to the phone's own recognizer
-  (`RecognizerPick.java`: never itself, Google's first, else any other) and passes the answers back. It records nothing
-  itself, and Android's `RecognitionService` refuses callers that lack `RECORD_AUDIO`. Voice typing in other apps and
-  spoken answers to calls go through it.
+- **Voice input:** Android requires an assistant to name a recognition service. While the app is the assistant, apps
+  that ask for the phone's default speech recognizer may be sent to it (we have not confirmed which apps; keyboards
+  such as Gboard use their own). `ArcRecognitionService` hands each request to the phone's own recognizer
+  (`RecognizerPick.java`: never itself, Google's first, else any other), passes the answers back and lets go of that
+  recognizer after the final answer or an error. It records nothing itself, and Android's `RecognitionService` refuses
+  callers that lack `RECORD_AUDIO`.
 - **Native:** `AssistPlugin.java`: `consume()` says once whether the app was started by the gesture, and an `assist`
   event fires when the gesture reaches an app that is already running.
 - **Page:** `shell.js` opens the Local AI chat when the app is started by the gesture (it needs no computer), and Back
@@ -483,11 +484,11 @@ Nothing below was executed on Android. Check each on a real phone (Android 8+ wi
     is compiled in CI; none of it has run on a device.
 21. **The assistant (ArcFlare Agent):** that Settings offers the app as Digital assistant app on the Galaxy S24 Ultra
     and on a Pixel; that the gesture opens the Local AI chat (through `startAssistantActivity` or the fallback); that
-    the session leaves no window over the app; that voice typing in another app and a spoken answer to a call still
-    work while ArcFlare Agent is the assistant (through `ArcRecognitionService`); and that choosing Google again restores
+    the session leaves no window over the app; which apps reach `ArcRecognitionService` while ArcFlare Agent is the
+    assistant, and that they (a spoken answer to a call, at least) still get answers through it; and that choosing Google again restores
     everything. Also: `AssistPlugin` keeps its "started by the gesture" flag until the page asks for it, so check that a
     gesture while the hub UI is on screen does not open the chat the next time the shell loads, and that an activity
-    restored from recents after a gesture does not reopen it. The Java is compiled in CI; none of it has run on a device.
+    restored from recents after a gesture does not reopen it. The four classes compile against `android.jar` (API 36) with `javac`; CI builds the APK; none of it has run on a device.
 
 ## What the tests cover (and not)
 

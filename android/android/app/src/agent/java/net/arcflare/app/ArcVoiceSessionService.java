@@ -22,12 +22,7 @@ public class ArcVoiceSessionService extends VoiceInteractionSessionService {
             super.onShow(args, showFlags);
             // AssistPlugin sees ACTION_ASSIST and the page opens the Local AI chat.
             Intent open = new Intent(getContext(), MainActivity.class).setAction(Intent.ACTION_ASSIST);
-            try {
-                startAssistantActivity(open);
-            } catch (RuntimeException e) {
-                // Not allowed as an assistant activity on this phone: open the app the ordinary way.
-                getContext().startActivity(open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            }
+            startAssistantActivity(open);
             hide();
         }
     }
