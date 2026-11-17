@@ -405,7 +405,10 @@ test("an agent can be pinned to one model: it boots on that model, and changing 
   await sup.wake(a.id, "hi");
   await sup.whenIdle(a.id);
   assert.strictEqual(asked.pop(), "standard", "back to the tier");
-  await assert.rejects(() => sup.setModel(a.id, "a/b"), { code: "BAD_MODEL" });
+  await assert.rejects(() => sup.setModel(a.id, "a\\b"), { code: "BAD_MODEL" });
+  const hf = "hf.co/unsloth/qwen3-gguf:q4_k_m"; // an installed id with slashes is a real model, not a path
+  assert.strictEqual(sup.create({ name: "hf", cwd: PROJ, model: hf }).model, hf);
+  assert.strictEqual((await sup.setModel(a.id, hf)).model, hf);
 });
 
 test("YOLO mode: runs without asking, still records what ran, approves what is waiting, persists, and turns off", async () => {
