@@ -2,14 +2,39 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application>
-        <!-- ArcFlare Agent only: this app is set up to receive the assist gesture (ACTION_ASSIST); untested on a device. On its own this does not get the app
-             listed as the default assistant: that also needs a VoiceInteractionService (android/README.md). The same
-             exported activity, no new component. The chat build (ArcFlare) does not have this filter. -->
+        <!-- ArcFlare Agent only: the assist gesture (ACTION_ASSIST) opens this activity. With ArcVoiceService below, the app is
+             meant to be offered as the default assistant; untested on a device. The chat build (ArcFlare) has none of this. -->
         <activity android:name=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- The assistant itself (ArcVoiceService). Android binds these two only with BIND_VOICE_INTERACTION, which only the
+             system holds, so no app can start them. -->
+        <service
+            android:name=".ArcVoiceService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true">
+            <meta-data android:name="android.voice_interaction" android:resource="@xml/arcflare_voice_interaction" />
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".ArcVoiceSessionService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true" />
+
+        <!-- Required of an assistant. It passes voice input on to the phone's own recognizer (ArcRecognitionService),
+             and RecognitionService refuses callers without RECORD_AUDIO. -->
+        <service
+            android:name=".ArcRecognitionService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>
