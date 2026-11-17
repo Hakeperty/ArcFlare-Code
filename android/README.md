@@ -244,8 +244,8 @@ the Local AI chat. **None of this has run on a phone yet.**
   session that opens `MainActivity` with `ACTION_ASSIST` (`startAssistantActivity`, else an ordinary start) and closes.
 - **Voice input:** Android requires an assistant to name a recognition service. While the app is the assistant, apps
   that ask for the phone's default speech recognizer may be sent to it (we have not confirmed which apps; keyboards
-  such as Gboard use their own). `ArcRecognitionService` hands each request to the phone's own recognizer
-  (`RecognizerPick.java`: never itself, Google's first, else any other), passes the answers back and lets go of that
+  such as Gboard use their own). `ArcRecognitionService` hands each request to another installed recognizer
+  (`RecognizerPick.java`: never itself, Google's first, else any other; with none, the request gets an error), passes the answers back and lets go of that
   recognizer after the final answer or an error. It records nothing itself, and Android's `RecognitionService` refuses
   callers that lack `RECORD_AUDIO`.
 - **Native:** `AssistPlugin.java`: `consume()` says once whether the app was started by the gesture, and an `assist`
