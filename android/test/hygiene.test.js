@@ -312,12 +312,18 @@ test("sync-ui transformIndex refuses a page it does not understand", () => {
   assert.throws(() => transformIndex("<html><head><meta charset=\"utf-8\"></head></html>"), SyncError);
 });
 
-test("the assistant filter exists only in the agent build, on the one exported activity, and adds no component or permission", () => {
+test("the assistant exists only in the agent build: the ASSIST filter, three services, and no new permission", () => {
   const agentMf = read(path.join(root, "android", "app", "src", "agent", "AndroidManifest.xml"));
   assert.ok(!fs.existsSync(path.join(root, "android", "app", "src", "chat", "AndroidManifest.xml")), "the chat build has no overlay");
   assert.doesNotMatch(read(path.join(native, "AndroidManifest.xml")), /ACTION_ASSIST|action\.ASSIST/);
   assert.match(agentMf, /<action android:name="android\.intent\.action\.ASSIST" \/>/);
   assert.match(agentMf, /<activity android:name="\.MainActivity">/);
   assert.equal([...agentMf.matchAll(/<activity\b/g)].length, 1);
-  assert.doesNotMatch(agentMf, /<service|<receiver|<provider|<uses-permission|android:exported|<data\b/);
+  assert.doesNotMatch(agentMf, /<receiver|<provider|<uses-permission|<data\b/);
+  // The assistant's three services, and nothing else exported: the two voice services only for the system.
+  const services = [...agentMf.matchAll(/<service\b([^>]*)>/g)].map((m) => m[1]);
+  assert.deepEqual(services.map((a) => /android:name="([^"]+)"/.exec(a)[1]).sort(), [".ArcRecognitionService", ".ArcVoiceService", ".ArcVoiceSessionService"]);
+  for (const a of services.filter((x) => /ArcVoice/.test(x))) assert.match(a, /android:permission="android\.permission\.BIND_VOICE_INTERACTION"/);
+  assert.equal([...agentMf.matchAll(/android:exported="true"/g)].length, 3, "only the three services");
+  assert.doesNotMatch(agentMf, /android:exported="true"[^<]*<intent-filter>\s*<action android:name="android\.intent\.action\.ASSIST"/);
 });

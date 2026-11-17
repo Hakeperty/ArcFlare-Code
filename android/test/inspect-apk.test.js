@@ -117,3 +117,29 @@ test("the real aapt2 format (attribute names with the full namespace URL) reads 
   const bad = GOOD_NS.replace(NS + "allowBackup(0x01010280)=(type 0x12)0x0", NS + "allowBackup(0x01010280)=true");
   assert.ok(failed(bad, "release").some((w) => w.includes("cloud and device backup is off")), "and a defect is still caught in the long form");
 });
+
+// ArcFlare Agent's assistant: three services, allowed only in the agent package and only with the right permission.
+const svc = (name, perm, filterAction) => `      E: service (line=49)
+        A: android:name(0x01010003)="${name}" (Raw: "${name}")
+${perm ? `        A: android:permission(0x01010006)="${perm}" (Raw: "${perm}")\n` : ""}        A: android:exported(0x01010010)=(type 0x12)0xffffffff
+${filterAction ? `        E: intent-filter (line=50)\n          E: action (line=51)\n            A: android:name(0x01010003)="${filterAction}" (Raw: "${filterAction}")\n` : ""}`;
+const BIND = "android.permission.BIND_VOICE_INTERACTION";
+const ASSISTANT = svc("net.arcflare.app.ArcVoiceService", BIND, "android.service.voice.VoiceInteractionService") +
+  svc("net.arcflare.app.ArcVoiceSessionService", BIND) +
+  svc("net.arcflare.app.ArcRecognitionService", null, "android.speech.RecognitionService");
+// The package name also prefixes the app's own DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, as in a real build.
+const withServices = (pkg, services) => GOOD.replaceAll("net.arcflare.app.DYNAMIC_RECEIVER", `${pkg}.DYNAMIC_RECEIVER`).replace('package="net.arcflare.app" (Raw: "net.arcflare.app")', `package="${pkg}" (Raw: "${pkg}")`)
+  .replace("      E: provider (line=50)", services + "      E: provider (line=50)");
+const agentFailed = (text, pkg) => check(sum(text), { mode: "release", pkg }).filter((r) => !r.ok).map((r) => r.what);
+
+test("the agent build may export its three assistant services, each with the permission it must require", () => {
+  assert.deepStrictEqual(agentFailed(withServices("net.arcflare.app.agent", ASSISTANT), "net.arcflare.app.agent"), []);
+});
+
+test("the assistant services are refused in the chat build, without their permission, or under another name", () => {
+  const exportedFail = (bad) => assert.ok(bad.some((w) => w.includes("nothing else is exported")), JSON.stringify(bad));
+  exportedFail(agentFailed(withServices("net.arcflare.app", ASSISTANT), "net.arcflare.app"));
+  exportedFail(agentFailed(withServices("net.arcflare.app.agent", svc("net.arcflare.app.ArcVoiceService", null, "android.service.voice.VoiceInteractionService")), "net.arcflare.app.agent"));
+  exportedFail(agentFailed(withServices("net.arcflare.app.agent", svc("net.arcflare.app.ArcVoiceSessionService", "android.permission.INTERNET")), "net.arcflare.app.agent"));
+  exportedFail(agentFailed(withServices("net.arcflare.app.agent", svc("net.arcflare.app.ArcRecognitionService", BIND, null).replace("ArcRecognitionService", "OtherService")), "net.arcflare.app.agent"));
+});

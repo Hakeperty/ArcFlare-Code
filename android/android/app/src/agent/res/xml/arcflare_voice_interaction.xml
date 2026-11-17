@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ArcFlare Agent as the phone's assistant. Android requires a session service and a recognition service here. -->
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="net.arcflare.app.ArcVoiceSessionService"
+    android:recognitionService="net.arcflare.app.ArcRecognitionService"
+    android:supportsAssist="true" />

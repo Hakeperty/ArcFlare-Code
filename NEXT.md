@@ -123,22 +123,17 @@ Next, in this order, each as its own commit:
 
 ## 9. The phone's assistant: replacing Google Assistant
 
-Done (commit "ArcFlare Agent opens the on-phone AI when the phone's assist gesture reaches it"): the agent build has an
-`ASSIST` intent filter on `MainActivity`, `AssistPlugin`, and the shell opens the Local AI chat for the gesture. See
-`android/README.md`, "The phone's assistant gesture". It is groundwork: nothing here makes the phone offer the app as its
-assistant, and none of it has run on a device.
+Done: ArcFlare Agent has the assist gesture, a `VoiceInteractionService`, its session service and a recognition service
+that hands voice input to the phone's own recognizer. The owner agreed on 2026-11-17 that the agent build may export
+these three services; `android/scripts/inspect-apk.js` and `android/test/hygiene.test.js` allow exactly them. See
+`android/README.md`, "The phone's assistant". None of it has run on a device.
 
-Needs the owner's decision first: a `VoiceInteractionService` (plus a session service and a `voice_interaction_service`
-xml) is what Android ties the assistant role to. Both services are exported components guarded by the system-only
-`BIND_VOICE_INTERACTION` permission, so "one exported component" in `android/test/hygiene.test.js` and
-`android/scripts/inspect-apk.js` must change for the agent build only. Say yes or no to that, then:
+Next:
 
-1. Add the services in `src/agent`, make the session start `MainActivity` with the assist action, and loosen the two
-   checks for the agent build only (name the two services, require the permission).
-2. Try it on the Galaxy S24 Ultra: does Settings list the app, and what does the gesture send?
-3. Then the assistant's own tools, one commit each: open an app, set a timer or alarm, call a contact, read the
-   calendar. Each needs a permission the app does not ask for today (`inspect-apk.js` lists them), so each is a
-   decision for the owner, shown to the person before it runs, like Files.
+1. Try it on the Galaxy S24 Ultra: item 21 of "Unverified on a real device" in `android/README.md`.
+2. The assistant's tools, one commit each, each shown to the person before it runs, like Files: open an app, set a
+   timer or alarm (`SET_ALARM`), dial a number (`ACTION_DIAL` needs no permission), read the calendar
+   (`READ_CALENDAR`). Each new permission must be added to `inspect-apk.js` and `hygiene.test.js` with the owner's yes.
 
 ## The pandas in the phone app
 

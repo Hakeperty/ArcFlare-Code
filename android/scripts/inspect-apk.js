@@ -103,6 +103,14 @@ function summarize(tree) {
 
 // Exported by libraries we ship, with a permission or no way to receive anything harmful: allowed by name.
 const KNOWN_EXPORTED = new Set(["androidx.profileinstaller.ProfileInstallReceiver"]);
+// ArcFlare Agent only: the assistant (android/README.md, "The phone's assistant"), with the permission each must require.
+// The two voice services can be bound only by the system; the recognition service hands requests on to the phone's own
+// recognizer and Android's RecognitionService refuses callers without RECORD_AUDIO.
+const AGENT_EXPORTED = new Map([
+  ["net.arcflare.app.ArcVoiceService", "android.permission.BIND_VOICE_INTERACTION"],
+  ["net.arcflare.app.ArcVoiceSessionService", "android.permission.BIND_VOICE_INTERACTION"],
+  ["net.arcflare.app.ArcRecognitionService", undefined],
+]);
 
 /** Returns a list of { ok, what, detail } rows. Pure. */
 function check(s, { mode, pkg = "net.arcflare.app" }) {
@@ -129,7 +137,8 @@ function check(s, { mode, pkg = "net.arcflare.app" }) {
   // exported components: with targetSdk 31+ a component with an intent filter must say exported explicitly, so
   // "exported" here means exported=true, or a filter with no exported attribute at all (old default).
   const exported = s.components.filter((c) => c.exported === true || (c.exported === undefined && c.filters.length > 0));
-  const unexpected = exported.filter((c) => c.name !== "net.arcflare.app.MainActivity" && !KNOWN_EXPORTED.has(c.name));
+  const agentOk = (c) => pkg === "net.arcflare.app.agent" && c.tag === "service" && AGENT_EXPORTED.has(c.name) && c.permission === AGENT_EXPORTED.get(c.name);
+  const unexpected = exported.filter((c) => c.name !== "net.arcflare.app.MainActivity" && !KNOWN_EXPORTED.has(c.name) && !agentOk(c));
   ok(exported.some((c) => c.name === "net.arcflare.app.MainActivity"), "the launcher activity exists and is exported", "");
   ok(unexpected.length === 0, "nothing else is exported", unexpected.map((c) => `${c.tag} ${c.name}`).join(", "));
   const providers = s.components.filter((c) => c.tag === "provider" && c.exported === true);
