@@ -311,3 +311,13 @@ test("sync-ui transformIndex refuses a page it does not understand", () => {
   const { transformIndex, SyncError } = require("../scripts/sync-ui.js");
   assert.throws(() => transformIndex("<html><head><meta charset=\"utf-8\"></head></html>"), SyncError);
 });
+
+test("the assistant filter exists only in the agent build, on the one exported activity, and adds no component or permission", () => {
+  const agentMf = read(path.join(root, "android", "app", "src", "agent", "AndroidManifest.xml"));
+  assert.ok(!fs.existsSync(path.join(root, "android", "app", "src", "chat", "AndroidManifest.xml")), "the chat build has no overlay");
+  assert.doesNotMatch(read(path.join(native, "AndroidManifest.xml")), /ACTION_ASSIST|action\.ASSIST/);
+  assert.match(agentMf, /<action android:name="android\.intent\.action\.ASSIST" \/>/);
+  assert.match(agentMf, /<activity android:name="\.MainActivity">/);
+  assert.equal([...agentMf.matchAll(/<activity\b/g)].length, 1);
+  assert.doesNotMatch(agentMf, /<service|<receiver|<provider|<uses-permission|android:exported|<data\b/);
+});

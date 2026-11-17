@@ -78,8 +78,18 @@ function makeShell(opts = {}) {
       CapacitorHttp: { get: async (o) => { nativeCalls.push(["get", o.url]); throw new Error("offline"); }, post: async (o) => { nativeCalls.push(["post", o.url]); throw new Error("offline"); } },
       CapacitorCookies: { clearAllCookies: async () => { log.push("cookies cleared"); if (opts.cookiesFail) throw new Error("no"); } },
       ...(opts.updater ? { AppUpdater: opts.updater } : {}),
-    } },
+      // The agent build's assistant gesture (AssistPlugin.java) and the on-phone AI: opts.assist = { pending }, opts.localAI = true.
+      ...(opts.assist ? { Assist: {
+        consume: async () => ({ assist: !!opts.assist.pending }),
+        addListener: (n, f) => { state.assistListener = f; return Promise.resolve({ remove() {} }); },
+      } } : {}),
+      ...(opts.localAI ? { LocalAI: {} } : {}),
+    },
+    ...(opts.assist ? { isPluginAvailable: (n) => n === "Assist" } : {}),
+    },
   };
+  const localMounts = { mount: 0, refresh: 0 };
+  if (opts.localAI) ctx.ArcFlareLocalAI = { mount: () => { localMounts.mount++; return { refresh() { localMounts.refresh++; } }; } };
   ctx.window = ctx; ctx.globalThis = ctx;
   vm.createContext(ctx);
   for (const f of ["config.js", "link.js", "fingerprint.js", "mode.js", "linkgate.js", "lanfetch.js", "connector.js", "native.js"]) {
@@ -121,7 +131,7 @@ function makeShell(opts = {}) {
 
   const tick = async (n = 5) => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 3)); };
   const api = {
-    els, clock, log, state, assigned, pairs, connects, storeCalls, nativeCalls, tunnel, ctx, tick,
+    els, clock, log, state, assigned, pairs, connects, storeCalls, nativeCalls, tunnel, ctx, tick, localMounts,
     visible: () => views.filter((v) => !v.hidden).map((v) => v.id).join(","),
     text: (id) => els[id].textContent,
     async advance(ms) {
@@ -136,6 +146,8 @@ function makeShell(opts = {}) {
     },
     /** a link from outside (QR scan) while the app runs */
     async deepLink(url) { state.appUrlOpen({ url }); await tick(); },
+    /** the assistant gesture while the app is already running */
+    async assistGesture() { state.assistListener(); await tick(); },
     setHidden(h) { doc.hidden = h; },
     async toForeground() { doc.hidden = false; (state.docListeners.visibilitychange || []).forEach((f) => f()); await tick(); },
     async start() {

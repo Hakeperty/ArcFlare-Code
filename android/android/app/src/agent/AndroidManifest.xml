@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- ArcFlare Agent only: this app answers the assist gesture (ACTION_ASSIST). On its own this does not get the app
+             listed as the default assistant: that also needs a VoiceInteractionService (android/README.md). The same
+             exported activity, no new component. The chat build (ArcFlare) does not have this filter. -->
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

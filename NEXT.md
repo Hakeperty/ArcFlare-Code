@@ -121,6 +121,25 @@ Next, in this order, each as its own commit:
    `MaziyarPanahi` state no licence, so they are out. Read the card again and take the size and SHA-256 from the file
    page on the day a file is added; nothing has been measured on a phone.
 
+## 9. The phone's assistant: replacing Google Assistant
+
+Done (commit "ArcFlare Agent opens the on-phone AI when the phone's assist gesture reaches it"): the agent build has an
+`ASSIST` intent filter on `MainActivity`, `AssistPlugin`, and the shell opens the Local AI chat for the gesture. See
+`android/README.md`, "The phone's assistant gesture". It is groundwork: nothing here makes the phone offer the app as its
+assistant, and none of it has run on a device.
+
+Needs the owner's decision first: a `VoiceInteractionService` (plus a session service and a `voice_interaction_service`
+xml) is what Android ties the assistant role to. Both services are exported components guarded by the system-only
+`BIND_VOICE_INTERACTION` permission, so "one exported component" in `android/test/hygiene.test.js` and
+`android/scripts/inspect-apk.js` must change for the agent build only. Say yes or no to that, then:
+
+1. Add the services in `src/agent`, make the session start `MainActivity` with the assist action, and loosen the two
+   checks for the agent build only (name the two services, require the permission).
+2. Try it on the Galaxy S24 Ultra: does Settings list the app, and what does the gesture send?
+3. Then the assistant's own tools, one commit each: open an app, set a timer or alarm, call a contact, read the
+   calendar. Each needs a permission the app does not ask for today (`inspect-apk.js` lists them), so each is a
+   decision for the owner, shown to the person before it runs, like Files.
+
 ## The pandas in the phone app
 
 The pictures are in `lib/hub/ui/assets/`. All are the owner's own art, so no licence entry is owed:

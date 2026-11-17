@@ -117,6 +117,22 @@
       };
     },
     /**
+     * The phone's assistant gesture (AssistPlugin.java, the agent build only). consume() resolves true once when the app
+     * was started by the gesture; on(fn) hears a gesture while the app is running and returns a function that stops it.
+     * null in the chat build and outside the app.
+     */
+    assist: function () {
+      var p;
+      try { if (!window.Capacitor.isPluginAvailable("Assist")) return null; p = plugin("Assist"); } catch (e) { return null; }
+      return {
+        consume: async function () { try { var r = await p.consume(); return !!(r && r.assist); } catch (e) { return false; } },
+        on: function (fn) {
+          var h = p.addListener("assist", fn);
+          return function () { Promise.resolve(h).then(function (x) { if (x && x.remove) x.remove(); }); };
+        },
+      };
+    },
+    /**
      * Files for the on-phone agent (PhoneFilesPlugin.java, the agent build only): list, read and write text files, only
      * inside folders the person picked with Android's folder picker. null in the chat build and outside the app.
      */

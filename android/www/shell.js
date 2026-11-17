@@ -22,6 +22,8 @@
   var flow = null;
   var record = null;         // stored pairing record while the status screen is up
   var busy = false;
+  var openLocal = null;      // shows the on-phone AI chat; null when this build or phone has none
+  var localFrom = "pair";    // where Back from that chat goes: "pair", or "assist" (on to the computer)
   var bootGen = 0;           // a newer boot or a pairing flow cancels an older boot before it navigates
   var unsupported = false;   // WebView without X25519
   var held = null;           // { url, at }: a link that arrived while the app was in the background
@@ -442,11 +444,13 @@
     $("upd-go").addEventListener("click", updateStep);
     var local = Native.localAI && Native.localAI(), localView = null;
     $("pair-local").hidden = !(local && window.ArcFlareLocalAI);
-    $("pair-local").addEventListener("click", function () {
+    if (local && window.ArcFlareLocalAI) openLocal = function () {
       show("v-local");
       if (!localView) localView = window.ArcFlareLocalAI.mount($("local-root"), local, Native.phoneFiles ? Native.phoneFiles() : null); else localView.refresh();
-    });
-    $("local-back").addEventListener("click", function () { showPairScreen(""); });
+    };
+    $("pair-local").addEventListener("click", function () { if (!openLocal) return; localFrom = "pair"; openLocal(); });
+    // Back goes where the person came from: the pair screen, or (after the assistant gesture) on to their computer.
+    $("local-back").addEventListener("click", function () { if (localFrom === "assist") { localFrom = "pair"; boot({}); } else showPairScreen(""); });
     $("upd-back").addEventListener("click", function () { if (!upd.busy) show(upd.back); });
     document.addEventListener("visibilitychange", function () { if (!document.hidden) onForeground(); });
     Native.onForeground(onForeground);
@@ -457,6 +461,13 @@
   async function start2() {
     // Never fall back to anything weaker than X25519 (TUNNEL.md section 2): no WebView support, no app.
     if (!(await Native.supportsX25519())) { await showUnsupported(); return; }
+    // The phone's assistant gesture (agent build): open the on-phone AI, which needs no computer. Not when the page is
+    // only here because the person pressed Back from the hub UI.
+    var assist = Native.assist && Native.assist();
+    if (assist && openLocal) {
+      assist.on(function () { localFrom = "assist"; openLocal(); });
+      if (!cameBack() && (await assist.consume())) { localFrom = "assist"; openLocal(); return; }
+    }
     var launch = await Native.getLaunchUrl();
     if (launch && launch.indexOf("arcflare://") === 0 && !cameBack()) {
       var started = onDeepLink(launch, now());
