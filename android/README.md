@@ -231,6 +231,23 @@ new text, and nothing runs without a tap. **Stop sharing** forgets a folder.
   runs each: a first look, not a benchmark.
 - **Not built yet:** choosing the computer's model for a chat, and the other tools in `NEXT.md` 8.3.
 
+### The phone's assistant gesture (ArcFlare Agent only)
+
+Groundwork for using ArcFlare Agent instead of Google Assistant. **It does not make the app selectable as the phone's
+assistant yet.** Android's assistant role is tied to a `VoiceInteractionService` (see `RoleManager.ROLE_ASSISTANT`), which
+this build does not have, so the app will most likely not appear under Settings > Default digital assistant app.
+
+- **Manifest:** `src/agent/AndroidManifest.xml` adds an `android.intent.action.ASSIST` filter to the existing
+  `MainActivity`. No new component, no permission. The chat build (ArcFlare) does not have it.
+- **Native:** `src/agent/java/.../AssistPlugin.java`: `consume()` says once whether the app was started by the gesture,
+  and an `assist` event fires when the gesture reaches an app that is already running.
+- **Page:** `shell.js` opens the Local AI chat when the app is started by the gesture (it needs no computer), and Back
+  from it goes on to the normal connection. It is not opened when the page is only showing again after Back from the hub
+  UI. A gesture while the hub UI is on screen does nothing: the shell is not loaded then.
+- **Not built yet:** the `VoiceInteractionService` and its session service, which are exported components protected by
+  the system-only `BIND_VOICE_INTERACTION` permission. That changes the "one exported component" rule in
+  `hygiene.test.js` and `scripts/inspect-apk.js`, so it needs the owner's decision (`NEXT.md` 9).
+
 ## Updates
 
 - **From the computer (signed in):** `node scripts/build-apk.js --publish` puts the APK on this computer's hub; the
@@ -456,6 +473,13 @@ Nothing below was executed on Android. Check each on a real phone (Android 8+ wi
     list, read and write work on real storage (the phone's own, an SD card, a cloud provider's folder), that a new
     file keeps the name it was given, and how often Qwen3 1.7B calls the tools correctly on a phone. The plugin's Java
     is compiled in CI; none of it has run on a device.
+21. **The assistant gesture (ArcFlare Agent):** whether any Android version offers this app under Default digital
+    assistant app with only the `ASSIST` filter (we expect not), what the gesture sends (`ACTION_ASSIST` with extras?)
+    on a Galaxy S24 Ultra, that `consume()` and the `assist` event reach the page, and that Back from the chat connects.
+    The plugin's Java is compiled in CI; it has not run on a device.
+    Also: `AssistPlugin` keeps its "started by the gesture" flag until the page asks for it, so check that a gesture
+    while the hub UI is on screen does not open the chat the next time the shell loads, and that an activity restored
+    from recents after a gesture does not reopen it.
 
 ## What the tests cover (and not)
 

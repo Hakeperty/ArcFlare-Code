@@ -523,3 +523,38 @@ test("launch: home-network-only pairing REFUSED (revoked on the computer) says s
   assert.match(s.text("st-msg"), /removed on the computer/);
   assert.doesNotMatch(s.text("st-msg"), /same Wi-Fi/);
 });
+
+// ---------------------------------------------------------------- the phone's assistant gesture (agent build)
+
+test("assistant gesture: a paired phone opens the on-phone AI first, with no computer needed, and Back goes on to the computer", async () => {
+  const s = makeShell({ store: pairedRecord(key(REAL)), assist: { pending: true }, localAI: true });
+  await s.start();
+  assert.equal(s.visible(), "v-local");
+  assert.equal(s.localMounts.mount, 1);
+  assert.equal(s.connects.length, 0, "it did not wait for the computer");
+  s.els["local-back"].click(); await s.tick(10);
+  assert.ok(s.connects.length > 0 || s.assigned.length > 0, "Back starts the normal connection");
+  assert.notEqual(s.visible(), "v-local");
+});
+
+test("assistant gesture: a normal launch is unchanged, and so is a build without the on-phone AI", async () => {
+  const plain = makeShell({ store: pairedRecord(key(REAL)), assist: { pending: false }, localAI: true });
+  await plain.start();
+  assert.notEqual(plain.visible(), "v-local");
+  assert.equal(plain.localMounts.mount, 0);
+  const noAi = makeShell({ store: pairedRecord(key(REAL)), assist: { pending: true } });
+  await noAi.start();
+  assert.notEqual(noAi.visible(), "v-local", "no on-phone AI here: the gesture is ignored");
+});
+
+test("assistant gesture: coming back from the hub UI with Back shows settings, not the chat; a gesture while the page is open does", async () => {
+  const back = makeShell({ store: pairedRecord(key(REAL)), assist: { pending: true }, localAI: true, navType: "back_forward" });
+  await back.start();
+  assert.notEqual(back.visible(), "v-local");
+  const s = makeShell({ store: pairedRecord(key(REAL)), assist: { pending: false }, localAI: true, behave: () => "PENDING" });
+  await s.start();
+  assert.notEqual(s.visible(), "v-local");
+  await s.assistGesture();
+  assert.equal(s.visible(), "v-local");
+  assert.equal(s.localMounts.mount, 1);
+});

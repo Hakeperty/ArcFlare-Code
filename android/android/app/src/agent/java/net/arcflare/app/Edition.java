@@ -12,5 +12,7 @@ final class Edition {
     static void register(BridgeActivity activity) {
         // Files in folders the person picked (see PhoneFilesPlugin).
         activity.registerPlugin(PhoneFilesPlugin.class);
+        // The phone's assistant gesture opens the app (see AssistPlugin and src/agent/AndroidManifest.xml).
+        activity.registerPlugin(AssistPlugin.class);
     }
 }

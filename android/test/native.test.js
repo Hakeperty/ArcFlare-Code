@@ -30,7 +30,7 @@ test("navigate: only the bundled UI (with the optional via hint); everything els
 
 test("the native bridge surface is small: no NavGuard, no setLan, no generic http, no cookie setter", () => {
   const { N } = load();
-  assert.deepEqual(Object.keys(N).sort(), ["appUpdater", "call", "clearCookies", "getLaunchUrl", "localAI", "nativeHttp", "navigate", "notifier", "onAppUrl", "onForeground", "phoneFiles", "supportsX25519"]);
+  assert.deepEqual(Object.keys(N).sort(), ["appUpdater", "assist", "call", "clearCookies", "getLaunchUrl", "localAI", "nativeHttp", "navigate", "notifier", "onAppUrl", "onForeground", "phoneFiles", "supportsX25519"]);
 });
 
 // A build's Capacitor: a plugin record for every name (as the real registerPlugin gives), and isPluginAvailable says
@@ -104,4 +104,15 @@ test("appUpdater exposes the eight update calls and nothing else, and is null ou
     assert.equal(N.appUpdater(), null);
     global.window.Capacitor = saved;
   }
+});
+
+test("assist: null outside the app and in a build without the agent plugin; true once when the gesture started the app", async () => {
+  assert.equal(load({ Capacitor: undefined }).N.assist(), null);
+  const none = load({ Capacitor: { registerPlugin: () => ({}), isPluginAvailable: () => false } });
+  assert.equal(none.N.assist(), null);
+  const mk = (r) => load({ Capacitor: { isPluginAvailable: (n) => n === "Assist", registerPlugin: () => ({ consume: async () => r, addListener: () => Promise.resolve({ remove() {} }) }) } }).N.assist();
+  assert.equal(await mk({ assist: true }).consume(), true);
+  assert.equal(await mk({ assist: false }).consume(), false);
+  assert.equal(await mk(undefined).consume(), false);
+  assert.deepEqual(Object.keys(mk({ assist: true })).sort(), ["consume", "on"]);
 });
