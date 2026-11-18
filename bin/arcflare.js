@@ -2665,7 +2665,8 @@ async function main() {
       }
       if (argv[1] === "llamacpp" || argv[1] === "llama.cpp" || argv[1] === "llama-server") {
         if (usesLmStudio(cfg)) lmstudio.stop(cfg);
-        saveConfig({ ...cfg, engine: undefined });
+        saveConfig({ ...cfg, engine: undefined,
+          llamaServer: cfg.llamaServer === engine.LMSTUDIO_RUNTIME ? undefined : cfg.llamaServer });
         console.log(`  ${c.green(ui.sym.ok)} engine set to ${c.accent("llama.cpp")} ${c.dim("(ArcFlare's own llama-server)")}`);
         return;
       }
