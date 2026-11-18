@@ -1085,3 +1085,8 @@ fieldset.muted-off { opacity: 0.5; }
 .local-send { display: flex; gap: 8px; align-items: flex-end; }
 .local-input { flex: 1; min-width: 0; resize: vertical; font: inherit; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--foreground); }
 .local-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* App update (phone app only): the notice on the Agents screen and the card on Devices, inside the side margins. */
+#dash-update { width: auto; margin: 8px var(--pr) 0 var(--pl); }
+.app-update { display: flex; flex-direction: column; gap: 8px; margin: 16px var(--pr) 0 var(--pl); padding: 16px; }
+.app-update .banner { margin: 0; }

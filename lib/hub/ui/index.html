@@ -85,6 +85,8 @@
       <section id="view-dashboard" class="view" hidden>
         <h1 class="view-title">Agents</h1>
         <p id="dash-error" class="banner error" role="alert" hidden></p>
+        <!-- Phone app only: a newer build of this app is ready. Opens Devices, where it installs. -->
+        <button id="dash-update" class="btn outline block" type="button" hidden>An app update is ready</button>
         <ul id="dash-skeleton" class="stack" aria-hidden="true" hidden>
           <li class="card skel"><span class="bar w60"></span><span class="bar w90"></span><span class="bar w40"></span></li>
           <li class="card skel"><span class="bar w40"></span><span class="bar w90"></span><span class="bar w60"></span></li>
@@ -261,7 +263,7 @@
           <li class="card skel"><span class="bar w40"></span><span class="bar w90"></span></li>
         </ul>
         <ul id="session-list" class="stack"></ul>
-        <!-- Shown in the phone app only, when the hub offers a newer build of it. -->
+        <!-- Shown in the phone app only, when the hub or arcflare.net offers a newer build of it. -->
         <div id="app-update" class="card app-update" hidden>
           <p class="dev-name">App update</p>
           <p id="app-update-text" class="dev-meta"></p>

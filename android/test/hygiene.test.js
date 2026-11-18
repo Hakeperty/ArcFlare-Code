@@ -195,7 +195,9 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   // The computer's app file is the chat app's: ArcFlare Agent says which app it is, and the page does not offer it there.
   assert.ok(up.includes('r.put("agent", Edition.AGENT);'));
   const page = read(path.join(root, "..", "lib", "hub", "ui", "app.js"));
-  assert.match(page, /if \(mine\.agent \|\| !offer \|\| !offer\.available \|\|/);
+  // The hub's file is asked for only outside ArcFlare Agent; ArcFlare Agent's offer comes from arcflare.net (checkOnline).
+  assert.match(page, /if \(!mine\.agent\) \{\s*try \{ const o = await api\("GET", "\/api\/app\/version"\)/);
+  assert.equal([...page.matchAll(/\/api\/app\/version/g)].length, 1, "the hub's app file is offered from one place only");
   // Local AI: models only from ModelCatalog (the page names an id), redirects followed only to Hugging Face hosts,
   // size and SHA-256 checked before the file is kept, files in the app's private storage, roles limited.
   const ai = read(path.join(dir, "LocalAiPlugin.java"));
