@@ -261,3 +261,19 @@ test("lmstudio: paths, names, runtime, output", async () => {
   assert.strictEqual(lmstudio.cleanOutput("\x1b[?25lLoading glm 0% ⠋\x1b[?25lLoading glm 79% ⠋\x1b[K\x1b[?25hModel loaded successfully in 23.39s.\n(17.05 GiB)"),
     "Model loaded successfully in 23.39s.\n(17.05 GiB)");
 });
+
+test("runtimeServer follows the runtime LM Studio has selected", () => {
+  const root = tmpdir("lmroot");
+  assert.strictEqual(lmstudio.runtimeServer(root), null);
+  const exe = process.platform === "win32" ? "llama-server.exe" : "llama-server";
+  fs.mkdirSync(path.join(root, ".internal"), { recursive: true });
+  const prefs = (v) => fs.writeFileSync(path.join(root, ".internal", "backend-preferences-v2.json"),
+    JSON.stringify({ formatDefaults: { gguf: "llama.cpp-win-x86_64-vulkan-avx2" }, versions: { "llama.cpp-win-x86_64-vulkan-avx2": v } }));
+  prefs("2.73.0");
+  assert.strictEqual(lmstudio.runtimeServer(root), null, "selected but not installed");
+  const a = touch(path.join(root, "extensions", "backends", "llama.cpp-win-x86_64-vulkan-avx2-2.73.0", exe));
+  assert.strictEqual(lmstudio.runtimeServer(root), a);
+  const b = touch(path.join(root, "extensions", "backends", "llama.cpp-win-x86_64-vulkan-avx2-2.80.0", exe));
+  prefs("2.80.0");
+  assert.strictEqual(lmstudio.runtimeServer(root), b, "an update in LM Studio moves ArcFlare with it");
+});

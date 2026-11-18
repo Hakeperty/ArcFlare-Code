@@ -2653,6 +2653,16 @@ async function main() {
         }
         return;
       }
+      if (argv[1] === "lmruntime") {
+        // LM Studio's llama.cpp build under ArcFlare's own router, following LM Studio's selected runtime.
+        const exe = lmstudio.runtimeServer();
+        if (!exe) die("LM Studio's runtime was not found. Install LM Studio, open it once, and pick a runtime in it");
+        if (usesLmStudio(cfg)) lmstudio.stop(cfg);
+        saveConfig({ ...cfg, engine: undefined, llamaServer: engine.LMSTUDIO_RUNTIME, backend: undefined });
+        console.log(`  ${c.green(ui.sym.ok)} engine set to ${c.accent("LM Studio's llama.cpp")} ${c.dim(exe)}`);
+        console.log(`  ${c.dim("It follows the runtime LM Studio has selected. It cannot download from Hugging Face; use")} ${c.accent("arcflare pull")}`);
+        return;
+      }
       if (argv[1] === "llamacpp" || argv[1] === "llama.cpp" || argv[1] === "llama-server") {
         if (usesLmStudio(cfg)) lmstudio.stop(cfg);
         saveConfig({ ...cfg, engine: undefined });
@@ -2683,6 +2693,7 @@ async function main() {
       else console.log(`  ${c.red(ui.sym.fail)} llama.cpp isn't installed: ${c.accent("arcflare engine install")}`);
       console.log(c.dim("  arcflare engine install [--vulkan|--cuda|--cpu|--rocm]   download llama.cpp for this machine"));
       console.log(c.dim("  arcflare engine lmstudio [--lms <path>] [--port N]     run models in LM Studio instead"));
+      console.log(c.dim("  arcflare engine lmruntime                              use LM Studio's llama.cpp build with ArcFlare"));
       return;
     }
 
