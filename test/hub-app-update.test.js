@@ -32,7 +32,7 @@ const FAKE_UPDATER = (o) => {
   }) };
 };
 
-async function phone(t, fake) {
+async function phone(t, fake, appUpdates) {
   const { AuthStore } = require("../lib/hub/auth");
   const { Supervisor } = require("../lib/hub/supervisor");
   const { createHubServer } = require("../lib/hub/server");
@@ -40,7 +40,7 @@ async function phone(t, fake) {
   const auth = new AuthStore({ dir });
   auth.createAccount("owner", PASS);
   const supervisor = new Supervisor({ dir, roots: [dir], backend: async () => ({ port: 1, model: "m", nCtx: 4096, modelRef: "r" }), makeAgent: () => ({}) });
-  const hub = createHubServer({ auth, supervisor, config: { roots: [dir] } });
+  const hub = createHubServer({ auth, supervisor, config: { roots: [dir] }, appUpdates });
   const { port } = await hub.listen({ port: 0, host: "127.0.0.1" });
   const browser = await pw.chromium.launch();
   t.after(async () => { await browser.close(); await hub.close(); });
@@ -55,9 +55,14 @@ async function phone(t, fake) {
 }
 
 const OFFER = { versionCode: 462234, versionName: "1.0.462234", size: 10471298 };
+// The computer holding a newer chat-app file than the site; counts how often the page asks for it.
+const hubFile = () => { const h = { asked: 0 }; h.info = () => { h.asked++; return { versionCode: 470000, versionName: "1.0.470000", size: 2048, sha256: "a".repeat(64), parts: 1 }; }; h.part = () => null; return h; };
+// The update check has finished once arcflare.net was asked (it is asked last).
+const checked = (page) => page.waitForFunction(() => window.__calls && window.__calls.includes("checkOnline"));
 
-test("ArcFlare Agent: the Agents screen says an update is ready, and it installs from arcflare.net", { skip }, async (t) => {
-  const page = await phone(t, { agent: true, online: OFFER });
+test("ArcFlare Agent: the Agents screen says an update is ready, and it installs from arcflare.net, never the computer's file", { skip }, async (t) => {
+  const hub = hubFile();
+  const page = await phone(t, { agent: true, online: OFFER }, hub);
   await page.locator("#dash-update").waitFor({ state: "visible" });
   await page.click("#dash-update");
   await page.locator("#view-devices").waitFor({ state: "visible" });
@@ -67,18 +72,27 @@ test("ArcFlare Agent: the Agents screen says an update is ready, and it installs
   const calls = await page.evaluate(() => window.__calls);
   assert.ok(calls.indexOf("downloadOnline") < calls.indexOf("commit"), JSON.stringify(calls));
   assert.ok(!calls.includes("begin"), "nothing is fetched from the computer for ArcFlare Agent");
+  assert.strictEqual(hub.asked, 0, "ArcFlare Agent never asks the computer for its (chat app) file");
   assert.ok(!(await page.isVisible("#app-update-error")));
 });
 
-test("ArcFlare: when the computer has no newer app, arcflare.net's is offered", { skip }, async (t) => {
+test("ArcFlare: when the computer has no newer app, arcflare.net's is offered; when it has, the computer's is", { skip }, async (t) => {
   const page = await phone(t, { agent: false, online: OFFER });
   await page.locator("#dash-update").waitFor({ state: "visible" });
+  await page.click("#dash-update");
+  assert.match(await page.textContent("#app-update-text"), /1\.0\.462234 is ready \(10\.0 MB, from arcflare\.net\)/);
+  const hub = hubFile();
+  const fromHub = await phone(t, { agent: false, online: OFFER }, hub);
+  await fromHub.locator("#dash-update").waitFor({ state: "visible" });
+  await fromHub.click("#dash-update");
+  assert.match(await fromHub.textContent("#app-update-text"), /^Version 1\.0\.470000 is ready \(0\.0 MB\)\./);
+  assert.ok(hub.asked >= 1);
 });
 
 test("nothing newer anywhere, offline, or a plain browser: no update notice", { skip }, async (t) => {
   for (const fake of [{ agent: true, online: { ...OFFER, versionCode: 458887 } }, { agent: true, online: null }, null]) {
     const page = await phone(t, fake);
-    await new Promise((r) => setTimeout(r, 500));
+    if (fake) await checked(page); else await page.waitForTimeout(300);   // a browser has no updater to wait for
     assert.ok(!(await page.isVisible("#dash-update")), JSON.stringify(fake));
   }
 });
