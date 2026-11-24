@@ -78,6 +78,8 @@ test("the link carries the key in the fragment, which browsers never send", () =
 test("the relay must be an http(s) URL", () => {
   assert.throws(() => rc.setRelay("ftp://nope"));
   assert.throws(() => rc.setRelay("not a url"));
+  assert.throws(() => rc.setRelay("http://my.site"), /https/, "the key is not sent in the clear");
+  assert.strictEqual(rc.setRelay("http://localhost:3000/"), "http://localhost:3000");
   assert.strictEqual(rc.setRelay("https://my.site/"), "https://my.site");
   assert.strictEqual(rc.relayUrl(), "https://my.site");
 });
