@@ -248,3 +248,14 @@ test("pickFiles prefers the copy at the repo root over a copy in a subfolder", (
   const s = hf.pickFiles(sib(["Q4_K-GGUF/M-Q4_K-00001-of-00002.gguf", "Q4_K-GGUF/M-Q4_K-00002-of-00002.gguf"]), "Q4_K");
   assert.strictEqual(s.files.length, 2);
 });
+
+test("pull refuses file names and commit ids that would write outside the cache", async () => {
+  const hf = require("../lib/hf");
+  const cache = fs.mkdtempSync(path.join(os.tmpdir(), "af-cache-"));
+  const file = (rfilename) => ({ rfilename, size: 1 });
+  await assert.rejects(hf.pull("me/tiny:Q8_0", { cache, info: { sha: "abc", siblings: [file("../../../evil-Q8_0.gguf")] } }),
+    /leaves the model folder/);
+  await assert.rejects(hf.pull("me/tiny:Q8_0", { cache, info: { sha: "..", siblings: [file("tiny-Q8_0.gguf")] } }),
+    /unexpected commit id/);
+  assert.ok(!fs.existsSync(path.join(cache, "..", "evil-Q8_0.gguf")));
+});
