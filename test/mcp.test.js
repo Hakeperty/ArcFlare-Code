@@ -543,3 +543,14 @@ test("call_phone refuses a time (at) on a call that is already under way, before
   assert.strictEqual(res.result.isError, true);
   assert.match(res.result.content[0].text, /at starts a new call for later: it cannot be used with call_id/);
 });
+
+test("two browser tools called at once share one browser launch", async () => {
+  const { Browser } = require("../lib/mcp/browser");
+  const b = new Browser();
+  let launches = 0;
+  b._start = async () => { launches++; await new Promise((r) => setTimeout(r, 50)); b.cdp = {}; };
+  await Promise.all([b.start(), b.start(), b.start()]);
+  assert.strictEqual(launches, 1);
+  await b.start();
+  assert.strictEqual(launches, 1, "a running browser is reused");
+});
