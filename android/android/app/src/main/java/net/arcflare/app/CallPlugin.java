@@ -127,6 +127,9 @@ public class CallPlugin extends Plugin {
     protected void handleOnDestroy() {
         stopRinging();
         stopRecording();
+        // On the main thread here: let a listen's recogniser (a bound service) and a playing line go with the app.
+        if (endListen != null) endListen.run();
+        if (endLine != null) endLine.run();
         if (tts != null) tts.shutdown();
     }
 

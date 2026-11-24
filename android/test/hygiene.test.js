@@ -292,6 +292,8 @@ test("native source lint: CallPlugin (greps only, nothing here can run it)", () 
   assert.match(c, /public void stop\(PluginCall call\) \{[\s\S]*?main\.post\(\(\) -> \{[^}]*if \(endLine != null\) endLine\.run\(\);/);
   assert.match(c, /stopIt\[0\] = \(\) -> finish\.accept\(null\);\s*endLine = stopIt\[0\];/);
   assert.match(c, /if \(endLine == stopIt\[0\]\) endLine = null;\s*mp\.release\(\);/);
+  // closing the app settles a listen in progress (its recogniser is destroyed) and stops a line still playing
+  assert.match(c, /protected void handleOnDestroy\(\) \{[^}]*stopRecording\(\);[^}]*if \(endListen != null\) endListen\.run\(\);\s*if \(endLine != null\) endLine\.run\(\);/);
 });
 
 test("native source lint: cleartext is allowed only in the network security config, and the plain-HTTP page path is gone from the project", () => {
