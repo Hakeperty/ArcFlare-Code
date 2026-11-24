@@ -17,6 +17,8 @@ test("a stdio server that stops reading fails the call instead of crashing the a
   const s = fake("deaf", `${INIT}
     if (msg.method === "tools/list") {
       say({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "t" }] } });
+      // On Windows CI this write never failed and the call timed out, so there the server exits instead.
+      if (process.platform === "win32") process.exit(0);
       rl.close(); require("fs").closeSync(0); setTimeout(() => {}, 20000);
     }`);
   try {
