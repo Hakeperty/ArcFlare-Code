@@ -155,6 +155,10 @@ test("a call nobody answered leaves the agent's line as a silent notification, o
   calls.end(id);                                                                                   // it stops ringing, unanswered
   await until(async () => (await notes()).length === 1, "no notification for the call that just stopped ringing");
   assert.deepStrictEqual(await notes(), [["Missed call from Claude Code", "Tests are red. Look?", false]]);
+
+  // Two checks at once (a call ended while the app was also starting up): each missed call comes up once.
+  await page.evaluate(() => { window.__notes = []; localStorage.removeItem("arcflare.callsSeen"); return Promise.all([noticeMissedCalls(), noticeMissedCalls()]); });
+  assert.deepStrictEqual(await notes(), [missed, ["Missed call from Claude Code", "Tests are red. Look?", false]]);
 });
 
 test("a scheduled call: listed with its time and taken back on Tools; when it rings the app says the line and hangs up", { skip }, async (t) => {
