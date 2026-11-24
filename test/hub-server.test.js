@@ -877,6 +877,18 @@ test("ask_phone round trip: agent asks, the phone sees it and answers, the agent
   } finally { await s.close(); }
 });
 
+test("a call line asked for a part it does not have is a 400, not a server error", async () => {
+  const logged = [];
+  const calls = { line: async () => { throw Object.assign(new Error("No such part"), { status: 400 }); }, current: () => null };
+  const s = await start({ opts: { local: { token: "t".repeat(43), calls } }, config: { log: (e) => logged.push(e) } });
+  try {
+    const a = await login(s);
+    const r = await req(s.port, { path: `/api/calls/${"a".repeat(16)}/line/0?part=99`, headers: { Cookie: a.cookie } });
+    assert.strictEqual(r.status, 400);
+    assert.deepStrictEqual(logged, []);
+  } finally { await s.close(); }
+});
+
 test("call_phone round trip: the agent rings, the phone answers and replies, only an owner can take the call", async () => {
   const { s, token } = await localHub();
   try {
