@@ -138,6 +138,18 @@ test("a background process can be started, read, written to and stopped", async 
   assert.ok(s.get(rec.id).exitedAt != null, "stopped");
 });
 
+test("writing to a process that stopped reading does not crash the server", async () => {
+  const s = new Supervisor();
+  const r = await s.run({ command: `node -e "process.exit(0)"`, input: "x".repeat(8 << 20) });
+  assert.strictEqual(r.code, 0);
+  const rec = s.start({ command: `node -e "process.stdin.destroy(); setTimeout(()=>{}, 2000)"` });
+  await new Promise((res) => setTimeout(res, 300));
+  s.write(rec.id, "y".repeat(8 << 20));
+  await new Promise((res) => setTimeout(res, 300));
+  s.stop(rec.id);
+  await s.waitFor(rec.id, (p) => p.exitedAt != null, 8000);
+});
+
 test("stopping a process that already exited is reported, not thrown", async () => {
   const s = new Supervisor();
   const rec = s.start({ command: `node -e "process.exit(0)"` });
