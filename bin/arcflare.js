@@ -592,7 +592,8 @@ async function interactive(argv) {
   });
 
   // 5. server, keyed preset, restart
-  const { port, servedId, ctx: loadedCtx } = await prepareModel(cfg, model, ctx, cacheType);
+  const { port, servedId, ctx: loadedCtx, failed, error } = await prepareModel(cfg, model, ctx, cacheType);
+  if (failed) die(`could not load ${label}: ${error}`);
 
   // 6. wire the harness up
   const target = { id: servedId, label, file: model.file };
@@ -2031,7 +2032,8 @@ async function main() {
       if (!m) die(`no model matching "${want || ""}"`);
       const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
-      const { port, servedId: id } = await prepareModel(cfg, m, best.ctx, best.cacheType);
+      const { port, servedId: id, failed, error } = await prepareModel(cfg, m, best.ctx, best.cacheType);
+      if (failed) die(`could not load ${displayName(m)}: ${error}`);
       console.log(`  ${c.green(ui.sym.ok)} ${got ? `${c.accent(got.arc.name)} ${c.dim("on")} ` : ""}${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
       await repl(port, id, {
         rc: argv.includes("--rc"),
@@ -2069,8 +2071,9 @@ async function main() {
       if (!m) die("no models found");
       const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
-      const { port, servedId: id, ctx: loadedCtx } =
+      const { port, servedId: id, ctx: loadedCtx, failed, error } =
         await prepareModel(cfg, m, best.ctx, best.cacheType);
+      if (failed) die(`could not load ${displayName(m)}: ${error}`);
       const r = h.configure({ port, model: { id, label: displayName(m) }, ctx: best.ctx,
         apiKey: "arcflare", bin: det.bin });
       for (const n of r.notes || []) console.log(`  ${c.dim(n)}`);
