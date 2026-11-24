@@ -102,15 +102,21 @@ Java_net_arcflare_app_LlamaEngine_nLoad(JNIEnv *env, jclass, jstring jpath, jint
     cp.n_threads_batch = threads;
     g_ctx = llama_init_from_model(g_model, cp);
     if (!g_ctx) { free_all(); return env->NewStringUTF("not enough memory for this model"); }
-    g_tmpls = common_chat_templates_init(g_model, "");
-    // Arc Pocket's sampling (lib/arcs/arc-pocket.Modelfile; android/test/localai.test.js keeps them equal), which is
-    // Qwen3's own advice for chat without thinking. shortcut: one set for every model, until a second family is added.
-    common_params_sampling sp;
-    sp.temp = 0.7f;
-    sp.top_p = 0.8f;
-    sp.top_k = 20;
-    sp.min_p = 0.0f;
-    g_smpl = common_sampler_init(g_model, sp);
+    // An exception must not leave a JNI call: the app would abort. A model whose template or sampler fails is refused.
+    try {
+        g_tmpls = common_chat_templates_init(g_model, "");
+        // Arc Pocket's sampling (lib/arcs/arc-pocket.Modelfile; android/test/localai.test.js keeps them equal), which is
+        // Qwen3's own advice for chat without thinking. shortcut: one set for every model, until a second family is added.
+        common_params_sampling sp;
+        sp.temp = 0.7f;
+        sp.top_p = 0.8f;
+        sp.top_k = 20;
+        sp.min_p = 0.0f;
+        g_smpl = common_sampler_init(g_model, sp);
+    } catch (const std::exception &e) {
+        free_all();
+        return env->NewStringUTF((std::string("the model could not be set up: ") + e.what()).c_str());
+    }
     if (!g_smpl) { free_all(); return env->NewStringUTF("could not set up sampling"); }
     return nullptr;
 }
