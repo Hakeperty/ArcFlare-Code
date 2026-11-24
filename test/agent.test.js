@@ -41,6 +41,19 @@ test("edit_file refuses an ambiguous match instead of guessing", async () => {
   fs.rmSync(d, { recursive: true, force: true });
 });
 
+// The user saving the file in their editor while the edit waited for approval
+// had that save overwritten by text read before the wait.
+test("edit_file does not overwrite a change made while it waited for approval", async () => {
+  const d = tmpdir("edit-race");
+  const f = path.join(d, "a.txt");
+  fs.writeFileSync(f, "one\ntwo\n");
+  const exec = tools.makeExecutor({ cwd: d, approve: async () => { fs.writeFileSync(f, "one\ntwo\nsaved by you\n"); return true; } });
+  const out = await exec("edit_file", { path: "a.txt", old_string: "one", new_string: "ONE" });
+  assert.match(out, /changed while this edit waited/);
+  assert.strictEqual(fs.readFileSync(f, "utf8"), "one\ntwo\nsaved by you\n");
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
 test("edit_file reports a missing target rather than appending", async () => {
   const d = tmpdir("edit2");
   fs.writeFileSync(path.join(d, "a.txt"), "hello\n");
