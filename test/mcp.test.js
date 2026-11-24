@@ -78,6 +78,17 @@ test("a tool that throws is a result, not a protocol error", async () => {
   assert.ok(!/^ERROR: ERROR/.test(res.result.content[0].text));
 });
 
+test("arguments that are not an object are refused before the tool runs", async () => {
+  const s = new Server({});
+  let ran = false;
+  s.tool("need", "needs x", { type: "object", properties: { x: { type: "string" } }, required: ["x"] }, () => { ran = true; return "ran"; });
+  for (const args of ["x", 7, true, ["x"]]) {
+    const res = await s.handle({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "need", arguments: args } });
+    assert.strictEqual(res.result.isError, true, JSON.stringify(args));
+  }
+  assert.strictEqual(ran, false);
+});
+
 test("calling a tool that does not exist is an invalid-params error", async () => {
   const s = new Server({});
   const res = await s.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "ghost" } });
