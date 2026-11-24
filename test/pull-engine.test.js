@@ -267,3 +267,24 @@ test("a download that stops sending data fails instead of hanging", async () => 
     await assert.rejects(dl.download(`http://127.0.0.1:${s.address().port}/f`, tmpFile("stall.gguf"), { idleMs: 300 }));
   } finally { s.closeAllConnections(); s.close(); }
 });
+
+// Every name is checked before anything is written: a bad second name used to
+// be found only after the first file had been downloaded and refs/main written.
+test("pull writes nothing when any file name would leave the cache", async () => {
+  const { s, url } = await server();
+  const prev = process.env.HF_ENDPOINT;
+  try {
+    process.env.HF_ENDPOINT = url;
+    delete require.cache[require.resolve("../lib/hf")];
+    const hf2 = require("../lib/hf");
+    const cache = fs.mkdtempSync(path.join(os.tmpdir(), "af-cache-"));
+    const f = (rfilename) => ({ rfilename, size: BODY.length, lfs: { size: BODY.length, sha256: SHA } });
+    const info = { sha: "abc123", siblings: [f("tiny-Q8_0.gguf"), f("../mmproj-evil.gguf")] };
+    await assert.rejects(hf2.pull("me/tiny:Q8_0", { cache, info }), /leaves the model folder: \.\.\/mmproj-evil/);
+    assert.deepStrictEqual(fs.readdirSync(cache), []);
+  } finally {
+    s.close();
+    if (prev === undefined) delete process.env.HF_ENDPOINT; else process.env.HF_ENDPOINT = prev;
+    delete require.cache[require.resolve("../lib/hf")];
+  }
+});
