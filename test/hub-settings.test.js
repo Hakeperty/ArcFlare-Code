@@ -31,6 +31,15 @@ test("the Arc chosen on the phone is remembered on the computer", () => {
   assert.strictEqual(new HubSettings({ dir }).arc(), null);
 });
 
+test("choosing an Arc keeps what another process wrote to the phone settings since", () => {
+  const dir = tmp();
+  const s = new HubSettings({ dir });
+  new HubSettings({ dir }).setPhone({ muted: true, from: "09:00" });   // as `arcflare phone mute` does
+  s.setArc("code");
+  assert.strictEqual(new HubSettings({ dir }).phone().muted, true);
+  assert.strictEqual(new HubSettings({ dir }).phone().from, "09:00");
+});
+
 test("what a phone is sent names each Arc and never carries its instructions", () => {
   const view = new HubSettings({ dir: tmp() }).view();
   assert.ok(view.arcs.length >= 7);
