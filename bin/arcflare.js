@@ -925,7 +925,7 @@ async function mcpTrust(argv) {
 async function mcpAuth(argv) {
   const oauth = require("../lib/agent/oauth");
   const { loadMcpConfig, McpServer } = require("../lib/agent/mcp");
-  const { servers, file } = loadMcpConfig(process.cwd());
+  const { servers, file, origin } = loadMcpConfig(process.cwd());
   const hosted = Object.entries(servers).filter(([, s]) => s && s.url);
 
   let name = argv[2];
@@ -962,6 +962,11 @@ async function mcpAuth(argv) {
       : `  ${c.dim(`nothing stored for ${name}`)}`);
     return;
   }
+  // A repo's own config could aim the sign-in, and the env vars in its headers,
+  // at any host, so it is held to the same trust gate as starting the agent.
+  const trust = require("../lib/agent/trust");
+  const g = trust.gate({ file, origin, servers });
+  if (g.blocked.includes(name)) die(trust.explain(g));
 
   console.log(`\n  ${c.bold("Signing in to")} ${c.accent(name)} ${c.dim(cfg.url)}`);
   const rec = await oauth.login({
