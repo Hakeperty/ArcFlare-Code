@@ -368,8 +368,9 @@ public class CallPlugin extends Plugin {
                 }
             };
             if (running && Build.VERSION.SDK_INT >= 33) {
+                ParcelFileDescriptor[] p = null;
                 try {
-                    ParcelFileDescriptor[] p = ParcelFileDescriptor.createPipe();
+                    p = ParcelFileDescriptor.createPipe();
                     String name;
                     synchronized (answerLock) { name = "answer-" + (++answers) + ".wav"; kept[0] = name; keptCall[0] = callNo; files.add(name); }
                     src[0] = p[0];
@@ -379,7 +380,12 @@ public class CallPlugin extends Plugin {
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, MuLawWav.RATE);
-                } catch (IOException e) { endAnswer(); drop.run(); }
+                } catch (IOException e) {
+                    // the answer file failed before the write end became the pipe endAnswer() closes: close it here
+                    if (p != null) try { p[1].close(); } catch (IOException x) { /* already closed */ }
+                    endAnswer();
+                    drop.run();
+                }
             }
             final SpeechRecognizer r = SpeechRecognizer.createSpeechRecognizer(getContext());
             final boolean[] done = { false };

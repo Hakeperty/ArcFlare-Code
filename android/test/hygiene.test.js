@@ -286,6 +286,8 @@ test("native source lint: CallPlugin (greps only, nothing here can run it)", () 
   assert.ok(c.includes('synchronized (answerLock) { name = "answer-" + (++answers) + ".wav"; kept[0] = name; keptCall[0] = callNo; files.add(name); }'));
   assert.match(c, /synchronized \(answerLock\) \{\s*if \(kept\[0\] == null \|\| keptCall\[0\] != callNo\) return;[^}]*answers--;/);
   assert.equal([...c.matchAll(/\banswers\b/g)].length, 4, "answers is touched only in those three places (and declared)");
+  // a listen whose answer file cannot be opened closes the pipe's write end too
+  assert.match(c, /\} catch \(IOException e\) \{\s*if \(p != null\) try \{ p\[1\]\.close\(\); \}/);
 });
 
 test("native source lint: cleartext is allowed only in the network security config, and the plain-HTTP page path is gone from the project", () => {
