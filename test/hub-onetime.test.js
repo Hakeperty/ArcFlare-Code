@@ -273,3 +273,17 @@ test("a one-time chat's ttlMinutes is checked", () => {
   assert.strictEqual(chats.create({ oneTime: true, ttlMinutes: 2 }).ttlMinutes, 2);
   chats.purgeOneTime();
 });
+
+test("an answer that cannot be saved still ends with an error, so the chat does not stay answering", async () => {
+  const sse = 'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n';
+  const { chats } = chatMgr({ fetch: async () => new Response(sse) });
+  const c = chats.create({ title: "normal" });
+  const seen = [];
+  chats.on("event", (e) => seen.push(e.kind));
+  const write = chats._write.bind(chats);
+  await chats.send(c.id, "hello");
+  chats._write = (doc) => { if (doc.messages.some((m) => m.role === "assistant")) throw new Error("ENOSPC"); return write(doc); };
+  assert.ok(await waitFor(() => seen.includes("error") || seen.includes("done")), seen.join(","));
+  assert.ok(seen.includes("error"));
+  assert.strictEqual(chats.running.has(c.id), false);
+});
