@@ -210,3 +210,25 @@ for (const what of ["model", "unqueue", "wake"]) {
     assert.strictEqual(await page.locator("#transcript .notice", { hasText: "Model set" }).count(), 0);
   });
 }
+
+// A chat message that fails after you opened another chat: the other chat's composer and error line stay as they were.
+test("a chat send that fails after opening another chat leaves that chat as it was", { skip }, async (t) => {
+  const { page, chats } = await phone(t);
+  const a = chats.create({ model: "m" }).id;
+  const b = chats.create({ model: "m" }).id;
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await page.route(`**/api/chats/${a}/send`, async (route) => { await gate; await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "it failed" }) }); });
+  await page.evaluate((id) => { location.hash = "#/chat/" + id; }, a);
+  await page.locator("#view-chat").waitFor({ state: "visible" });
+  await page.waitForFunction((id) => chatView.id === id, a);
+  await page.fill("#chat-text", "for the first chat");
+  await page.evaluate(() => $("chat-compose").requestSubmit());
+  await page.evaluate((id) => { location.hash = "#/chat/" + id; }, b);
+  await page.waitForFunction((id) => chatView.id === id, b);
+  await new Promise((r) => setTimeout(r, 300));
+  release();
+  await new Promise((r) => setTimeout(r, 500));
+  assert.strictEqual(await page.inputValue("#chat-text"), "", "the first chat's message was put in the second's composer");
+  assert.ok(!(await page.isVisible("#chat-error")), "the first chat's error is shown on the second");
+});
