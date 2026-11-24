@@ -377,3 +377,20 @@ test("Local AI: calls beyond the limit are not run, and the model is told", { sk
   assert.strictEqual(last[1], "system,user,assistant," + Array(max + 1).fill("user").join(","), "one result per call");
   assert.ok(last[4].includes("Error: not run"), "the model is told the extra call was not run");
 });
+
+// The plugin failing to answer is not proof that the phone is unsupported: the screen says it could not check, and
+// the next look (opening the tab again) shows Local AI as usual.
+test("Local AI: a failed check of the phone says so, and the next look works", { skip }, async (t) => {
+  const page = await open(t);
+  await page.evaluate(() => {
+    const orig = window.__native.info;
+    window.__native.info = async () => { window.__native.info = orig; throw new Error("the plugin did not answer"); };
+    return window.__view.refresh();
+  });
+  const text = await page.locator("#root").innerText();
+  assert.ok(text.includes("Could not check this phone (the plugin did not answer)"), text);
+  assert.ok(!text.includes("64-bit"), "a failed check was reported as an unsupported phone");
+  await page.evaluate(() => window.__view.refresh());
+  await page.getByText("Before you download").waitFor();
+  assert.ok(!(await page.locator("#root").innerText()).includes("the plugin did not answer"));
+});
