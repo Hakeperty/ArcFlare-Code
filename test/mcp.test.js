@@ -565,3 +565,13 @@ test("two browser tools called at once share one browser launch", async () => {
   await b.start();
   assert.strictEqual(launches, 1, "a running browser is reused");
 });
+
+test("smoke with a bad ready_log pattern starts nothing", async () => {
+  const s = createServer({});
+  const d = tmpdir("smoke-re");
+  const res = await s.handle({ jsonrpc: "2.0", id: 10, method: "tools/call",
+    params: { name: "smoke", arguments: { dir: d, command: `node -e "setTimeout(()=>{}, 20000)"`, ready_log: "(" } } });
+  assert.strictEqual(res.result.isError, true);
+  assert.match(res.result.content[0].text, /bad ready_log/);
+  assert.strictEqual(s.procs.list().length, 0, "no process left behind");
+});
