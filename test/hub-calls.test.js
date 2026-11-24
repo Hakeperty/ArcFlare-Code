@@ -35,7 +35,9 @@ test("a call: ring, answer, reply, the agent's next line, hang up, then both rec
   box.hangUp(id, ["conversation.wav", "answer-1.wav"]);
   assert.strictEqual(box.current(), null);
   assert.throws(() => box.audio(id, { name: "../x.wav", offset: 0, data: "" }), /Not a recording/);
+  const before = (await box.wait(id, -1, 0)).version;
   box.audio(id, { name: "conversation.wav", offset: 0, data: b64("RIFF") });
+  assert.ok((await box.wait(id, -1, 0)).version > before, "every piece shows the upload is still coming");
   box.audio(id, { name: "conversation.wav", offset: 0, data: b64("RIFF") });                 // a retried piece is not written twice
   assert.throws(() => box.audio(id, { name: "conversation.wav", offset: 99, data: b64("x") }), /Expected offset 4/);
   assert.strictEqual(box.audio(id, { name: "conversation.wav", offset: 4, data: b64("data"), last: true }).saved, false);

@@ -555,6 +555,24 @@ test("call_phone refuses a time (at) on a call that is already under way, before
   assert.match(res.result.content[0].text, /at starts a new call for later: it cannot be used with call_id/);
 });
 
+test("call_phone hang_up stops waiting for recordings once the phone stops sending them", async () => {
+  const local = require("../lib/hub/local");
+  const real = local.callHub;
+  let polls = 0;
+  // The phone hung up, named its recordings, then its upload failed: the call never changes again.
+  const ended = { id: "0123456789abcdef", status: "ended", why: "the user hung up", version: 7, saved: false, recordings: [], turns: [{ who: "agent", text: "Bye." }], folder: "/x" };
+  local.callHub = async (method) => {
+    if (method === "GET" && ++polls > 5) throw new Error("still polling a call that went quiet");
+    return method === "GET" ? ended : {};
+  };
+  try {
+    const s = createServer({});
+    const res = await s.handle({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "call_phone", arguments: { say: "Bye.", call_id: ended.id, hang_up: true } } });
+    assert.match(res.result.content[0].text, /not uploaded yet/);
+    assert.strictEqual(polls, 2, "one wait with no change is enough");
+  } finally { local.callHub = real; }
+});
+
 test("two browser tools called at once share one browser launch", async () => {
   const { Browser } = require("../lib/mcp/browser");
   const b = new Browser();
