@@ -233,3 +233,9 @@ test("Wayland, live: windows, focus, typing, keys, screenshots and the clipboard
     assert.strictEqual(await desktop.clipboardGet(), "from arcflare ✓");
   } finally { try { process.kill(-term.pid); } catch { /* gone */ } }
 });
+
+test("device memory for one build is not answered from another build's cache", () => {
+  const build = (server, totalMiB) => ({ server, devices: [{ totalMiB, freeMiB: totalMiB / 2 }] });
+  assert.strictEqual(backend.deviceMemory(build("/a/llama-server", 8192), { skipUsed: true }).totalBytes, 8192 * 1024 * 1024);
+  assert.strictEqual(backend.deviceMemory(build("/b/llama-server", 24576), { skipUsed: true }).totalBytes, 24576 * 1024 * 1024);
+});
