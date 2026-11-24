@@ -43,3 +43,12 @@ test("a hand-edited voice cannot point its clip outside the voices folder", () =
   fs.writeFileSync(path.join(voices.dir(), "evil.json"), JSON.stringify({ name: "evil", clip: "../../secret.wav" }));
   assert.strictEqual(path.dirname(voices.get("evil").clipPath), voices.dir());
 });
+
+test("re-saving a voice from its own stored clip keeps the clip", () => {
+  const src = path.join(process.env.ARCFLARE_HOME, "keep.wav");
+  fs.writeFileSync(src, Buffer.alloc(1000, 7));
+  voices.save("keep", { like: src });
+  const own = voices.get("keep").clipPath;
+  voices.save("keep", { like: own, overwrite: true });
+  assert.ok(fs.readFileSync(voices.get("keep").clipPath).equals(Buffer.alloc(1000, 7)));
+});
