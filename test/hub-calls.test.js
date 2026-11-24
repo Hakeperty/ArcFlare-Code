@@ -52,6 +52,16 @@ test("a call: ring, answer, reply, the agent's next line, hang up, then both rec
   if (process.platform !== "win32") assert.strictEqual(fs.statSync(path.join(dir, id, "answer-1.wav")).mode & 0o077, 0, "recordings are private");
 });
 
+test("a user who hangs up while the agent's last line still plays is the one who hung up", async () => {
+  const box = new CallBox({ dir: tmp() });
+  const { id } = box.start({ say: "Deploy now?" });
+  box.answer(id);
+  box.reply(id, "Yes", "text");
+  box.say(id, { say: "Deploying. Bye.", hangUp: true });
+  box.hangUp(id, [], true);   // the phone says the user tapped Hang up
+  assert.strictEqual((await box.wait(id, -1, 0)).why, "the user hung up");
+});
+
 test("muted or outside the user's hours: the phone is not rung, and the agent is told why", () => {
   const box = new CallBox({ dir: tmp(), allows: () => ({ ring: false, why: "the user muted calls and notification sounds" }) });
   assert.throws(() => box.start({ say: "hi" }), (e) => e.status === 409 && /muted/.test(e.message));

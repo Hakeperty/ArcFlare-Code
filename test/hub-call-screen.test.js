@@ -236,6 +236,26 @@ test("an Answer that lands after the agent hung up does not reopen the call", { 
   assert.ok(!urls.some((u) => /\/api\/calls\/null\//.test(u)), "the phone sent a reply to a call with no id");
 });
 
+// The agent's last line (it hangs up after it) is still playing when the user taps Hang up: the agent is told the
+// user hung up. Before, the phone's end looked the same as the one it sends after the line, so it said the agent did.
+test("hanging up while the agent's last line plays is recorded as the user hanging up", { skip }, async (t) => {
+  const { page, calls } = await phone(t, { app: true });
+  const { id } = calls.start({ say: "Deploy now?", from: "Codex" });
+  await page.click("#call-answer");   // by voice: the app plays the agent's lines
+  await page.locator("#call-status", { hasText: "Nothing heard" }).waitFor();
+  await page.evaluate(() => [...document.querySelectorAll("#call-quick button")].find((x) => x.textContent === "Yes").click());
+  await until(() => calls.current() && calls.current().status === "waiting", "the tap did not answer");
+  await page.evaluate(() => {   // the next line plays until the call is hung up
+    const make = window.ArcFlareNative.call;
+    window.ArcFlareNative.call = () => Object.assign(make(), { playLine: () => { window.__playing = true; return new Promise(() => {}); } });
+  });
+  calls.say(id, { say: "Deploying. Bye.", hangUp: true });
+  await page.waitForFunction(() => window.__playing === true);
+  await page.click("#call-hangup");
+  await until(() => calls.current() === null, "hanging up did not end the call");
+  assert.strictEqual(calls.history()[0].why, "the user hung up");
+});
+
 // A listen that comes back after its call ended belongs to that call: what it heard is not sent as an answer in the
 // next call.
 test("what a listen hears after its call ended is not sent in the next call", { skip }, async (t) => {
