@@ -63,7 +63,10 @@ const tapTwice = (page, label) => page.evaluate((l) => {
   const b = [...document.querySelectorAll("#call-quick button")].find((x) => x.textContent === l);
   b.click(); b.click();   // in the same tick: the second arrives while the first is on its way
 }, label);
-const tapLater = (page) => page.evaluate(() => [...document.querySelectorAll("#call-quick button")].find((x) => x.textContent === "Later").click());
+const tapLater = async (page) => {
+  await page.locator("#call-ringing").waitFor({ state: "visible" });   // the tap answers only once it rings
+  await page.evaluate(() => [...document.querySelectorAll("#call-quick button")].find((x) => x.textContent === "Later").click());
+};
 const until = async (f, what) => { for (let i = 0; i < 100; i++) { if (await f()) return; await new Promise((r) => setTimeout(r, 50)); } assert.fail(what); };
 
 test("call screen: one tap answers while it rings and in the call; a second tap changes nothing", { skip }, async (t) => {
