@@ -14,16 +14,17 @@ function fake(name, body) {
 const INIT = `if (msg.method === "initialize") return say({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2024-11-05", capabilities: {} } });`;
 
 test("a stdio server that stops reading fails the call instead of crashing the agent", async () => {
+  // On Windows CI, writing to a pipe nobody reads never failed and the call timed out, so there this test only
+  // covers a server that exits while the call is pending (exited); the stop-reading case is checked on Linux and macOS.
   const s = fake("deaf", `${INIT}
     if (msg.method === "tools/list") {
       say({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "t" }] } });
-      // On Windows CI this write never failed and the call timed out, so there the server exits instead.
-      if (process.platform === "win32") process.exit(0);
-      rl.close(); require("fs").closeSync(0); setTimeout(() => {}, 20000);
-    }`);
+      if (process.platform !== "win32") { rl.close(); require("fs").closeSync(0); setTimeout(() => {}, 20000); }
+    }
+    if (msg.method === "tools/call" && process.platform === "win32") process.exit(0);`);
   try {
     await s.start(10000);
-    // The write lands on a pipe nobody reads: EPIPE, which used to be uncaught.
+    // Off Windows the write lands on a pipe nobody reads: EPIPE, which used to be uncaught.
     await assert.rejects(s.call("t", {}, 10000), /EPIPE|exited/);
   } finally { s.stop(); }
 });
