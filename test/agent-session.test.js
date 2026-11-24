@@ -284,10 +284,26 @@ test("a running shell command is killed when the turn is interrupted", async () 
 test("a command that backgrounds a process returns when the shell exits", async (t) => {
   if (process.platform === "win32") return t.skip("POSIX shell syntax");
   const t0 = Date.now();
-  const r = await tools.runShell("sleep 30 & echo started", { cwd: os.tmpdir(), timeoutMs: 60000 });
+  const r = await tools.runShell("sleep 30 & echo started $!", { cwd: os.tmpdir(), timeoutMs: 60000 });
+  const [word, pid] = r.stdout.trim().split(" ");
+  t.after(() => { try { process.kill(Number(pid)); } catch { /* already gone */ } });
   assert.strictEqual(r.status, 0);
-  assert.strictEqual(r.stdout.trim(), "started");
+  assert.strictEqual(word, "started");
   assert.ok(Date.now() - t0 < 10000, "it did not wait for the background sleep");
+});
+
+// A process holding the pipes must not keep the CLI itself from exiting once the tool call is done.
+test("a backgrounded process does not keep the CLI running after the command returned", async (t) => {
+  if (process.platform === "win32") return t.skip("POSIX shell syntax");
+  const { execFile } = require("child_process");
+  const toolsPath = path.join(__dirname, "..", "lib", "agent", "tools.js");
+  const code = `require(${JSON.stringify(toolsPath)}).runShell("sleep 20 & echo $!", { cwd: ${JSON.stringify(os.tmpdir())}, timeoutMs: 60000 }).then((r) => process.stdout.write(r.stdout))`;
+  const t0 = Date.now();
+  const out = await new Promise((resolve, reject) => {
+    execFile(process.execPath, ["-e", code], { timeout: 12000 }, (err, stdout) => (err ? reject(Object.assign(err, { stdout })) : resolve(stdout)));
+  }).catch((e) => { throw new Error(`the process was still running after ${Date.now() - t0} ms (${e.message})`); });
+  t.after(() => { try { process.kill(Number(out.trim())); } catch { /* already gone */ } });
+  assert.ok(Date.now() - t0 < 6000, "the process exited soon after the command returned");
 });
 
 // What a command left in the background keeps its stdout after the tool call
