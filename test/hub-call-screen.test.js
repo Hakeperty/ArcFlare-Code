@@ -21,7 +21,8 @@ const FAKE_APP = () => {
   const ok = async () => ({});
   window.__notes = [];
   window.ArcFlareNative = { notifier: () => ({ state: async () => ({ granted: true }), request: ok, notify: async (n) => { window.__notes.push([n.title, n.body, n.sound]); } }), call: () => ({
-    ring: ok, stopRing: ok, start: ok, speak: ok, listen: ok, stop: ok, read: ok, clear: ok,
+    ring: ok, stopRing: ok, start: ok, speak: ok, stop: ok, read: ok, clear: ok,
+    listen: () => (window.__heard ? new Promise((r) => window.__heard.push(r)) : ok()),   // a test can hold what was heard
     writeLine: async (data, append) => { window.__line = (append ? window.__line : "") + atob(data); },
     playLine: async () => { window.__played = window.__line; },
   }) };
@@ -225,4 +226,26 @@ test("an Answer that lands after the agent hung up does not reopen the call", { 
   await new Promise((r) => setTimeout(r, 500));
   assert.ok(!(await page.isVisible("#call-active")), "the call controls came back for a call that had ended");
   assert.ok(!urls.some((u) => /\/api\/calls\/null\//.test(u)), "the phone sent a reply to a call with no id");
+});
+
+// A listen that comes back after its call ended belongs to that call: what it heard is not sent as an answer in the
+// next call.
+test("what a listen hears after its call ended is not sent in the next call", { skip }, async (t) => {
+  const { page, calls } = await phone(t, { app: true });
+  await page.evaluate(() => { window.__heard = []; });
+  calls.start({ say: "First call.", from: "Codex" });
+  await page.click("#call-answer");
+  await until(() => page.evaluate(() => window.__heard.length === 1), "the first call did not listen");
+  await page.click("#call-hangup");
+  await until(() => calls.current() === null, "hanging up did not end the call");
+  await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
+
+  const { id } = calls.start({ say: "Second call.", from: "Codex" });
+  await page.click("#call-answer");
+  await until(() => page.evaluate(() => window.__heard.length === 2), "the second call did not listen");
+  await page.evaluate(() => window.__heard[0]({ text: "words from the first call" }));
+  await new Promise((r) => setTimeout(r, 500));
+  assert.deepStrictEqual(calls.current().turns.filter((x) => x.who === "user"), [], "the first call's words were sent in the second");
+  assert.strictEqual(calls.current().id, id);
+  assert.strictEqual(await page.isDisabled("#call-listen"), true, "Listen came back on while the second call listens");
 });
