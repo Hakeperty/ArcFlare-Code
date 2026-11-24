@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * Calls from agents on the computer (call_phone, lib/hub/calls.js). The hub's event reaches the app over the tunnel;
@@ -107,6 +108,8 @@ public class CallPlugin extends Plugin {
     private int callNo;
     // Main thread only: settles the listen() in progress with "" and lets its recogniser go. null when none is.
     private Runnable endListen;
+    // Main thread only: stops the agent's line still playing (playLine) and settles it. null when none is.
+    private Runnable endLine;
 
     @Override
     public void load() {
@@ -327,19 +330,30 @@ public class CallPlugin extends Plugin {
     public void playLine(PluginCall call) {
         call.setKeepAlive(true);
         main.post(() -> {
+            if (endLine != null) endLine.run(); // a newer line replaces the one still playing, which resolves
             MediaPlayer mp = new MediaPlayer();
+            final boolean[] done = { false };
+            final Runnable[] stopIt = { null };
+            Consumer<String> finish = (error) -> {
+                if (done[0]) return;
+                done[0] = true;
+                if (endLine == stopIt[0]) endLine = null;
+                mp.release(); // stops it too when it is still playing
+                call.setKeepAlive(false);
+                if (error != null) call.reject(error); else call.resolve();
+            };
+            stopIt[0] = () -> finish.accept(null);
+            endLine = stopIt[0];
             try {
                 mp.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
                 mp.setDataSource(lineFile().getPath());
-                mp.setOnCompletionListener((p) -> { p.release(); call.setKeepAlive(false); call.resolve(); });
-                mp.setOnErrorListener((p, what, extra) -> { p.release(); call.setKeepAlive(false); call.reject("could not play the line"); return true; });
+                mp.setOnCompletionListener((p) -> finish.accept(null));
+                mp.setOnErrorListener((p, what, extra) -> { finish.accept("could not play the line"); return true; });
                 mp.prepare();
                 mp.start();
             } catch (IOException | RuntimeException e) {
-                mp.release();
-                call.setKeepAlive(false);
-                call.reject("could not play the line");
+                finish.accept("could not play the line");
             }
         });
     }
@@ -453,7 +467,10 @@ public class CallPlugin extends Plugin {
     public void stop(PluginCall call) {
         // The recogniser lives on the main thread; the recording is stopped here, off it (it waits for the audio thread).
         running = false; // before the post: the listen it settles keeps its answer file (see listen)
-        main.post(() -> { if (endListen != null) endListen.run(); }); // a listen still waiting answers ""
+        main.post(() -> {
+            if (endListen != null) endListen.run(); // a listen still waiting answers ""
+            if (endLine != null) endLine.run();     // the agent's line still playing stops
+        });
         if (tts != null) tts.stop();
         stopRecording();
         JSArray list = new JSArray();

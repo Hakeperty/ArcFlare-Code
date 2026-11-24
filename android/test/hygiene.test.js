@@ -288,6 +288,10 @@ test("native source lint: CallPlugin (greps only, nothing here can run it)", () 
   assert.equal([...c.matchAll(/\banswers\b/g)].length, 4, "answers is touched only in those three places (and declared)");
   // a listen whose answer file cannot be opened closes the pipe's write end too
   assert.match(c, /\} catch \(IOException e\) \{\s*if \(p != null\) try \{ p\[1\]\.close\(\); \}/);
+  // hanging up stops the agent's line still playing: stop() runs endLine, which releases the player and settles playLine
+  assert.match(c, /public void stop\(PluginCall call\) \{[\s\S]*?main\.post\(\(\) -> \{[^}]*if \(endLine != null\) endLine\.run\(\);/);
+  assert.match(c, /stopIt\[0\] = \(\) -> finish\.accept\(null\);\s*endLine = stopIt\[0\];/);
+  assert.match(c, /if \(endLine == stopIt\[0\]\) endLine = null;\s*mp\.release\(\);/);
 });
 
 test("native source lint: cleartext is allowed only in the network security config, and the plain-HTTP page path is gone from the project", () => {
