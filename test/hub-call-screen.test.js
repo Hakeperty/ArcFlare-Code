@@ -61,6 +61,7 @@ const tapTwice = (page, label) => page.evaluate((l) => {
   const b = [...document.querySelectorAll("#call-quick button")].find((x) => x.textContent === l);
   b.click(); b.click();   // in the same tick: the second arrives while the first is on its way
 }, label);
+const tapLater = (page) => page.evaluate(() => [...document.querySelectorAll("#call-quick button")].find((x) => x.textContent === "Later").click());
 const until = async (f, what) => { for (let i = 0; i < 100; i++) { if (await f()) return; await new Promise((r) => setTimeout(r, 50)); } assert.fail(what); };
 
 test("call screen: one tap answers while it rings and in the call; a second tap changes nothing", { skip }, async (t) => {
@@ -203,4 +204,25 @@ test("Decline does nothing while an Answer is on its way", { skip }, async (t) =
   release();
   await page.locator("#call-active").waitFor({ state: "visible" });
   await until(() => calls.current() && calls.current().status === "talking", "the call was not answered");
+});
+
+// The agent hangs up while the phone's Answer is on its way: the screen says so and the phone does not go on as if
+// the call were live (before, it showed the call controls and sent the typed answer to a call with no id).
+test("an Answer that lands after the agent hung up does not reopen the call", { skip }, async (t) => {
+  const { page, calls } = await phone(t);
+  const { id } = calls.start({ say: "Deploy now?", from: "Codex" });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
+  const urls = [];
+  page.on("request", (r) => urls.push(r.url()));
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await page.route("**/answer", async (route) => { const res = await route.fetch(); await gate; await route.fulfill({ response: res }); });
+  await tapLater(page);
+  await until(() => calls.current() && calls.current().status === "talking", "the answer did not reach the hub");
+  calls.end(id);
+  await page.locator("#call-ringing").waitFor({ state: "hidden" });
+  release();
+  await new Promise((r) => setTimeout(r, 500));
+  assert.ok(!(await page.isVisible("#call-active")), "the call controls came back for a call that had ended");
+  assert.ok(!urls.some((u) => /\/api\/calls\/null\//.test(u)), "the phone sent a reply to a call with no id");
 });
