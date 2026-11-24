@@ -335,3 +335,24 @@ test("Local AI: with only the small model, a shared folder is not used and the c
   assert.ok(!chat[3].includes("# Tools"), "the small model is not given the tools");
   assert.strictEqual((await calls(page)).filter((c) => c[0] === "read" || c[0] === "list" || c[0] === "write").length, 0);
 });
+
+// Stop during a tool question ends the whole answer: the call the model was writing is not run, and the model is not
+// asked again (before, Stop ended one generation and the tool rounds went on).
+test("Local AI: Stop during a tool question ends it, with no tool run and no new answer", { skip }, async (t) => {
+  const page = await open(t, { files: true, folders: [{ id: "tree-1", name: "Notes" }] });
+  await reachChat(page);
+  await page.evaluate((items) => {
+    window.__chatResults.push(...items);
+    const orig = window.__native.chat;
+    window.__native.chat = async (o) => { await new Promise((r) => { window.__go = r; }); return orig(o); };
+  }, [{ say: "I will look.\n" + toolCall("read_file", { folder: "Notes", path: "todo.txt" }) }]);
+  await page.getByPlaceholder("Message").fill("What is on my list?");
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.waitForFunction(() => !!window.__go);
+  await page.getByRole("button", { name: "Stop" }).click();
+  await page.evaluate(() => window.__go());
+  await page.locator(".local-msg.assistant", { hasText: "I will look." }).waitFor();
+  await page.getByRole("button", { name: "Send" }).waitFor();
+  assert.strictEqual(await APPROVE(page).count(), 0, "a tool call was offered after Stop");
+  assert.strictEqual((await calls(page)).filter((c) => c[0] === "chat").length, 1, "the model was asked again after Stop");
+});
