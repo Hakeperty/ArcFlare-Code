@@ -728,3 +728,16 @@ test("mcp login refuses a workspace server that has not been trusted", () => {
   assert.doesNotMatch(r.stdout + r.stderr, /Signing in/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("engine.start rejects, instead of crashing, when llama-server cannot be run", () => {
+  const home = tmpdir("enginestart");
+  const bad = path.join(home, "llama-server");
+  fs.writeFileSync(bad, "not a program"); // not executable
+  const code = `require(${JSON.stringify(path.join(__dirname, "../lib/engine"))})
+    .start({ exe: ${JSON.stringify(bad)}, port: 1, detach: false })
+    .then(() => console.log("resolved"), (e) => console.log("rejected " + e.message));`;
+  const r = require("child_process").spawnSync(process.execPath, ["-e", code],
+    { encoding: "utf8", env: { ...process.env, ARCFLARE_HOME: home } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^rejected could not start/);
+});
