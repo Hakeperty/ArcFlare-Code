@@ -44,7 +44,8 @@ async function phone(t, { before, app } = {}) {
   const supervisor = new Supervisor({ dir, roots: [dir], backend: async () => ({ port: 1, model: "m", nCtx: 4096, modelRef: "r" }), makeAgent: () => ({}) });
   const calls = new CallBox({ dir: path.join(dir, "calls"), synth: async (text, file) => { fs.writeFileSync(file, "RIFF" + text); return true; } });
   if (before) await before(calls);
-  const hub = createHubServer({ auth, supervisor, config: { roots: [dir] }, local: { token: L.ensureToken(dir), questions: new L.QuestionBox(), calls, api: async () => {} } });
+  const questions = new L.QuestionBox();
+  const hub = createHubServer({ auth, supervisor, config: { roots: [dir] }, local: { token: L.ensureToken(dir), questions, calls, api: async () => {} } });
   const { port } = await hub.listen({ port: 0, host: "127.0.0.1" });
   const browser = await pw.chromium.launch();
   t.after(async () => { await browser.close(); await hub.close(); });
@@ -55,7 +56,7 @@ async function phone(t, { before, app } = {}) {
   await page.fill("#login-pass", PASS);
   await page.click("#login-form button[type=submit]");
   await page.locator("#view-dashboard").waitFor({ state: "visible" });
-  return { page, calls };
+  return { page, calls, questions };
 }
 
 const tapTwice = (page, label) => page.evaluate((l) => {
@@ -355,4 +356,17 @@ test("after signing out during a call, it and the next call ring", { skip }, asy
   calls.start({ say: "Second.", from: "Aider" });
   await page.locator("#call-title", { hasText: "Aider" }).waitFor({ timeout: 10000 });
   await page.locator("#call-ringing").waitFor({ state: "visible" });
+});
+
+// A question on screen when a call rings went away for good (until a reload); it comes back after the call.
+test("a question covered by a call comes back when the call ends", { skip }, async (t) => {
+  const { page, calls, questions } = await phone(t);
+  questions.ask({ question: "Which branch?" });
+  await page.locator("#question-text", { hasText: "Which branch?" }).waitFor();
+  calls.start({ say: "Quick question.", from: "Codex" });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
+  await page.click("#call-decline");
+  await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
+  await page.locator("#sheet-question").waitFor({ state: "visible" });
+  assert.strictEqual(await page.textContent("#question-text"), "Which branch?");
 });
