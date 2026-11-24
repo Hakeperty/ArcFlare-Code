@@ -383,19 +383,22 @@ flow(2, "wrong password: generic error, then lockout with the wait time", async 
   assert.ok(!/exist|no such|unknown user/i.test(b), `error leaks account info: ${b}`);
   P.step("lockout");
   H.clock.freeze();                             // the wait is exact while frozen
-  let msg = "";
-  for (let i = 0; i < 8; i++) {
-    msg = await tryLogin(page, USER, `wrong-password-${i + 2}`);
-    if (/too many|try again/i.test(msg)) break;
+  try {
+    let msg = "";
+    for (let i = 0; i < 8; i++) {
+      msg = await tryLogin(page, USER, `wrong-password-${i + 2}`);
+      if (/too many|try again/i.test(msg)) break;
+    }
+    const m = /try again in (\d+) seconds?/i.exec(msg);
+    assert.ok(m, `no lockout message with a wait time, last message: "${msg}"`);
+    assert.ok(Number(m[1]) >= 1);
+    const again = await tryLogin(page, USER, PASS);
+    assert.match(again, /too many|try again/i, "the right password must not get in during a lockout");
+    await visible(page, "#login-fields");
+    await screen(P, page, "login-locked");
+  } finally {
+    H.clock.thaw(30000);                        // even on failure: the lockout must clear for the later flows
   }
-  const m = /try again in (\d+) seconds?/i.exec(msg);
-  assert.ok(m, `no lockout message with a wait time, last message: "${msg}"`);
-  assert.ok(Number(m[1]) >= 1);
-  const again = await tryLogin(page, USER, PASS);
-  assert.match(again, /too many|try again/i, "the right password must not get in during a lockout");
-  await visible(page, "#login-fields");
-  await screen(P, page, "login-locked");
-  H.clock.thaw(30000);
 });
 
 flow(3, "login lands on dashboard; session survives reload; nothing secret in JS reach", async (P) => {
