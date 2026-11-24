@@ -98,3 +98,20 @@ for (const mode of ["yolo", "team"]) {
     assert.strictEqual(await page.evaluate((m) => !!state.agent[m], mode), false);
   });
 }
+
+// Questions answered on the computer while the phone was signed out are gone after signing in again; only the ones
+// still open come back.
+test("questions resolved while signed out do not come back after signing in", { skip }, async (t) => {
+  const { page, questions, signIn } = await phone(t);
+  const q1 = questions.ask({ question: "First question?" }).id;
+  const q2 = questions.ask({ question: "Second question?" }).id;
+  await page.locator("#question-text", { hasText: "First question?" }).waitFor();
+  await page.evaluate(() => logout());
+  await page.locator("#view-login").waitFor({ state: "visible" });
+  questions.answer(q1, "done on the computer");
+  questions.cancel(q2);
+  questions.ask({ question: "Still open?" });
+  await signIn();
+  await page.locator("#sheet-question").waitFor({ state: "visible" });
+  assert.strictEqual(await page.textContent("#question-text"), "Still open?");
+});
