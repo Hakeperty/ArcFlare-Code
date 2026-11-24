@@ -159,8 +159,13 @@ public class AppUpdaterPlugin extends Plugin {
         if (apk == null) { call.reject("check for an update first"); return; }
         new Thread(() -> {
             HttpURLConnection c = null;
+            PackageInstaller.Session mine = null; // a newer begin() or download replaces it: then this one stops
             try {
-                synchronized (this) { abandon(); start(size, sha); }
+                synchronized (this) {
+                    abandon();
+                    try { start(size, sha); } catch (Exception e) { abandon(); throw e; }
+                    mine = session;
+                }
                 c = open(OnlineUpdate.apkUrl(apk));
                 long len = c.getContentLengthLong();
                 if (len != -1 && len != size) throw new IOException("the file is not the size arcflare.net announced");
@@ -169,7 +174,7 @@ public class AppUpdaterPlugin extends Plugin {
                     int n;
                     while ((n = in.read(buf)) > 0) {
                         synchronized (this) {
-                            if (out == null) throw new IOException("cancelled");
+                            if (out == null || session != mine) throw new IOException("cancelled");
                             if (written + n > expectedSize) throw new IOException("the download is larger than announced");
                             out.write(buf, 0, n);
                             digest.update(buf, 0, n);
@@ -179,7 +184,7 @@ public class AppUpdaterPlugin extends Plugin {
                 }
                 call.resolve(); // commit() checks the size and the SHA-256 before Android sees the file
             } catch (Exception e) {
-                synchronized (this) { abandon(); }
+                synchronized (this) { if (mine != null && session == mine) abandon(); } // never a newer session
                 call.reject("download failed: " + e.getMessage());
             } finally {
                 if (c != null) c.disconnect();
