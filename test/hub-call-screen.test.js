@@ -249,3 +249,19 @@ test("what a listen hears after its call ended is not sent in the next call", { 
   assert.strictEqual(calls.current().id, id);
   assert.strictEqual(await page.isDisabled("#call-listen"), true, "Listen came back on while the second call listens");
 });
+
+// Hanging up while the connection drops for a moment: the phone tries again, so the call does not stay open on the
+// computer (before, one failed request left it open until the hub's own timeout).
+test("hanging up is tried again when the connection drops", { skip }, async (t) => {
+  const { page, calls } = await phone(t);
+  calls.start({ say: "Deploy now?", from: "Codex" });
+  await tapLater(page);
+  await until(() => calls.current() && calls.current().status === "waiting", "the tap did not answer the call");
+  let failed = 0;
+  await page.route("**/end", (route) => (failed++ ? route.continue() : route.abort("internetdisconnected")));
+  await page.click("#call-hangup");
+  await until(() => calls.current() === null, "the hang-up was not tried again");
+  assert.strictEqual(failed, 2);
+  await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
+  assert.ok(!(await page.isVisible("#call-error")));
+});
