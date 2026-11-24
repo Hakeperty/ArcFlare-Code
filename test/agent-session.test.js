@@ -300,3 +300,20 @@ test("a backgrounded process can still write after the command returned", async 
   for (let i = 0; i < 50 && !fs.existsSync(marker); i++) await new Promise((res) => setTimeout(res, 100));
   assert.ok(fs.existsSync(marker), "the background process survived its late write");
 });
+
+// A model server that dies mid-answer left the agent's turn waiting forever.
+test("a model server that cuts off its answer fails the request instead of hanging", async () => {
+  const { streamChat } = require("../lib/agent/agent");
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "hel" } }] })}\n\n`);
+    setTimeout(() => res.socket.destroy(), 50);
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  try {
+    await assert.rejects(Promise.race([
+      streamChat(srv.address().port, { messages: [] }, null, 60000),
+      new Promise((_, no) => setTimeout(() => no(new Error("still waiting")), 5000)),
+    ]), /closed the answer early/);
+  } finally { srv.close(); }
+});
