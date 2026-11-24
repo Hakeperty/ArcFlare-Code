@@ -130,3 +130,22 @@ for (const [user, shown] of [["owner", true], ["helper", false]]) {
     assert.strictEqual(await page.isVisible("#menu-wake"), true);
   });
 }
+
+// The hub tells the phone a question is resolved before the answer's own reply arrives; the next question shown
+// meanwhile must stay (before, the late reply closed it and it was lost until a reload).
+test("the next question stays when the answer's reply lands after the question was resolved", { skip }, async (t) => {
+  const { page, questions } = await phone(t);
+  questions.ask({ question: "First question?" });
+  questions.ask({ question: "Second question?" });
+  await page.locator("#question-text", { hasText: "First question?" }).waitFor();
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await page.route("**/api/questions/*/answer", async (route) => { const res = await route.fetch(); await gate; await route.fulfill({ response: res }); });
+  await page.fill("#question-answer", "yes");
+  await page.click("#question-send");
+  await page.locator("#question-text", { hasText: "Second question?" }).waitFor();
+  release();
+  await new Promise((r) => setTimeout(r, 600));
+  assert.ok(await page.isVisible("#sheet-question"), "the late reply closed the next question");
+  assert.strictEqual(await page.textContent("#question-text"), "Second question?");
+});
