@@ -154,6 +154,24 @@ test("when QUIC does not get through, cloudflared is started again over HTTP/2, 
   } finally { again.close(); }
 });
 
+test("falling back from QUIC to HTTP/2 starts exactly one new cloudflared", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-h2once-"));
+  const starts = path.join(dir, "starts");
+  const fake = fakeIn(dir, `
+    require("fs").appendFileSync(${JSON.stringify(starts)}, "x");
+    const h2 = process.argv.includes("http2");
+    console.error("INF | https://" + (h2 ? "over-http2" : "over-quic") + ".trycloudflare.com |");
+    if (h2) console.error("INF Registered tunnel connection connIndex=0 protocol=http2");
+    setInterval(() => {}, 1000);`);
+  const t = await cf.startCloudflare({ mailbox: { handle: (q, r) => r.end("{}") }, roomId: ROOM, exe: process.execPath, prefixArgs: [fake],
+    connectMs: 300, timeoutMs: 20000, fetchImpl: noReach });
+  try {
+    assert.strictEqual(t.mode, "http2");
+    await new Promise((r) => setTimeout(r, 2600));   // past the first restart back-off (2 s)
+    assert.strictEqual(fs.readFileSync(starts, "utf8").length, 2, "one QUIC try, one HTTP/2 try, nothing restarted behind them");
+  } finally { t.close(); }
+});
+
 test("when nothing connects, the hub is told why, and no address is published or left running", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-dead-"));
   const fake = fakeIn(dir, `
