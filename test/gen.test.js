@@ -206,3 +206,12 @@ require("readline").createInterface({ input: process.stdin }).on("line", (l) => 
   assert.strictEqual(done.event, "done");
   w.stop();
 });
+
+// The job file goes in ArcFlare's own gen folder, where another user cannot
+// plant a symlink as they could at a guessable name in the shared tmp dir.
+test("the worker's job file is created in the gen folder and removed after", async () => {
+  const worker = fakeWorker(`emit({ event: "done", spec: process.argv[2] });`);
+  const r = await gen.runWorker(process.execPath, {}, { worker });
+  assert.strictEqual(path.dirname(r.spec), path.join(process.env.ARCFLARE_HOME, "gen"));
+  assert.ok(!fs.existsSync(r.spec), "removed when the job ends");
+});
