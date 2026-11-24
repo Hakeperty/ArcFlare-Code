@@ -275,9 +275,13 @@ public class AppUpdaterPlugin extends Plugin {
         receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context ctx, Intent intent) {
-                if (pendingCommit == null) return; // nothing of ours is being installed: ignore
                 int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
-                if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                boolean asking = status == PackageInstaller.STATUS_PENDING_USER_ACTION;
+                PluginCall c;
+                // commit() sets pendingCommit on the plugin's thread; this runs on the main thread.
+                synchronized (AppUpdaterPlugin.this) { c = pendingCommit; if (!asking) pendingCommit = null; }
+                if (c == null) return; // nothing of ours is being installed: ignore
+                if (asking) {
                     Intent confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT);
                     // Launch it only if it opens a system app (the package installer's confirmation screen):
                     // never an arbitrary intent handed to us.
@@ -287,9 +291,6 @@ public class AppUpdaterPlugin extends Plugin {
                     }
                     return;
                 }
-                PluginCall c = pendingCommit;
-                pendingCommit = null;
-                if (c == null) return;
                 JSObject r = new JSObject();
                 r.put("status", status == PackageInstaller.STATUS_SUCCESS ? "installed" : "failed");
                 r.put("message", intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE));

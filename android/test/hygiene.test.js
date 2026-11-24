@@ -178,7 +178,7 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.ok(up.includes("ContextCompat.registerReceiver(getContext(), receiver, new IntentFilter(ACTION), ContextCompat.RECEIVER_NOT_EXPORTED)"));
   assert.ok(!up.includes("getContext().registerReceiver("), "never the bare call: exported below Android 13");
   assert.ok(up.includes("if (confirm != null && opensSystemApp(ctx, confirm))"));
-  assert.ok(up.includes("if (pendingCommit == null) return;"));
+  assert.ok(up.includes("if (c == null) return; // nothing of ours is being installed: ignore"));
   assert.match(up, /new Intent\(ACTION\)\.setPackage\(getContext\(\)\.getPackageName\(\)\)/);
   assert.match(up, /if \(!got\.equals\(expectedSha\)\) \{ abandon\(\);/);
   assert.match(up, /if \(written != expectedSize\) \{ abandon\(\);/);
