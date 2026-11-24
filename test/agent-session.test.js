@@ -297,12 +297,14 @@ test("a backgrounded process does not keep the CLI running after the command ret
   if (process.platform === "win32") return t.skip("POSIX shell syntax");
   const { execFile } = require("child_process");
   const toolsPath = path.join(__dirname, "..", "lib", "agent", "tools.js");
-  const code = `require(${JSON.stringify(toolsPath)}).runShell("sleep 20 & echo $!", { cwd: ${JSON.stringify(os.tmpdir())}, timeoutMs: 60000 }).then((r) => process.stdout.write(r.stdout))`;
+  const pidFile = path.join(tmp("bgexit"), "pid");
+  // The pid goes to a file as soon as the sleep starts, so the cleanup below works even if the test fails early.
+  t.after(() => { try { process.kill(Number(fs.readFileSync(pidFile, "utf8"))); } catch { /* not started, or already gone */ } });
+  const code = `require(${JSON.stringify(toolsPath)}).runShell("sleep 20 & echo $! > '${pidFile}'; echo started", { cwd: ${JSON.stringify(os.tmpdir())}, timeoutMs: 60000 }).then((r) => process.stdout.write(r.stdout))`;
   const t0 = Date.now();
-  const out = await new Promise((resolve, reject) => {
-    execFile(process.execPath, ["-e", code], { timeout: 12000 }, (err, stdout) => (err ? reject(Object.assign(err, { stdout })) : resolve(stdout)));
-  }).catch((e) => { throw new Error(`the process was still running after ${Date.now() - t0} ms (${e.message})`); });
-  t.after(() => { try { process.kill(Number(out.trim())); } catch { /* already gone */ } });
+  await new Promise((resolve, reject) => {
+    execFile(process.execPath, ["-e", code], { timeout: 12000 }, (err) => (err ? reject(new Error(`the process was still running after ${Date.now() - t0} ms (${err.message})`)) : resolve()));
+  });
   assert.ok(Date.now() - t0 < 6000, "the process exited soon after the command returned");
 });
 
