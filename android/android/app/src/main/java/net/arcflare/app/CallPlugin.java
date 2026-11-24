@@ -111,6 +111,8 @@ public class CallPlugin extends Plugin {
             @Override public void onStart(String id) { }
             @Override public void onDone(String id) { finishSpeaking(id, null); }
             @Override public void onError(String id) { finishSpeaking(id, "the phone could not say the line"); }
+            // tts.stop() at hang-up, and a newer line (QUEUE_FLUSH), end a line with onStop only: settle it too.
+            @Override public void onStop(String id, boolean interrupted) { finishSpeaking(id, null); }
         });
     }
 
