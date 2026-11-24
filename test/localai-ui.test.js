@@ -158,6 +158,17 @@ test("Local AI: Models and storage deletes one model, or everything at once", { 
   assert.strictEqual(await page.getByLabel(/I understand/).isChecked(), false, "the notice must be accepted again");
 });
 
+test("Local AI: a Delete that fails shows the error and keeps the list current", { skip }, async (t) => {
+  const page = await open(t);
+  await page.getByLabel(/I understand/).check();
+  await page.getByRole("button", { name: /^Download Qwen3 1\.7B/ }).click();
+  await page.getByRole("button", { name: "Models and storage" }).click();
+  await page.evaluate(() => { window.__native.remove = async () => { throw new Error("The file is in use."); }; });
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "The file is in use." }).waitFor();
+  await page.getByText("Qwen3 1.7B, 1.8 GB on this phone").waitFor();
+});
+
 test("Local AI: a download that died half-way is listed and removed by Delete all", { skip }, async (t) => {
   const page = await open(t);
   await page.evaluate(() => { window.__partial = "qwen3-1.7b"; });
