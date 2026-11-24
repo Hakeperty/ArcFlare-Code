@@ -131,6 +131,20 @@ for (const [user, shown] of [["owner", true], ["helper", false]]) {
   });
 }
 
+// Agents' questions are for owner accounts only: a second account gets a 403 for the list and no question events,
+// and its phone shows no question and no error.
+test("a user account that is not an owner is shown no agent questions and no error", { skip }, async (t) => {
+  const { page, questions } = await phone(t, { user: "helper", setup: ({ auth, questions: q }) => {
+    auth.createAccount("helper", PASS, { role: "user" });
+    q.ask({ question: "Asked before sign-in?" });
+  } });
+  questions.ask({ question: "Asked after sign-in?" });
+  await page.evaluate(() => loadQuestions());   // throws here if a 403 is not taken as "no questions"
+  await new Promise((r) => setTimeout(r, 500));
+  assert.ok(!(await page.isVisible("#sheet-question")), "a question was shown to an account that cannot answer it");
+  assert.strictEqual(await page.evaluate(() => questionState.queue.length + (questionState.current ? 1 : 0)), 0);
+});
+
 // The hub tells the phone a question is resolved before the answer's own reply arrives; the next question shown
 // meanwhile must stay (before, the late reply closed it and it was lost until a reload).
 test("the next question stays when the answer's reply lands after the question was resolved", { skip }, async (t) => {
