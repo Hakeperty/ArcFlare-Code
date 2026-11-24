@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <exception>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -116,6 +117,9 @@ Java_net_arcflare_app_LlamaEngine_nLoad(JNIEnv *env, jclass, jstring jpath, jint
     } catch (const std::exception &e) {
         free_all();
         return env->NewStringUTF((std::string("the model could not be set up: ") + e.what()).c_str());
+    } catch (...) { // anything else thrown must not leave the JNI call either
+        free_all();
+        return env->NewStringUTF("the model could not be set up");
     }
     if (!g_smpl) { free_all(); return env->NewStringUTF("could not set up sampling"); }
     return nullptr;
@@ -151,6 +155,8 @@ Java_net_arcflare_app_LlamaEngine_nBegin(JNIEnv *env, jclass, jobjectArray roles
         p = common_chat_templates_apply(g_tmpls.get(), in);
     } catch (const std::exception &e) {
         return env->NewStringUTF((std::string("the model's chat template failed: ") + e.what()).c_str());
+    } catch (...) {
+        return env->NewStringUTF("the model's chat template failed");
     }
     // The template's own text may hold control tokens; what people typed is never read as one.
     const llama_vocab *vocab = llama_model_get_vocab(g_model);

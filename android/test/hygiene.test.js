@@ -220,6 +220,10 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.ok(/if \(cancel\.get\(\)\) throw new IOException\("cancelled"\);[^\n]*\n\s*if \(!part\.renameTo\(done\)\)/.test(ai), "a cancel is checked right before the file is kept");
   const cpp = read(path.join(native, "cpp", "arcflare_llm.cpp"));
   assert.equal([...cpp.matchAll(/env->DeleteLocalRef\(/g)].length, 2, "nBegin releases each message's references (ART allows 512 per call)");
+  // no exception leaves a JNI call (the app would abort): each try that catches std::exception also catches everything else
+  assert.ok(cpp.includes("#include <exception>"));
+  assert.equal([...cpp.matchAll(/catch \(const std::exception &e\) \{[^}]*\} catch \(\.\.\.\) \{/g)].length, 2);
+  assert.equal([...cpp.matchAll(/\btry \{/g)].length, 2);
   const java = main + read(path.join(dir, "NavPolicy.java"));
   assert.match(main, /FLAG_SECURE/);
   assert.match(main, /setAllowFileAccess\(false\)/);
