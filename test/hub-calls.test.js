@@ -252,6 +252,19 @@ test("a scheduled call: when it may ring, listed until then, taken back, and kep
   assert.strictEqual(events.filter((e) => e.type === "call_end" && /already in a call/.test(e.why)).length, 9, "the phone takes one call at a time: the rest are left as missed calls");
 });
 
+test("a scheduled call waiting to ring is not pruned with old calls, so it still rings after a restart", () => {
+  const dir = tmp();
+  const box = new CallBox({ dir });
+  const { id } = box.schedule({ say: "Stand-up in five minutes.", at: new Date(Date.now() + 3600_000).toISOString() });
+  fs.utimesSync(path.join(dir, id), new Date(0), new Date(0));   // older than every call that follows
+  for (let i = 0; i < 25; i++) box.end(box.start({ say: "hi" }).id);
+  for (const t of box.timers.values()) clearTimeout(t);
+  assert.ok(fs.existsSync(path.join(dir, id, "transcript.json")));
+  const again = new CallBox({ dir });
+  assert.ok(again.timers.has(id), "armed again after the restart");
+  for (const t of again.timers.values()) clearTimeout(t);
+});
+
 test("a scheduled call rings one-way: the phone is told to hang up after the line, and a typed answer ends it and is kept", async () => {
   const dir = tmp();
   const box = new CallBox({ dir });
