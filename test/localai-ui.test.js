@@ -356,3 +356,24 @@ test("Local AI: Stop during a tool question ends it, with no tool run and no new
   assert.strictEqual(await APPROVE(page).count(), 0, "a tool call was offered after Stop");
   assert.strictEqual((await calls(page)).filter((c) => c[0] === "chat").length, 1, "the model was asked again after Stop");
 });
+
+// An answer with more calls than are taken: the ones not run still get a result, so the model is not left with calls
+// that never came back.
+test("Local AI: calls beyond the limit are not run, and the model is told", { skip }, async (t) => {
+  const page = await open(t, { files: true, folders: [{ id: "tree-1", name: "Notes" }] });
+  await reachChat(page);
+  const max = await page.evaluate(() => window.ArcFlarePhoneAgent.MAX_CALLS);
+  const many = Array.from({ length: max + 1 }, () => toolCall("list_files", { folder: "Notes" })).join("\n");
+  await page.evaluate((items) => window.__chatResults.push(...items), [{ say: many }]);
+  await page.getByPlaceholder("Message").fill("list it");
+  await page.getByRole("button", { name: "Send" }).click();
+  for (let i = 0; i < max; i++) {
+    await APPROVE(page).waitFor();
+    await page.getByRole("button", { name: "Allow", exact: true }).click();
+  }
+  await page.locator(".local-msg.assistant", { hasText: "Paris is the capital." }).waitFor();
+  assert.strictEqual((await calls(page)).filter((c) => c[0] === "list").length, max);
+  const last = (await calls(page)).filter((c) => c[0] === "chat").at(-1);
+  assert.strictEqual(last[1], "system,user,assistant," + Array(max + 1).fill("user").join(","), "one result per call");
+  assert.ok(last[4].includes("Error: not run"), "the model is told the extra call was not run");
+});
