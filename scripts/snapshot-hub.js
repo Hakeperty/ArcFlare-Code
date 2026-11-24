@@ -20,7 +20,10 @@ const out = path.join(__dirname, "..", "lib", "hub-snapshot.json");
   // Point the snapshot's links at the public site even when it was taken
   // from a dev server.
   data.site = "https://arcflare.net";
-  for (const m of data.models) m.url = `https://arcflare.net/models/${m.slug}`;
+  for (const m of data.models) {
+    if (typeof m.slug !== "string" || !m.slug) throw new Error(`a model has no slug: ${JSON.stringify(m).slice(0, 120)}`);
+    m.url = `https://arcflare.net/models/${m.slug}`;
+  }
   fs.writeFileSync(out, JSON.stringify(data, null, 1) + "\n");
   console.log(`wrote ${data.models.length} models to ${path.relative(process.cwd(), out)}`);
 })().catch((e) => { console.error(e.message); process.exit(1); });
