@@ -261,6 +261,21 @@ test("CSRF: required on POST (missing/wrong -> 403), ok when right", async () =>
   await s.close();
 });
 
+test("only an owner account can remove an agent and its saved conversation", async () => {
+  const s = await start();
+  const a = await login(s);
+  let removed = 0;
+  s.supervisor.remove = () => { removed++; };
+  const del = () => req(s.port, { method: "DELETE", path: "/api/agents/a1", headers: { Cookie: a.cookie, "X-CSRF-Token": a.csrf } });
+  for (const v of s.auth.sessions.values()) v.user.role = "user";
+  assert.strictEqual((await del()).status, 403);
+  assert.strictEqual(removed, 0);
+  for (const v of s.auth.sessions.values()) v.user.role = "owner";
+  assert.strictEqual((await del()).status, 200);
+  assert.strictEqual(removed, 1);
+  await s.close();
+});
+
 test("Origin must match Host when present", async () => {
   const s = await start();
   const a = await login(s);
