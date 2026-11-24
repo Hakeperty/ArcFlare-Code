@@ -44,7 +44,7 @@ test("a call: ring, answer, reply, the agent's next line, hang up, then both rec
   assert.strictEqual(box.audio(id, { name: "answer-1.wav", offset: 0, data: b64("yes"), last: true }).saved, true);
 
   const done = await box.wait(id, -1, 0);
-  assert.strictEqual(done.status, "ended");
+  assert.deepStrictEqual([done.status, done.why], ["ended", "the agent hung up"], "the phone hung up because the agent asked it to");
   assert.strictEqual(fs.readFileSync(path.join(dir, id, "conversation.wav"), "utf8"), "RIFFdata");
   assert.deepStrictEqual(done.recordings.map((f) => path.basename(f)), ["conversation.wav", "answer-1.wav"]);
   const t = JSON.parse(fs.readFileSync(path.join(dir, id, "transcript.json"), "utf8"));
@@ -96,7 +96,8 @@ test("answering or declining with a message: the agent gets the text, marked as 
   box.say(id, { say: "Deploying." });
   box.reply(id, "thanks");                      // spoken: the default, and it gets a recording name
   box.hangUp(id, []);
-  assert.deepStrictEqual((await box.wait(id, -1, 0)).turns.map((t) => t.via), [undefined, "text", undefined, "voice"]);
+  c = await box.wait(id, -1, 0);
+  assert.deepStrictEqual([c.why, c.turns.map((t) => t.via)], ["the user hung up", [undefined, "text", undefined, "voice"]]);
 });
 
 test("what call_phone tells the agent: typed and heard answers, a decline message, and why there is no recording", () => {
