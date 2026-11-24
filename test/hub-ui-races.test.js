@@ -115,3 +115,18 @@ test("questions resolved while signed out do not come back after signing in", { 
   await page.locator("#sheet-question").waitFor({ state: "visible" });
   assert.strictEqual(await page.textContent("#question-text"), "Still open?");
 });
+
+// Removing an agent erases its conversation, and the hub allows it only for an owner account: a second account's
+// menu has no Delete to tap.
+for (const [user, shown] of [["owner", true], ["helper", false]]) {
+  test(`the agent menu ${shown ? "offers" : "hides"} Delete for ${user === "owner" ? "an owner" : "a user"} account`, { skip }, async (t) => {
+    const { page } = await phone(t, { user, setup: ({ auth, supervisor, dir }) => {
+      auth.createAccount("helper", PASS, { role: "user" });
+      supervisor.create({ name: "first", cwd: dir });
+    } });
+    await page.getByRole("button", { name: "More actions for first" }).click();
+    await page.locator("#sheet-menu").waitFor({ state: "visible" });
+    assert.strictEqual(await page.isVisible("#menu-delete"), shown);
+    assert.strictEqual(await page.isVisible("#menu-wake"), true);
+  });
+}
