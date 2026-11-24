@@ -748,3 +748,18 @@ test("engine.start rejects, instead of crashing, when llama-server cannot be run
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /^rejected could not start/);
 });
+
+test("engine.stop does not kill a process that is not llama-server", () => {
+  const { spawn, spawnSync } = require("child_process");
+  const home = tmpdir("enginestop");
+  const other = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)"], { stdio: "ignore" });
+  try {
+    // A stale server.json whose PID now belongs to some other program.
+    fs.writeFileSync(path.join(home, "server.json"), JSON.stringify({ pid: other.pid, port: 1, exe: "/x/llama-server" }));
+    const code = `console.log(require(${JSON.stringify(path.join(__dirname, "../lib/engine"))}).stop())`;
+    const r = spawnSync(process.execPath, ["-e", code], { encoding: "utf8", env: { ...process.env, ARCFLARE_HOME: home } });
+    assert.strictEqual(r.stdout.trim(), "false", r.stderr);
+    assert.doesNotThrow(() => process.kill(other.pid, 0), "the other process is still running");
+    assert.ok(!fs.existsSync(path.join(home, "server.json")), "the stale record is cleared");
+  } finally { other.kill(); }
+});
