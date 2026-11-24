@@ -53,6 +53,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
 
 /**
  * Calls from agents on the computer (call_phone, lib/hub/calls.js). The hub's event reaches the app over the tunnel;
@@ -100,7 +101,8 @@ public class CallPlugin extends Plugin {
     // Written by begin() (plugin thread) and listen() (main thread), read by stop() (plugin thread): copy-on-write is safe for all.
     private final List<String> files = new CopyOnWriteArrayList<>();
     private int answers;
-    private SpeechRecognizer recognizer;
+    // Main thread only: settles the listen() in progress with "" and lets its recogniser go. null when none is.
+    private Runnable endListen;
 
     @Override
     public void load() {
@@ -338,6 +340,7 @@ public class CallPlugin extends Plugin {
         int seconds = Math.max(3, Math.min(60, call.getInt("seconds", 30)));
         call.setKeepAlive(true);
         main.post(() -> {
+            if (endListen != null) endListen.run(); // a newer listen replaces the older one, which answers ""
             if (!SpeechRecognizer.isRecognitionAvailable(getContext())) { call.setKeepAlive(false); call.reject("This phone has no speech recognition. Type the answer instead."); return; }
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -355,32 +358,38 @@ public class CallPlugin extends Plugin {
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, MuLawWav.RATE);
                 } catch (IOException e) { endAnswer(); }
             }
-            if (recognizer != null) recognizer.destroy();
-            recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
+            final SpeechRecognizer r = SpeechRecognizer.createSpeechRecognizer(getContext());
             final boolean[] done = { false };
-            Runnable timeUp = () -> { if (recognizer != null) recognizer.stopListening(); };
-            main.postDelayed(timeUp, seconds * 1000L);
-            recognizer.setRecognitionListener(new RecognitionListener() {
-                private void finish(String text, String error) {
-                    if (done[0]) return;
-                    done[0] = true;
-                    main.removeCallbacks(timeUp);
-                    endAnswer();
-                    call.setKeepAlive(false);
-                    if (error != null) { call.reject(error); return; }
-                    JSObject r = new JSObject();
-                    r.put("text", text);
-                    call.resolve(r);
-                }
+            final Runnable[] timers = new Runnable[2]; // [0] time is up: stop and wait for the answer, [1] give up
+            BiConsumer<String, String> finish = (text, error) -> {
+                if (done[0]) return;
+                done[0] = true;
+                main.removeCallbacks(timers[0]);
+                main.removeCallbacks(timers[1]);
+                if (endListen == timers[1]) endListen = null;
+                endAnswer();
+                main.post(r::destroy); // not from inside its own callback
+                call.setKeepAlive(false);
+                if (error != null) { call.reject(error); return; }
+                JSObject o = new JSObject();
+                o.put("text", text);
+                call.resolve(o);
+            };
+            // A recogniser that says nothing after stopListening must not leave the call waiting for ever.
+            timers[1] = () -> finish.accept("", null);
+            timers[0] = () -> { r.stopListening(); closePipe(); main.postDelayed(timers[1], 3000); };
+            endListen = timers[1];
+            main.postDelayed(timers[0], seconds * 1000L);
+            r.setRecognitionListener(new RecognitionListener() {
                 @Override public void onResults(Bundle b) {
                     ArrayList<String> m = b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                    finish(m != null && !m.isEmpty() ? m.get(0) : "", null);
+                    finish.accept(m != null && !m.isEmpty() ? m.get(0) : "", null);
                 }
                 @Override public void onError(int code) {
-                    if (code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) finish("", null);
-                    else finish(null, "Speech recognition failed (" + code + "). Type the answer instead.");
+                    if (code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) finish.accept("", null);
+                    else finish.accept(null, "Speech recognition failed (" + code + "). Type the answer instead.");
                 }
-                @Override public void onEndOfSpeech() { closePipe(); }
+                @Override public void onEndOfSpeech() { if (!done[0]) closePipe(); }
                 @Override public void onReadyForSpeech(Bundle b) { }
                 @Override public void onBeginningOfSpeech() { }
                 @Override public void onRmsChanged(float v) { }
@@ -388,7 +397,7 @@ public class CallPlugin extends Plugin {
                 @Override public void onPartialResults(Bundle b) { }
                 @Override public void onEvent(int t, Bundle b) { }
             });
-            recognizer.startListening(i);
+            r.startListening(i);
         });
     }
 
@@ -408,7 +417,7 @@ public class CallPlugin extends Plugin {
     @PluginMethod
     public void stop(PluginCall call) {
         // The recogniser lives on the main thread; the recording is stopped here, off it (it waits for the audio thread).
-        main.post(() -> { if (recognizer != null) { recognizer.destroy(); recognizer = null; } });
+        main.post(() -> { if (endListen != null) endListen.run(); }); // a listen still waiting answers ""
         if (tts != null) tts.stop();
         stopRecording();
         JSArray list = new JSArray();
