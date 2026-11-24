@@ -174,3 +174,39 @@ test("an older agent list that comes back last does not replace the newer one", 
   await new Promise((r) => setTimeout(r, 300));
   assert.deepStrictEqual(await page.locator(".agent-name").allTextContents(), ["first", "second"]);
 });
+
+// Changing the model, removing a queued message or sending, then opening another agent before the hub answers: the
+// reply belongs to the first agent and must not change the second one's status, queue, transcript or composer.
+for (const what of ["model", "unqueue", "wake"]) {
+  test(`a ${what} reply that lands after opening another agent leaves that agent as it was`, { skip }, async (t) => {
+    let a, b;
+    const { page } = await phone(t, { setup: ({ supervisor, dir }) => {
+      a = supervisor.create({ name: "first", cwd: dir }).id;
+      b = supervisor.create({ name: "second", cwd: dir }).id;
+    } });
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    await page.route(`**/api/agents/${a}/${what}`, async (route) => {
+      await gate;
+      if (what === "wake") return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "it failed" }) });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "running", queue: ["first's message"], pendingApproval: null }) });
+    });
+    await page.evaluate((id) => { location.hash = "#/agent/" + id; }, a);
+    await page.locator("#agent-name", { hasText: "first" }).waitFor();
+    await page.waitForFunction(() => state.agent && state.agent.cwd !== undefined);
+    if (what === "model") await page.evaluate(() => $("agent-model").dispatchEvent(new Event("change")));
+    else if (what === "unqueue") await page.evaluate(() => { unqueue(0); });
+    else { await page.fill("#compose-text", "for the first agent"); await page.click("#compose-send"); }
+    await page.evaluate((id) => { location.hash = "#/agent/" + id; }, b);
+    await page.locator("#agent-name", { hasText: "second" }).waitFor();
+    await page.waitForFunction(() => state.agent && state.agent.cwd !== undefined);
+    const before = await page.textContent("#agent-status");
+    release();
+    await new Promise((r) => setTimeout(r, 500));
+    assert.strictEqual(await page.textContent("#agent-status"), before);
+    assert.ok(!(await page.isVisible("#queue")), "the first agent's queue is shown on the second");
+    assert.ok(!(await page.isVisible("#agent-error")), "the first agent's error is shown on the second");
+    assert.strictEqual(await page.inputValue("#compose-text"), "", "the first agent's message was put in the second's composer");
+    assert.strictEqual(await page.locator("#transcript .notice", { hasText: "Model set" }).count(), 0);
+  });
+}
