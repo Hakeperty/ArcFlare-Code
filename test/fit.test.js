@@ -370,3 +370,14 @@ test("a model still going after the retry is reported truncated, not passing", a
   assert.strictEqual(row.probes.truncated, 5);
   assert.ok(row.probes.detail.every((d) => d.retried), "each one got its second chance");
 });
+
+test("runsAdd grades the function, and nothing from the snippet runs after its timeout", () => {
+  assert.strictEqual(fit.runsAdd("```js\nfunction add(a, b) { return a + b; }\n```"), true);
+  assert.strictEqual(fit.runsAdd("function add(a, b) { return String(a + b); }"), false);
+  // A getter the host would call after the 1 s timeout has ended: must never be reached.
+  const t = Date.now();
+  assert.strictEqual(fit.runsAdd("function add(a, b) { return a + b; }\n" +
+    "Object.defineProperty(globalThis, '__out', { get() { for (;;) {} } });\n" +
+    "JSON.stringify = () => new Proxy([], { get() { for (;;) {} } });"), false);
+  assert.ok(Date.now() - t < 5000);
+});
