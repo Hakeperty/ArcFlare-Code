@@ -21,12 +21,12 @@ test("harness launches pass their arguments through as-is off Windows", () => {
 });
 
 test("a folder named with cmd.exe metacharacters cannot run a command on Windows", () => {
-  const evil = 'C:\\work\\a" & calc & "b %PATH% (x) | y';
+  const evil = 'C:\\work\\a" & calc & "b ^ (x) | y!';
   const [line, args] = asWindows(() => cmdLine("C:\\Program Files\\hermes\\hermes.exe", ["--in", evil]));
   assert.deepStrictEqual(args, []);
   assert.strictEqual(live(line), null);
   assert.strictEqual(unescape(line),
-    'C:\\Program Files\\hermes\\hermes.exe "--in" "C:\\work\\a\\" & calc & \\"b %PATH% (x) | y"');
+    'C:\\Program Files\\hermes\\hermes.exe "--in" "C:\\work\\a\\" & calc & \\"b ^ (x) | y!"');
 
   // A .cmd shim re-reads %* once more, so it is escaped twice.
   const [shim] = asWindows(() => cmdLine("C:\\npm\\codex.cmd", ["a&b"]));
@@ -37,4 +37,11 @@ test("a folder named with cmd.exe metacharacters cannot run a command on Windows
 test("trailing backslashes do not swallow the closing quote on Windows", () => {
   const [line] = asWindows(() => cmdLine("x.exe", ["C:\\dir\\"]));
   assert.strictEqual(unescape(line), 'x.exe "C:\\dir\\\\"');
+});
+
+// cmd.exe expands %VAR% before it reads any caret, so a % cannot be escaped.
+test("a folder or argument with % is refused on Windows instead of being expanded", () => {
+  assert.throws(() => asWindows(() => cmdLine("C:\\npm\\codex.cmd", ["--in", "C:\\work\\%PATH%"])), /cannot pass a "%"/);
+  assert.throws(() => asWindows(() => cmdLine("x.exe", ["100%"])), /cannot pass a "%"/);
+  assert.deepStrictEqual(cmdLine("/usr/bin/hermes", ["%PATH%"]), ["/usr/bin/hermes", ["%PATH%"]]);
 });
