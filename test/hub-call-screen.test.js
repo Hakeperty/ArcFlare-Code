@@ -309,6 +309,7 @@ test("a call that rang while the last one was being saved still rings", { skip }
   await page.route("**/end", async (route) => { const res = await route.fetch(); await gate; await route.fulfill({ response: res }); });
   await page.click("#call-hangup");
   await until(() => calls.current() === null, "hanging up did not reach the hub");
+  console.log("CALLID", await page.evaluate(() => JSON.stringify(call)));
   calls.start({ say: "Second.", from: "Aider" });
   await new Promise((r) => setTimeout(r, 300));
   release();
@@ -334,4 +335,24 @@ test("an approval or a Back gesture during a call keeps the call screen", { skip
   await page.click("#call-hangup");
   await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
   await page.locator("#approval").waitFor({ state: "visible" });
+});
+
+// Signing out during a call used to leave it set on the page: a call still ringing after signing in again had no
+// screen, and later calls were ignored until a reload.
+test("after signing out during a call, it and the next call ring", { skip }, async (t) => {
+  const { page, calls } = await phone(t);
+  const { id } = calls.start({ say: "First.", from: "Codex" });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
+  await page.evaluate(() => logout());
+  await page.locator("#view-login").waitFor({ state: "visible" });
+  await page.fill("#login-user", "owner");
+  await page.fill("#login-pass", PASS);
+  await page.click("#login-form button[type=submit]");
+  await page.locator("#view-dashboard").waitFor({ state: "visible" });
+  await page.locator("#call-ringing").waitFor({ state: "visible", timeout: 10000 });
+  calls.end(id);
+  await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
+  calls.start({ say: "Second.", from: "Aider" });
+  await page.locator("#call-title", { hasText: "Aider" }).waitFor({ timeout: 10000 });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
 });
