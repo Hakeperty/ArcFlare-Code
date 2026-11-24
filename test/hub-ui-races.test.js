@@ -67,3 +67,34 @@ test("a chat opened twice in quick succession shows each answer once", { skip },
   await new Promise((r) => setTimeout(r, 300));
   assert.deepStrictEqual(await page.locator("#chat-transcript .bubble.agent").allTextContents(), ["hello"]);
 });
+
+// Turning YOLO or team mode on for one agent, then opening another before the hub answers: the answer belongs to the
+// first agent and must not switch the second one's buttons or status.
+for (const mode of ["yolo", "team"]) {
+  test(`turning ${mode} mode on, then opening another agent before the hub answers, leaves that agent as it was`, { skip }, async (t) => {
+    let a, b;
+    const { page } = await phone(t, { setup: ({ supervisor, dir }) => {
+      a = supervisor.create({ name: "first", cwd: dir }).id;
+      b = supervisor.create({ name: "second", cwd: dir }).id;
+    } });
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    await page.route(`**/api/agents/${a}/${mode}`, async (route) => {
+      await gate;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, yolo: true, team: true, status: "working", pendingApproval: null }) });
+    });
+    await page.evaluate((id) => { location.hash = "#/agent/" + id; }, a);
+    await page.locator("#agent-name", { hasText: "first" }).waitFor();
+    await page.click(`#agent-${mode}`);
+    await page.check(`#${mode}-sure`);
+    await page.click(`#${mode}-ok`);
+    await page.evaluate((id) => { location.hash = "#/agent/" + id; }, b);
+    await page.locator("#agent-name", { hasText: "second" }).waitFor();
+    const before = await page.textContent("#agent-status");
+    release();
+    await new Promise((r) => setTimeout(r, 500));
+    assert.strictEqual(await page.getAttribute(`#agent-${mode}`, "aria-pressed"), "false");
+    assert.strictEqual(await page.textContent("#agent-status"), before);
+    assert.strictEqual(await page.evaluate((m) => !!state.agent[m], mode), false);
+  });
+}
