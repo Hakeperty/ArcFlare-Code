@@ -268,7 +268,8 @@ public class CallPlugin extends Plugin {
         byte[] le = new byte[buf.length * 2];
         while (running) {
             int n = rec.read(buf, 0, buf.length);
-            if (n <= 0) continue;
+            if (n < 0) break; // an AudioRecord error (the microphone was taken away): it would only repeat
+            if (n == 0) continue;
             MuLawWav c = convo;
             if (c == null) break;
             try { c.write(buf, n); } catch (IOException e) { running = false; }
