@@ -348,10 +348,20 @@ public class CallPlugin extends Plugin {
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500);
+            // The hub names the k-th spoken reply answer-k.wav, so a listen that sends nothing keeps no answer file.
+            final String[] kept = { null };
+            Runnable drop = () -> {
+                if (kept[0] == null) return;
+                files.remove(kept[0]);
+                new File(dir(), kept[0]).delete();
+                answers--;
+                kept[0] = null;
+            };
             if (running && Build.VERSION.SDK_INT >= 33) {
                 try {
                     ParcelFileDescriptor[] p = ParcelFileDescriptor.createPipe();
                     String name = "answer-" + (++answers) + ".wav";
+                    kept[0] = name;
                     answer = new MuLawWav(new File(dir(), name));
                     files.add(name);
                     pipe = new ParcelFileDescriptor.AutoCloseOutputStream(p[1]);
@@ -359,7 +369,7 @@ public class CallPlugin extends Plugin {
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, MuLawWav.RATE);
-                } catch (IOException e) { endAnswer(); }
+                } catch (IOException e) { endAnswer(); drop.run(); }
             }
             final SpeechRecognizer r = SpeechRecognizer.createSpeechRecognizer(getContext());
             final boolean[] done = { false };
@@ -371,6 +381,8 @@ public class CallPlugin extends Plugin {
                 main.removeCallbacks(timers[1]);
                 if (endListen == timers[1]) endListen = null;
                 endAnswer();
+                // Not after stop() (running is false): it is already listing the files for the page to upload.
+                if (running && (error != null || text.trim().isEmpty())) drop.run();
                 main.post(r::destroy); // not from inside its own callback
                 call.setKeepAlive(false);
                 if (error != null) { call.reject(error); return; }
@@ -420,6 +432,7 @@ public class CallPlugin extends Plugin {
     @PluginMethod
     public void stop(PluginCall call) {
         // The recogniser lives on the main thread; the recording is stopped here, off it (it waits for the audio thread).
+        running = false; // before the post: the listen it settles keeps its answer file (see listen)
         main.post(() -> { if (endListen != null) endListen.run(); }); // a listen still waiting answers ""
         if (tts != null) tts.stop();
         stopRecording();
