@@ -152,6 +152,31 @@ test("sessions save, list by folder, load by prefix, and prune", () => {
   }
 });
 
+// prune deleted the folder named by the id inside a session file: an id of
+// ".." removed ~/.arcflare, and a path in --resume read any JSON file.
+test("a session id that is a path is never read or pruned", () => {
+  const home = tmp("home-bad");
+  const prev = process.env.ARCFLARE_HOME;
+  process.env.ARCFLARE_HOME = home;
+  try {
+    const keep = path.join(home, "keep.txt");
+    fs.writeFileSync(keep, "x");
+    fs.writeFileSync(path.join(home, "secret.json"), JSON.stringify({ messages: [] }));
+    fs.mkdirSync(sessions.dir(), { recursive: true });
+    fs.writeFileSync(path.join(sessions.dir(), "old.json"),
+      JSON.stringify({ id: "..", updated: "2000-01-01", messages: [{ role: "user", content: "q" }] }));
+    sessions.save({ id: "new", cwd: home, messages: [{ role: "user", content: "q" }] });
+    sessions.prune(1);
+    assert.ok(fs.existsSync(keep), "nothing outside sessions/ is removed");
+    assert.deepStrictEqual(sessions.list().map((s) => s.id), ["new"]);
+    assert.strictEqual(sessions.load("../secret"), null);
+    assert.strictEqual(sessions.find("../secret"), null);
+    assert.throws(() => sessions.folderFor(".."), /not a session id/);
+  } finally {
+    if (prev === undefined) delete process.env.ARCFLARE_HOME; else process.env.ARCFLARE_HOME = prev;
+  }
+});
+
 test("--resume and --continue are taken out of argv before the model is picked", async () => {
   const home = tmp("home2");
   const prev = process.env.ARCFLARE_HOME;
