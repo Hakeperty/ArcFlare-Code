@@ -1149,7 +1149,8 @@ What it does and does not protect:
   your project are not touched. Chats have Delete too.
 - **One-time agents and chats.** Tick "One-time agent" when making an agent, or tap
   "One-time chat". Nothing about it is written to disk: no saved conversation, no entry
-  in `agents.json`, and its undo snapshots live in the OS temp folder. It deletes itself
+  in `agents.json`, and its undo snapshots live in a scratch folder (`~/.arcflare/onetime`) that is
+  wiped with it and at every hub start. It deletes itself
   when you stop it, after it sits idle (5 minutes to 1 hour, your choice; 10 by default), when the hub
   shuts down, and, for a chat, when the model is stopped from the phone. A turn in
   progress or an approval waiting for you is not idle. Notifications for a one-time

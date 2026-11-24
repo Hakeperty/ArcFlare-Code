@@ -175,6 +175,12 @@ test("a restarted hub has no one-time agents and no leftover scratch files", () 
   assert.strictEqual(fs.existsSync(oneTimeDir(sid)), false, "the temp folder was swept");
 });
 
+test("a one-time agent's scratch folder is in this user's ArcFlare home, not the shared temp folder", () => {
+  const d = oneTimeDir("20260101-0000-abcdef");
+  assert.ok(d.startsWith(process.env.ARCFLARE_HOME + path.sep), d);
+  assert.ok(!d.startsWith(os.tmpdir() + path.sep + "arcflare-onetime"), d);
+});
+
 test("a one-time agent keeps its undo snapshots in the temp folder, and they go with it", async () => {
   const { sup, log } = make();
   const a = sup.create({ name: "once", cwd: PROJ, oneTime: true });
