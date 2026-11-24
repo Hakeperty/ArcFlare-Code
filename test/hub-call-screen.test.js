@@ -175,3 +175,16 @@ test("a scheduled call: listed with its time and taken back on Tools; when it ri
   await until(() => calls.current() === null && calls.history().length === 1, "the app did not hang up after the line");
   assert.deepStrictEqual([calls.history()[0].status, calls.history()[0].why], ["ended", "a scheduled call: the phone said its line"]);
 });
+
+test("an approval sheet covered by a ringing call comes back when the call ends", { skip }, async (t) => {
+  const { page, calls } = await phone(t);
+  // An agent screen with an approval waiting (state and openSheet are app.js globals).
+  await page.evaluate(() => { state.agent = { id: "a1", approvalId: "ap1" }; openSheet("approval", false); });
+  await page.locator("#approval").waitFor({ state: "visible" });
+  calls.start({ say: "Quick question.", from: "Codex" });
+  await page.locator("#sheet-call").waitFor({ state: "visible" });
+  assert.ok(!(await page.isVisible("#approval")), "the call sheet replaced the approval sheet");
+  await page.click("#call-decline");
+  await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
+  await page.locator("#approval").waitFor({ state: "visible" });
+});
