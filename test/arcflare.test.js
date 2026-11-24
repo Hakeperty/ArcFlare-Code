@@ -86,6 +86,13 @@ test("maxContextFor never exceeds the trained context", () => {
   assert.strictEqual(gguf.maxContextFor(QWEN36_MOE, huge, "f16"), 262144);
 });
 
+test("maxContextFor does not promise more context than the budget holds", () => {
+  const per = gguf.kvBytesPerToken(QWEN36_MOE, "f16");
+  assert.strictEqual(gguf.maxContextFor(QWEN36_MOE, per * 2048, "f16"), 2048);
+  assert.strictEqual(gguf.maxContextFor(QWEN36_MOE, per * 100, "f16"), 0);
+  assert.strictEqual(require("../lib/fit").staticFit({ id: "m", size: 1e9, meta: QWEN36_MOE }, 1e9 + 1.5e9 + per * 100).verdict, "no");
+});
+
 test("maxContextFor shrinks to fit a small budget", () => {
   // 1 GiB of cache at 20 KiB/token ~= 52k tokens
   const ctx = gguf.maxContextFor(QWEN36_MOE, 1024 * 1024 * 1024, "f16");
