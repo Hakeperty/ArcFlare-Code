@@ -48,3 +48,12 @@ test("a server that repeats its tools/list cursor does not page forever", async 
     assert.deepStrictEqual(s.tools.map((t) => t.name), ["a", "b"]);
   } finally { s.stop(); }
 });
+
+test("a stdio server whose command cannot be started fails at once, not after the timeout", async () => {
+  const s = new McpServer("missing", { command: "/no/such/arcflare-mcp-server", args: [] });
+  const t0 = Date.now();
+  try {
+    await assert.rejects(s.start(20000), /ENOENT/);
+    assert.ok(Date.now() - t0 < 5000, "it did not wait out the timeout");
+  } finally { s.stop(); }
+});
