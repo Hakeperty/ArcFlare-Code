@@ -920,6 +920,23 @@ test("call_phone round trip: the agent rings, the phone answers and replies, onl
   } finally { await s.close(); }
 });
 
+test("an account that is not an owner neither sees the current call nor hears it ring on the event stream", async () => {
+  const { s, token } = await localHub();
+  try {
+    const a = await login(s);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    const c = await sse(s.port, "/api/events", { Cookie: a.cookie }, (t) => t.includes("retry:"));
+    let text = "";
+    c.res.on("data", (d) => { text += d; });
+    const id = (await bearerReq(s, "POST", "/api/local/call", token, { say: "Secret plan?" })).json.id;
+    s.supervisor.emit("event", { agentId: "a1", seq: 1, type: "approval", id: "p1" });   // arrives after the call event would
+    await waitFor(() => text.includes("approval"));
+    c.destroy();
+    assert.ok(!text.includes("Secret plan") && !text.includes(id), text);
+    assert.strictEqual((await req(s.port, { path: "/api/calls", headers: { Cookie: a.cookie } })).status, 403);
+  } finally { await s.close(); }
+});
+
 test("a scheduled call: the agent asks for a time, the phone lists it, and only an owner can take it back", async () => {
   const { s, token } = await localHub();
   try {
