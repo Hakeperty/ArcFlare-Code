@@ -269,3 +269,49 @@ test("hanging up is tried again when the connection drops", { skip }, async (t) 
   await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
   assert.ok(!(await page.isVisible("#call-error")));
 });
+
+// The event stream drops (a phone between networks) and the hub's call events in between are lost: when it comes
+// back, the call screen asks the hub and catches up. Before, only signing in did.
+test("after the event stream drops, the call screen catches up with the hub", { skip }, async (t) => {
+  const { page, calls } = await phone(t);
+  const drop = () => page.evaluate(() => { const s = state.streams.dash; s.es.close(); s.es.onerror(); });
+  // A call that rang while the stream was down.
+  await drop();
+  const { id } = calls.start({ say: "Deploy now?", from: "Codex" });
+  await page.locator("#call-ringing").waitFor({ state: "visible", timeout: 10000 });
+  // It stopped ringing while the stream was down.
+  await drop();
+  calls.end(id);
+  await page.locator("#call-error", { hasText: "Missed call" }).waitFor({ timeout: 10000 });
+  await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
+  // A line the agent said while the stream was down.
+  const b = calls.start({ say: "Run the tests?", from: "Codex" }).id;
+  await tapLater(page);
+  await until(() => calls.current() && calls.current().status === "waiting", "the tap did not answer the call");
+  await drop();
+  calls.say(b, { say: "They passed. Merge?" });
+  await page.locator("#call-line", { hasText: "They passed" }).waitFor({ timeout: 10000 });
+  // And the call ended by the agent while the stream was down: the phone hangs up its side.
+  await drop();
+  calls.end(b);
+  await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
+  assert.strictEqual(calls.history()[0].status, "ended");
+});
+
+// A call that rings while the last one is still being saved on the computer rings on the phone once that is done.
+test("a call that rang while the last one was being saved still rings", { skip }, async (t) => {
+  const { page, calls } = await phone(t);
+  calls.start({ say: "First.", from: "Codex" });
+  await tapLater(page);
+  await until(() => calls.current() && calls.current().status === "waiting", "the tap did not answer the call");
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await page.route("**/end", async (route) => { const res = await route.fetch(); await gate; await route.fulfill({ response: res }); });
+  await page.click("#call-hangup");
+  await until(() => calls.current() === null, "hanging up did not reach the hub");
+  calls.start({ say: "Second.", from: "Aider" });
+  await new Promise((r) => setTimeout(r, 300));
+  release();
+  await page.locator("#call-title", { hasText: "Aider" }).waitFor({ timeout: 10000 });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
+});
