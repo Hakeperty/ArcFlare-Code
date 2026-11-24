@@ -285,7 +285,7 @@ test("the helper server does not swap its model while a caller is still using it
     const id = args[args.indexOf("-m") + 1];
     const srv = http.createServer((q, r) => r.end(JSON.stringify({ status: "ok" })));
     srv.listen(Number(args[args.indexOf("--port") + 1]), "127.0.0.1");
-    const child = { exitCode: null, kill() { events.push(`kill ${id}`); this.exitCode = 0; srv.close(); } };
+    const child = { exitCode: null, on() {}, kill() { events.push(`kill ${id}`); this.exitCode = 0; srv.close(); } };
     events.push(`start ${id}`);
     return child;
   };
@@ -300,4 +300,10 @@ test("the helper server does not swap its model while a caller is still using it
     assert.deepStrictEqual(events, ["start a", "kill a", "start b"]);
     hs.release();
   } finally { hs.stop(); }
+});
+
+test("a helper llama-server that cannot be started is an error, not a crash", async () => {
+  const hs = new T.HelperServer({ exe: "/nonexistent/llama-server", readyMs: 5000,
+    logFile: require("path").join(require("os").tmpdir(), `af-helper-missing-${process.pid}.log`) });
+  await assert.rejects(hs.use({ id: "m", file: "m" }, { ctx: 1024 }), (e) => e.code === "HELPER_DOWN" && /ENOENT/.test(e.message));
 });
