@@ -255,6 +255,16 @@ test("L6: damaged state files stop the tunnel and are never replaced", () => {
   }
 });
 
+test("the relay poll's waits leave no listener behind on the tunnel's abort signal", async () => {
+  const { getEventListeners } = require("node:events");
+  const ac = new AbortController();
+  for (let i = 0; i < 20; i++) await tunnel._internal.sleep(1, ac.signal);
+  assert.strictEqual(getEventListeners(ac.signal, "abort").length, 0);
+  const p = tunnel._internal.sleep(60_000, ac.signal);
+  ac.abort();
+  await p;   // an abort still ends the wait at once
+});
+
 test("L6: secret files are fsynced before the rename", () => {
   const calls = [];
   const real = fs.fsyncSync;
