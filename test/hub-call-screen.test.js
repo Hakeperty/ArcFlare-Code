@@ -315,3 +315,23 @@ test("a call that rang while the last one was being saved still rings", { skip }
   await page.locator("#call-title", { hasText: "Aider" }).waitFor({ timeout: 10000 });
   await page.locator("#call-ringing").waitFor({ state: "visible" });
 });
+
+// An approval arriving during a call, or a Back gesture (a route change), left the call going with no way to answer
+// or hang up: the call sheet stays, and the approval comes after the call.
+test("an approval or a Back gesture during a call keeps the call screen", { skip }, async (t) => {
+  const { page, calls } = await phone(t);
+  calls.start({ say: "Quick question.", from: "Codex" });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
+  await page.evaluate(() => { location.hash = "#/tools"; });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.ok(await page.isVisible("#call-ringing"), "a route change closed the ringing call");
+  await tapLater(page);
+  await page.locator("#call-active").waitFor({ state: "visible" });
+  await page.evaluate(() => { state.agent = { id: "a1" }; showApproval({ id: "ap1", kind: "bash", detail: "ls" }); });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.ok(await page.isVisible("#call-active"), "the approval sheet replaced the call");
+  assert.ok(!(await page.isVisible("#approval")));
+  await page.click("#call-hangup");
+  await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
+  await page.locator("#approval").waitFor({ state: "visible" });
+});
