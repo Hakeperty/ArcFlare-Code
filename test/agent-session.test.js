@@ -278,3 +278,25 @@ test("a running shell command is killed when the turn is interrupted", async () 
   assert.ok(r.aborted || r.error, JSON.stringify(r));
   assert.ok(Date.now() - t0 < 10000, "it stopped well before the command would have");
 });
+
+// The shell exiting is the end of the command, even when something it put in
+// the background still holds stdout; the tool used to wait on it forever.
+test("a command that backgrounds a process returns when the shell exits", async (t) => {
+  if (process.platform === "win32") return t.skip("POSIX shell syntax");
+  const t0 = Date.now();
+  const r = await tools.runShell("sleep 30 & echo started", { cwd: os.tmpdir(), timeoutMs: 60000 });
+  assert.strictEqual(r.status, 0);
+  assert.strictEqual(r.stdout.trim(), "started");
+  assert.ok(Date.now() - t0 < 10000, "it did not wait for the background sleep");
+});
+
+// What a command left in the background keeps its stdout after the tool call
+// has returned: closing our end of the pipe used to kill it with SIGPIPE.
+test("a backgrounded process can still write after the command returned", async (t) => {
+  if (process.platform === "win32") return t.skip("POSIX shell syntax");
+  const marker = path.join(tmp("bgwrite"), "done");
+  const r = await tools.runShell(`(sleep 1; echo late; echo ok > '${marker}') & echo started`, { cwd: os.tmpdir(), timeoutMs: 60000 });
+  assert.strictEqual(r.stdout.trim(), "started");
+  for (let i = 0; i < 50 && !fs.existsSync(marker); i++) await new Promise((res) => setTimeout(res, 100));
+  assert.ok(fs.existsSync(marker), "the background process survived its late write");
+});
