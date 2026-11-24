@@ -179,6 +179,12 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.ok(!up.includes("getContext().registerReceiver("), "never the bare call: exported below Android 13");
   assert.ok(up.includes("if (confirm != null && opensSystemApp(ctx, confirm))"));
   assert.ok(up.includes("if (c == null) return; // nothing of ours is being installed: ignore"));
+  // the install result is read under the plugin's lock (commit() sets pendingCommit on another thread)
+  assert.ok(up.includes("synchronized (AppUpdaterPlugin.this) { c = pendingCommit; if (!asking) pendingCommit = null; }"));
+  // an online download writes only into the session it started: a newer begin() or download makes it stop
+  assert.match(up, /synchronized \(this\) \{\s*abandon\(\);\s*try \{ start\(size, sha\); \} catch \(Exception e\) \{ abandon\(\); throw e; \}\s*mine = session;\s*\}/);
+  assert.ok(up.includes('if (out == null || session != mine) throw new IOException("cancelled");'));
+  assert.ok(up.includes("synchronized (this) { if (mine != null && session == mine) abandon(); } // never a newer session"));
   assert.match(up, /new Intent\(ACTION\)\.setPackage\(getContext\(\)\.getPackageName\(\)\)/);
   assert.match(up, /if \(!got\.equals\(expectedSha\)\) \{ abandon\(\);/);
   assert.match(up, /if \(written != expectedSize\) \{ abandon\(\);/);
@@ -292,6 +298,16 @@ test("native source lint: CallPlugin (greps only, nothing here can run it)", () 
   assert.match(c, /public void stop\(PluginCall call\) \{[\s\S]*?main\.post\(\(\) -> \{[^}]*if \(endLine != null\) endLine\.run\(\);/);
   assert.match(c, /stopIt\[0\] = \(\) -> finish\.accept\(null\);\s*endLine = stopIt\[0\];/);
   assert.match(c, /if \(endLine == stopIt\[0\]\) endLine = null;\s*mp\.release\(\);/);
+  // a listen always ends: finish settles the call once and clears both timers; when the time is up the recogniser is
+  // told to stop and gets 3 s more, then the call answers ""; stop() settles a listen still waiting
+  assert.match(c, /BiConsumer<String, String> finish = \(text, error\) -> \{\s*if \(done\[0\]\) return;\s*done\[0\] = true;\s*main\.removeCallbacks\(timers\[0\]\);\s*main\.removeCallbacks\(timers\[1\]\);\s*if \(endListen == timers\[1\]\) endListen = null;/);
+  assert.match(c, /call\.setKeepAlive\(false\);\s*if \(error != null\) \{ call\.reject\(error\); return; \}[^}]*call\.resolve\(o\);/);
+  assert.match(c, /timers\[1\] = \(\) -> finish\.accept\("", null\);\s*timers\[0\] = \(\) -> \{ r\.stopListening\(\); closePipe\(\); main\.postDelayed\(timers\[1\], 3000\); \};\s*endListen = timers\[1\];\s*main\.postDelayed\(timers\[0\], seconds \* 1000L\);/);
+  assert.match(c, /running = false;[^\n]*\n\s*main\.post\(\(\) -> \{\s*if \(endListen != null\) endListen\.run\(\);/, "stop() clears running before it settles the listen");
+  // hanging up while the phone speaks: tts.stop() ends the line with onStop only, which must settle speak()
+  assert.match(c, /public void onStop\(String id, boolean interrupted\) \{ finishSpeaking\(id, null\); \}/);
+  // a microphone error ends the audio loop instead of spinning on it
+  assert.match(c, /int n = rec\.read\(buf, 0, buf\.length\);\s*if \(n < 0\) break;/);
   // closing the app settles a listen in progress (its recogniser is destroyed) and stops a line still playing
   assert.match(c, /protected void handleOnDestroy\(\) \{[^}]*stopRecording\(\);[^}]*if \(endListen != null\) endListen\.run\(\);\s*if \(endLine != null\) endLine\.run\(\);/);
 });
