@@ -188,3 +188,19 @@ test("an approval sheet covered by a ringing call comes back when the call ends"
   await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
   await page.locator("#approval").waitFor({ state: "visible" });
 });
+
+// Answer, then Decline before the hub has the answer: the answer stands, and the call screen stays.
+test("Decline does nothing while an Answer is on its way", { skip }, async (t) => {
+  const { page, calls } = await phone(t);
+  calls.start({ say: "Deploy now?", from: "Codex" });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await page.route("**/answer", async (route) => { await gate; await route.continue(); });
+  await page.click("#call-answer");
+  await page.click("#call-decline");
+  await new Promise((r) => setTimeout(r, 300));
+  release();
+  await page.locator("#call-active").waitFor({ state: "visible" });
+  await until(() => calls.current() && calls.current().status === "talking", "the call was not answered");
+});
