@@ -185,3 +185,24 @@ test("pickSpeechModel: --like clones, --describe designs, installed first, never
   // The user's own default wins when it can do what was asked.
   assert.strictEqual(gen.pickSpeechModel({ ttsModel: "omnivoice" }, { ref: "a" }, nothing).id, "omnivoice");
 });
+
+test("cancelling the running job leaves the queued jobs to run", async () => {
+  const { ResidentWorker } = require("../lib/gen/resident");
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "af-resident-")), "worker.js");
+  fs.writeFileSync(f, `const emit = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
+emit({ event: "ready" });
+require("readline").createInterface({ input: process.stdin }).on("line", (l) => {
+  const m = JSON.parse(l);
+  if (m.spec && !m.spec.slow) emit({ job: m.id, event: "done" });
+});`);
+  const w = new ResidentWorker(process.execPath, process.env, { worker: f });
+  const ac = new AbortController();
+  const slow = w.run({ slow: true }, { signal: ac.signal });
+  const queued = w.run({});
+  await new Promise((r) => setTimeout(r, 300));
+  ac.abort();
+  await assert.rejects(slow);
+  const done = await queued;
+  assert.strictEqual(done.event, "done");
+  w.stop();
+});
