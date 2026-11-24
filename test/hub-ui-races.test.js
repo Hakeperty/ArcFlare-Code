@@ -232,3 +232,21 @@ test("a chat send that fails after opening another chat leaves that chat as it w
   assert.strictEqual(await page.inputValue("#chat-text"), "", "the first chat's message was put in the second's composer");
   assert.ok(!(await page.isVisible("#chat-error")), "the first chat's error is shown on the second");
 });
+
+// A delete that fails (the hub unreachable for a moment) can be tried again without leaving the screen.
+test("Delete on a chat works again after a failed delete", { skip }, async (t) => {
+  const { page, chats } = await phone(t);
+  const { id } = chats.create({ model: "m" });
+  let fail = true;
+  await page.route(`**/api/chats/${id}`, (route) => (route.request().method() === "DELETE" && fail
+    ? route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "it failed" }) }) : route.continue()));
+  await page.evaluate(() => { location.hash = "#/chats"; });
+  const del = page.locator("#chat-list button", { hasText: "Delete" });
+  await del.click();
+  await page.locator("#chat-list button", { hasText: "Tap again to delete" }).click();
+  await page.locator("#chats-error", { hasText: "it failed" }).waitFor();
+  fail = false;
+  await del.click();
+  await page.locator("#chat-list button", { hasText: "Tap again to delete" }).click();
+  await until(() => chats.list().length === 0, "the second delete did not go through");
+});
