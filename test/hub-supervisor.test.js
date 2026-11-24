@@ -116,6 +116,17 @@ test("lifecycle: start, send, stop, statuses and events", async () => {
   assert.strictEqual(agentOf(log).opts.cwd, fs.realpathSync(PROJ));
 });
 
+test("a turn that cannot save agents.json still ends cleanly", async () => {
+  const { sup } = make();
+  const { id } = sup.create({ name: "a", cwd: PROJ });
+  await sup.start(id);
+  sup._save = () => { throw Object.assign(new Error("disk full"), { code: "ENOSPC" }); };
+  await sup.wake(id, "hi");
+  await sup.whenIdle(id);
+  assert.strictEqual(sup.get(id).status, "idle");
+  assert.strictEqual(sup.get(id).turns, 1);
+});
+
 test("wake on a stopped agent starts it and resumes the saved conversation", async () => {
   const { sup, log } = make();
   const { id } = sup.create({ name: "r", cwd: PROJ });
