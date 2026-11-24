@@ -23,8 +23,8 @@ const ONE = [{ id: "n1", name: "Notes" }];
 const call = (name, args) => ({ name: name, args: args });
 const DETAIL = " characters. If the file exists it is replaced, and the old text is gone.";
 
-const mfAgent = fs.readFileSync(path.join(repo, "lib", "arcs", "arc-pocket-agent.Modelfile"), "utf8");
-const mfPocket = fs.readFileSync(path.join(repo, "lib", "arcs", "arc-pocket.Modelfile"), "utf8");
+const mfAgent = fs.readFileSync(path.join(repo, "lib", "arcs", "arc-pocket-agent.Modelfile"), "utf8").replace(/\r\n/g, "\n");
+const mfPocket = fs.readFileSync(path.join(repo, "lib", "arcs", "arc-pocket.Modelfile"), "utf8").replace(/\r\n/g, "\n");
 const lines = (mf, re) => mf.split("\n").filter((l) => re.test(l));
 
 test("SYSTEM is the agent Modelfile's instructions, word for word, in three paragraphs", () => {
