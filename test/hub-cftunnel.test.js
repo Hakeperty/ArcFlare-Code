@@ -172,6 +172,14 @@ test("when nothing connects, the hub is told why, and no address is published or
   assert.strictEqual(cf.readKeep(keepFile), null);
 });
 
+test("a cloudflared log that cannot be written fails the start instead of ending the hub", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-nolog-"));
+  const keepFile = path.join(dir, "missing", "cloudflared.json");
+  await assert.rejects(
+    cf.startCloudflare({ mailbox: { handle: (q, r) => r.end("{}") }, roomId: ROOM, keepFile, exe: process.execPath, prefixArgs: ["-e", "0"], timeoutMs: 5000 }),
+    /could not start cloudflared/);
+});
+
 test("a tunnel that works counts as up even if cloudflared words its log differently", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-quiet-"));
   const fake = fakeIn(dir, `console.error("INF | https://quiet-one.trycloudflare.com |"); setInterval(() => {}, 1000);`);
