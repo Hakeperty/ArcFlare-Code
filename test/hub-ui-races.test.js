@@ -149,3 +149,28 @@ test("the next question stays when the answer's reply lands after the question w
   assert.ok(await page.isVisible("#sheet-question"), "the late reply closed the next question");
   assert.strictEqual(await page.textContent("#question-text"), "Second question?");
 });
+
+// Two loads of the agent list in flight: the older answer coming back last must not replace the newer list.
+test("an older agent list that comes back last does not replace the newer one", { skip }, async (t) => {
+  const { page, supervisor, dir } = await phone(t, { setup: ({ supervisor, dir }) => { supervisor.create({ name: "first", cwd: dir }); } });
+  await page.locator(".agent-name", { hasText: "first" }).waitFor();
+  let release, held = false;
+  const gate = new Promise((r) => { release = r; });
+  await page.route("**/api/agents", async (route) => {
+    if (held) return route.continue();
+    held = true;
+    const res = await route.fetch();
+    await gate;
+    await route.fulfill({ response: res });
+  });
+  const old = page.evaluate(() => loadAgents());
+  await until(() => held, "the first load did not start");
+  await new Promise((r) => setTimeout(r, 200));
+  supervisor.create({ name: "second", cwd: dir });   // its event also loads the list, 250 ms later
+  await page.locator(".agent-name", { hasText: "second" }).waitFor();
+  await new Promise((r) => setTimeout(r, 300));
+  release();
+  await old;
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepStrictEqual(await page.locator(".agent-name").allTextContents(), ["first", "second"]);
+});
