@@ -42,6 +42,16 @@ test("every server starts off; list shows transport and never the command or env
   assert.ok(!JSON.stringify(list).includes("s3cret") && !JSON.stringify(list).includes("py"));
 });
 
+test("names like constructor are not servers: no switch, no tools, nothing saved", async () => {
+  const h = hub();
+  for (const name of ["constructor", "toString", "hasOwnProperty"]) {
+    await assert.rejects(h.setEnabled(name, true), { status: 404 }, name);
+    assert.throws(() => h.tools(name), { status: 404 }, name);
+  }
+  assert.deepStrictEqual(h.reg.added, []);
+  assert.strictEqual(h.enabled.size, 0);
+});
+
 test("switching on connects and is remembered; off stops the server", async () => {
   const dir = tmp();
   const h = hub(dir);
