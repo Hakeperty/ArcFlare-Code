@@ -278,7 +278,10 @@ public class CallPlugin extends Plugin {
             OutputStream p = pipe;
             if (p != null) {
                 for (int i = 0; i < n; i++) { le[2 * i] = (byte) buf[i]; le[2 * i + 1] = (byte) (buf[i] >> 8); }
-                try { p.write(le, 0, n * 2); } catch (IOException e) { pipe = null; }
+                try { p.write(le, 0, n * 2); } catch (IOException e) {
+                    if (pipe == p) pipe = null;
+                    try { p.close(); } catch (IOException x) { /* the recogniser sees the end either way */ }
+                }
             }
         }
     }
@@ -350,6 +353,7 @@ public class CallPlugin extends Plugin {
                 .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500);
             // The hub names the k-th spoken reply answer-k.wav, so a listen that sends nothing keeps no answer file.
             final String[] kept = { null };
+            final ParcelFileDescriptor[] src = { null }; // the pipe's read end, handed to the recogniser
             Runnable drop = () -> {
                 if (kept[0] == null) return;
                 files.remove(kept[0]);
@@ -362,6 +366,7 @@ public class CallPlugin extends Plugin {
                     ParcelFileDescriptor[] p = ParcelFileDescriptor.createPipe();
                     String name = "answer-" + (++answers) + ".wav";
                     kept[0] = name;
+                    src[0] = p[0];
                     answer = new MuLawWav(new File(dir(), name));
                     files.add(name);
                     pipe = new ParcelFileDescriptor.AutoCloseOutputStream(p[1]);
@@ -383,7 +388,11 @@ public class CallPlugin extends Plugin {
                 endAnswer();
                 // Not after stop() (running is false): it is already listing the files for the page to upload.
                 if (running && (error != null || text.trim().isEmpty())) drop.run();
-                main.post(r::destroy); // not from inside its own callback
+                main.post(() -> { // not from inside its own callback
+                    r.destroy();
+                    // Our copy of the read end too: a write still blocked on a full pipe then fails instead of waiting.
+                    if (src[0] != null) try { src[0].close(); } catch (IOException e) { /* already closed */ }
+                });
                 call.setKeepAlive(false);
                 if (error != null) { call.reject(error); return; }
                 JSObject o = new JSObject();
