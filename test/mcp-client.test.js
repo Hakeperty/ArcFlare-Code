@@ -38,3 +38,13 @@ test("a request from the server is not taken as the answer to ours", async () =>
     assert.deepStrictEqual(s.tools.map((t) => t.name), ["real"]);
   } finally { s.stop(); }
 });
+
+test("a server that repeats its tools/list cursor does not page forever", async () => {
+  const s = fake("loops", `${INIT}
+    if (msg.method === "tools/list") say({ jsonrpc: "2.0", id: msg.id,
+      result: { tools: [{ name: msg.params.cursor ? "b" : "a" }], nextCursor: "same" } });`);
+  try {
+    await s.start(10000);
+    assert.deepStrictEqual(s.tools.map((t) => t.name), ["a", "b"]);
+  } finally { s.stop(); }
+});
