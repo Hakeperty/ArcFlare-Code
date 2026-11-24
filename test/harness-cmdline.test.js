@@ -5,11 +5,14 @@ const test = require("node:test");
 const assert = require("node:assert");
 const { cmdLine } = require("../lib/harness");
 
-function asWindows(fn) {
+function asPlatform(platform, fn) {
   const real = Object.getOwnPropertyDescriptor(process, "platform");
-  Object.defineProperty(process, "platform", { value: "win32" });
+  Object.defineProperty(process, "platform", { value: platform });
   try { return fn(); } finally { Object.defineProperty(process, "platform", real); }
 }
+const asWindows = (fn) => asPlatform("win32", fn);
+// The tests that expect the POSIX behaviour must not depend on the OS the suite runs on.
+const asLinux = (fn) => asPlatform("linux", fn);
 
 // cmd.exe drops one caret before each character on every pass.
 const unescape = (s) => s.replace(/\^(.)/g, "$1");
@@ -17,7 +20,7 @@ const unescape = (s) => s.replace(/\^(.)/g, "$1");
 const live = (s) => s.replace(/\^./g, "").match(/[&|<>()%!"]/);
 
 test("harness launches pass their arguments through as-is off Windows", () => {
-  assert.deepStrictEqual(cmdLine("/usr/bin/hermes", ["--in", "a & b"]), ["/usr/bin/hermes", ["--in", "a & b"]]);
+  assert.deepStrictEqual(asLinux(() => cmdLine("/usr/bin/hermes", ["--in", "a & b"])), ["/usr/bin/hermes", ["--in", "a & b"]]);
 });
 
 test("a folder named with cmd.exe metacharacters cannot run a command on Windows", () => {
@@ -43,5 +46,5 @@ test("trailing backslashes do not swallow the closing quote on Windows", () => {
 test("a folder or argument with % is refused on Windows instead of being expanded", () => {
   assert.throws(() => asWindows(() => cmdLine("C:\\npm\\codex.cmd", ["--in", "C:\\work\\%PATH%"])), /cannot pass a "%"/);
   assert.throws(() => asWindows(() => cmdLine("x.exe", ["100%"])), /cannot pass a "%"/);
-  assert.deepStrictEqual(cmdLine("/usr/bin/hermes", ["%PATH%"]), ["/usr/bin/hermes", ["%PATH%"]]);
+  assert.deepStrictEqual(asLinux(() => cmdLine("/usr/bin/hermes", ["%PATH%"])), ["/usr/bin/hermes", ["%PATH%"]]);
 });
