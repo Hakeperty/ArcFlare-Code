@@ -259,3 +259,11 @@ test("pull refuses file names and commit ids that would write outside the cache"
     /unexpected commit id/);
   assert.ok(!fs.existsSync(path.join(cache, "..", "evil-Q8_0.gguf")));
 });
+
+test("a download that stops sending data fails instead of hanging", async () => {
+  const s = require("http").createServer((q, r) => { r.writeHead(200, { "Content-Length": 1000 }); r.write(Buffer.alloc(100)); });
+  await new Promise((r) => s.listen(0, "127.0.0.1", r));
+  try {
+    await assert.rejects(dl.download(`http://127.0.0.1:${s.address().port}/f`, tmpFile("stall.gguf"), { idleMs: 300 }));
+  } finally { s.closeAllConnections(); s.close(); }
+});
