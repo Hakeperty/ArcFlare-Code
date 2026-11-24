@@ -174,7 +174,7 @@ function findAapt2() {
 }
 
 function main(argv) {
-  const apk = argv.find((a) => !a.startsWith("--"));
+  const apk = argv.find((a, i) => !a.startsWith("--") && argv[i - 1] !== "--package");
   const mode = argv.includes("--release") ? "release" : argv.includes("--debug") ? "debug" : null;
   const pi = argv.indexOf("--package");
   if (!apk || !mode) { console.error("usage: inspect-apk.js <apk> --debug|--release [--package id]"); return 2; }
