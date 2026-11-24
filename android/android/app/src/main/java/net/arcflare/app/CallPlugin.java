@@ -100,7 +100,11 @@ public class CallPlugin extends Plugin {
     private volatile OutputStream pipe;
     // Written by begin() (plugin thread) and listen() (main thread), read by stop() (plugin thread): copy-on-write is safe for all.
     private final List<String> files = new CopyOnWriteArrayList<>();
+    // The answer counter and the call's number are shared by begin() (plugin thread) and listen() (main thread): this
+    // lock guards both, so a listen settled after the next call began never touches that call's answers.
+    private final Object answerLock = new Object();
     private int answers;
+    private int callNo;
     // Main thread only: settles the listen() in progress with "" and lets its recogniser go. null when none is.
     private Runnable endListen;
 
@@ -238,8 +242,7 @@ public class CallPlugin extends Plugin {
     private void begin(PluginCall call) {
         stopRecording();
         clearFiles();
-        files.clear();
-        answers = 0;
+        synchronized (answerLock) { callNo++; files.clear(); answers = 0; }
         boolean recording = false;
         if (Build.VERSION.SDK_INT >= 33) {
             try {
@@ -353,22 +356,24 @@ public class CallPlugin extends Plugin {
                 .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500);
             // The hub names the k-th spoken reply answer-k.wav, so a listen that sends nothing keeps no answer file.
             final String[] kept = { null };
+            final int[] keptCall = { 0 }; // the call kept[0] was counted in
             final ParcelFileDescriptor[] src = { null }; // the pipe's read end, handed to the recogniser
             Runnable drop = () -> {
-                if (kept[0] == null) return;
-                files.remove(kept[0]);
-                new File(dir(), kept[0]).delete();
-                answers--;
-                kept[0] = null;
+                synchronized (answerLock) {
+                    if (kept[0] == null || keptCall[0] != callNo) return;
+                    files.remove(kept[0]);
+                    new File(dir(), kept[0]).delete();
+                    answers--;
+                    kept[0] = null;
+                }
             };
             if (running && Build.VERSION.SDK_INT >= 33) {
                 try {
                     ParcelFileDescriptor[] p = ParcelFileDescriptor.createPipe();
-                    String name = "answer-" + (++answers) + ".wav";
-                    kept[0] = name;
+                    String name;
+                    synchronized (answerLock) { name = "answer-" + (++answers) + ".wav"; kept[0] = name; keptCall[0] = callNo; files.add(name); }
                     src[0] = p[0];
                     answer = new MuLawWav(new File(dir(), name));
-                    files.add(name);
                     pipe = new ParcelFileDescriptor.AutoCloseOutputStream(p[1]);
                     i.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, p[0])
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
