@@ -763,3 +763,26 @@ test("engine.stop does not kill a process that is not llama-server", () => {
     assert.ok(!fs.existsSync(path.join(home, "server.json")), "the stale record is cleared");
   } finally { other.kill(); }
 });
+
+// `arcflare run` showed an HTTP error as an empty answer, and waited forever
+// on a server that died mid-answer.
+test("chat reports server errors and cut-off answers instead of an empty reply", async () => {
+  const http = require("http");
+  const srv = http.createServer((req, res) => {
+    req.resume();
+    const which = srv.next.shift();
+    if (which === "500") { res.writeHead(500, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: { message: "context too long" } })); }
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "hel" } }] })}\n\n`);
+    if (which === "cut") return setTimeout(() => res.socket.destroy(), 50);
+    res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: "lo" } }] })}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const port = srv.address().port;
+  const ask = (which) => { srv.next = [which]; return cli.chatOnce(port, "m", [{ role: "user", content: "hi" }], () => {}); };
+  try {
+    assert.strictEqual(await ask("ok"), "hello");
+    await assert.rejects(ask("500"), /HTTP 500: context too long/);
+    await assert.rejects(ask("cut"), /aborted|closed the answer early/);
+  } finally { srv.close(); }
+});

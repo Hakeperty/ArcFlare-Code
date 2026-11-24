@@ -420,6 +420,16 @@ function chatOnce(port, model, messages, onDelta, sampling = null) {
       (res) => {
         let buf = "";
         let full = "";
+        // An error reply is JSON, not a stream: say what it was rather than show an empty answer.
+        if (res.statusCode >= 400) {
+          res.on("data", (d) => { buf += d; });
+          res.on("end", () => {
+            let msg = buf.trim().slice(0, 300);
+            try { const j = JSON.parse(buf); msg = (j.error && (j.error.message || j.error)) || msg; } catch {}
+            reject(new Error(`HTTP ${res.statusCode}${msg ? ": " + msg : ""}`));
+          });
+          return;
+        }
         res.on("data", (d) => {
           buf += d.toString();
           let i;
@@ -431,13 +441,16 @@ function chatOnce(port, model, messages, onDelta, sampling = null) {
             if (payload === "[DONE]") continue;
             try {
               const j = JSON.parse(payload);
+              if (j.error) { req.destroy(); return reject(new Error(String(j.error.message || j.error))); }
               const d0 = j.choices && j.choices[0] && j.choices[0].delta;
               const piece = d0 && (d0.content || "");
               if (piece) { full += piece; onDelta(piece); }
             } catch {}
           }
         });
-        res.on("end", () => resolve(full));
+        // A server that dies mid-answer ends the response without "end": settle on close.
+        res.on("error", reject);
+        res.on("close", () => (res.complete ? resolve(full) : reject(new Error("the server closed the answer early"))));
       },
     );
     req.on("error", reject);
@@ -2737,4 +2750,4 @@ if (require.main === module) {
   main().catch((e) => die(e && e.stack ? e.stack : String(e)));
 }
 
-module.exports = { pickModel, ubatchFor, DEFAULT_UBATCH, MIN_UBATCH };
+module.exports = { pickModel, ubatchFor, chatOnce, DEFAULT_UBATCH, MIN_UBATCH };
