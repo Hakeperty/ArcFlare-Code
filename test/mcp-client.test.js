@@ -19,8 +19,22 @@ test("a stdio server that stops reading fails the call instead of crashing the a
       say({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "t" }] } });
       rl.close(); require("fs").closeSync(0); setTimeout(() => {}, 20000);
     }`);
-  await s.start(10000);
-  // The write lands on a pipe nobody reads: EPIPE, which used to be uncaught.
-  await assert.rejects(s.call("t", {}, 10000), /EPIPE|exited/);
-  s.stop();
+  try {
+    await s.start(10000);
+    // The write lands on a pipe nobody reads: EPIPE, which used to be uncaught.
+    await assert.rejects(s.call("t", {}, 10000), /EPIPE|exited/);
+  } finally { s.stop(); }
+});
+
+test("a request from the server is not taken as the answer to ours", async () => {
+  const s = fake("asks", `${INIT}
+    if (msg.method === "tools/list") {
+      // Same id as our request, but it is the server asking, not answering.
+      say({ jsonrpc: "2.0", id: msg.id, method: "roots/list" });
+      say({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "real" }] } });
+    }`);
+  try {
+    await s.start(10000);
+    assert.deepStrictEqual(s.tools.map((t) => t.name), ["real"]);
+  } finally { s.stop(); }
 });
