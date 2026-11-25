@@ -145,9 +145,17 @@ test("a long result is cut short, and a failure is a short error without paths",
 });
 
 test("a runaway loop of calls is stopped after 20 a minute", async () => {
-  const { s, port } = await serve("owner");
+  const { s, port, mcp } = await serve("owner");
   try {
     for (let i = 0; i < 20; i++) assert.strictEqual((await call(port, "POST", "/api/mcp-tools/call", { server: "clock", tool: "now", args: { city: "A" } })).status, 200);
     assert.strictEqual((await call(port, "POST", "/api/mcp-tools/call", { server: "clock", tool: "now", args: { city: "A" } })).status, 429);
+    // The server has stopped since: a refused call does not start it again.
+    mcp._drop("clock");
+    let started = 0;
+    const add = mcp.reg.add;
+    mcp.reg.add = (...a) => { started++; return add(...a); };
+    assert.strictEqual((await call(port, "POST", "/api/mcp-tools/call", { server: "clock", tool: "now", args: { city: "A" } })).status, 429);
+    assert.strictEqual(started, 0);
+    assert.ok(!mcp.reg.servers.has("clock"));
   } finally { await s.close(); }
 });
