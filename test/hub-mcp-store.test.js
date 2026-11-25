@@ -13,6 +13,11 @@ const { createHubServer } = require("../lib/hub/server");
 const store = require("../lib/store");
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "mcpstore-"));
+// The command line the phone shows (and sends back) for a catalogue server.
+const C = (id) => {
+  const e = store.cleanMcp(store.bundled().mcp.find((m) => m.id === id));
+  return [e.command, ...e.args, ...(e.argument ? ["<" + e.argument.name + ">"] : [])].join(" ");
+};
 
 function FakeRegistry() {
   this.servers = new Map();
@@ -108,7 +113,7 @@ test("a non-owner can neither see the catalogue, install nor remove", async () =
   const { s, port, file } = await serve("user");
   const before = fs.readFileSync(file, "utf8");
   assert.strictEqual((await call(port, "GET", "/api/mcp/catalog")).status, 403);
-  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "memory" })).status, 403);
+  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "memory", command: C("memory") })).status, 403);
   assert.strictEqual((await call(port, "DELETE", "/api/mcp/mine")).status, 403);
   assert.strictEqual(fs.readFileSync(file, "utf8"), before);
   await s.close();
@@ -116,7 +121,7 @@ test("a non-owner can neither see the catalogue, install nor remove", async () =
 
 test("install writes exactly the catalogue's command, nothing from the phone, and the server shows off", async () => {
   const { s, port, mcp, file } = await serve("owner");
-  const r = await call(port, "POST", "/api/mcp/install", { id: "memory", command: "rm", args: ["-rf", "/"], env: { X: "1" } });
+  const r = await call(port, "POST", "/api/mcp/install", { id: "memory", command: C("memory"), args: ["-rf", "/"], env: { X: "1" } });
   assert.strictEqual(r.status, 200);
   assert.strictEqual(r.json.name, "memory");
   assert.strictEqual(r.json.enabled, false);
@@ -131,35 +136,51 @@ test("install writes exactly the catalogue's command, nothing from the phone, an
   assert.strictEqual(mem.store, true);
   assert.strictEqual(list.find((x) => x.name === "mine").store, false);
   assert.strictEqual(list.find((x) => x.name === "arcflare-web").store, false);
-  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "memory" })).status, 409);   // already there
-  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "git" })).status, 409);      // hand-written one kept
+  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "memory", command: C("memory") })).status, 409);   // already there
+  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "git", command: C("git") })).status, 409);      // hand-written one kept
   assert.ok(!fs.readdirSync(path.dirname(file)).some((f) => f.endsWith(".tmp")));
   await s.close();
 });
 
 test("install: unknown ids are 404 and arguments are checked like the CLI's", async () => {
   const { s, port, file } = await serve("owner");
-  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "nope" })).status, 404);
-  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "arcflare" })).status, 404);
+  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "nope", command: "x" })).status, 404);
+  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "arcflare", command: "x" })).status, 404);
   assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "../x" })).status, 400);
   assert.strictEqual((await call(port, "POST", "/api/mcp/install", {})).status, 400);
-  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "filesystem" })).status, 400);         // needs a folder
+  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "filesystem", command: C("filesystem") })).status, 400);         // needs a folder
   for (const bad of ["--allow-all", "/tmp; rm -rf /", "a b", "$(id)", "x".repeat(201), "a\nb"]) {
-    assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "filesystem", argument: bad })).status, 400, bad);
+    assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "filesystem", argument: bad, command: C("filesystem") })).status, 400, bad);
   }
-  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "filesystem", argument: ["/tmp"] })).status, 400);
-  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "memory", argument: "/tmp" })).status, 400);  // takes none
+  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "filesystem", argument: ["/tmp"], command: C("filesystem") })).status, 400);
+  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "memory", argument: "/tmp", command: C("memory") })).status, 400);  // takes none
   assert.ok(!("filesystem" in JSON.parse(fs.readFileSync(file, "utf8")).mcpServers));
-  const ok = await call(port, "POST", "/api/mcp/install", { id: "filesystem", argument: "/home/me/notes" });
+  const ok = await call(port, "POST", "/api/mcp/install", { id: "filesystem", argument: "/home/me/notes", command: C("filesystem") });
   assert.strictEqual(ok.status, 200);
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")).mcpServers.filesystem,
     { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/me/notes"] });
   await s.close();
 });
 
+test("install refuses when the store entry changed after the owner saw it, or without the command line", async () => {
+  const { s, port, mcp, file } = await serve("owner");
+  const before = fs.readFileSync(file, "utf8");
+  const shown = (await call(port, "GET", "/api/mcp/catalog")).json.servers.find((x) => x.id === "memory").command;
+  assert.strictEqual(shown, C("memory"));
+  const changed = store.bundled();
+  changed.mcp = changed.mcp.map((m) => (m.id === "memory" ? { ...m, args: ["-y", "some-other-package"] } : m));
+  mcp.catalogLoad = async () => ({ data: changed, source: "remote" });
+  const r = await call(port, "POST", "/api/mcp/install", { id: "memory", command: shown });
+  assert.strictEqual(r.status, 409);
+  assert.match(r.json.error || "", /store entry changed; reload the list/);
+  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "memory" })).status, 400);
+  assert.strictEqual(fs.readFileSync(file, "utf8"), before);
+  await s.close();
+});
+
 test("remove: only store servers; switched off first; built-ins and hand-written ones stay", async () => {
   const { s, port, mcp, file } = await serve("owner");
-  await call(port, "POST", "/api/mcp/install", { id: "time" });
+  await call(port, "POST", "/api/mcp/install", { id: "time", command: C("time") });
   assert.strictEqual((await call(port, "POST", "/api/mcp/time", { enabled: true })).json.status, "on");
   const r = await call(port, "DELETE", "/api/mcp/time");
   assert.strictEqual(r.status, 200);
@@ -178,9 +199,9 @@ test("remove: only store servers; switched off first; built-ins and hand-written
 test("installs and removes from the phone are rate limited", async () => {
   const { s, port } = await serve("owner");
   const ids = ["memory", "time", "sequential-thinking", "playwright", "context7"];
-  for (const id of ids) assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id })).status, 200, id);
+  for (const id of ids) assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id, command: C(id) })).status, 200, id);
   for (const id of ids) assert.strictEqual((await call(port, "DELETE", "/api/mcp/" + id)).status, 200, id);
-  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "memory" })).status, 429);
+  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "memory", command: C("memory") })).status, 429);
   await s.close();
 });
 
