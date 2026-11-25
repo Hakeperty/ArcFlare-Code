@@ -290,6 +290,25 @@ test("Local AI: a file is read only after Allow, and the model gets its text", {
   assert.ok(chats[0][3].includes("# Tools") && chats[0][3].includes("Shared folders: Notes."), "the model is told about the folder");
 });
 
+test("Local AI: a long file is read in a part sized to the room left, and the model is told how to read on", { skip }, async (t) => {
+  const page = await open(t, { files: true, folders: [{ id: "tree-1", name: "Notes" }] });
+  await reachChat(page);
+  await page.evaluate(() => { window.__files.read = async () => ({ text: "z".repeat(20000), bytes: 20000, truncated: false }); });
+  await page.evaluate((items) => window.__chatResults.push(...items), [
+    { say: '<tool_call>\n{"name": "read_file", "arguments": {"folder": "Notes", "path": "big.txt"}}\n</tool_call>' },
+  ]);
+  await page.getByPlaceholder("Message").fill("Summarise big.txt");
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Allow", exact: true }).click();
+  await page.locator(".local-msg.assistant", { hasText: "Paris is the capital." }).waitFor();
+  const sent = (await calls(page)).filter((c) => c[0] === "chat").at(-1)[4];
+  const m = /\(characters 0-(\d+) of 20000; call read_file again with start=(\d+) for the next part\)/.exec(sent);
+  assert.ok(m, "the model is told how to read the next part");
+  assert.strictEqual(m[1], m[2]);
+  // A 4,096-token window with 512 for the answer leaves more than the old fixed 6,000 characters at the start of a chat.
+  assert.ok(Number(m[1]) > 6000 && Number(m[1]) < 12000, m[1]);
+});
+
 test("Local AI: Do not allow means the file is not touched, and the model is told", { skip }, async (t) => {
   const page = await open(t, { files: true, folders: [{ id: "tree-1", name: "Notes" }] });
   await reachChat(page);

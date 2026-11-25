@@ -224,16 +224,39 @@ test("run list_files: one line per entry, folders with a slash, and the empty an
 
 test("run read_file: cut to the limit, with the cut-off line", async () => {
   let f = fake({ read: { text: "abcdefghij", bytes: 10, truncated: false } });
-  assert.equal(await A.run(call("read_file", { folder: "Notes", path: "x.txt" }), FOLDERS, f.files, 4), "abcd\n(cut off: the file is longer)");
+  assert.equal(await A.run(call("read_file", { folder: "Notes", path: "x.txt" }), FOLDERS, f.files, 4),
+    "abcd\n(characters 0-4 of 10; call read_file again with start=4 for the next part)");
   assert.deepEqual(plain(f.calls), [["read", "a", "x.txt"]]);
 
   f = fake({ read: { text: "abcd", bytes: 4, truncated: false } });
   assert.equal(await A.run(call("read_file", { folder: "Notes", path: "x.txt" }), FOLDERS, f.files, 4), "abcd", "exactly the limit is not cut");
 });
 
-test("run read_file: a truncated result from the plugin gets the cut-off line too", async () => {
-  const f = fake({ read: { text: "abc", bytes: 900, truncated: true } });
-  assert.equal(await A.run(call("read_file", { folder: "Notes", path: "x.txt" }), FOLDERS, f.files, 10), "abc\n(cut off: the file is longer)");
+test("run read_file: a truncated result from the plugin says the app cannot read further", async () => {
+  let f = fake({ read: { text: "abc", bytes: 900, truncated: true } });
+  assert.equal(await A.run(call("read_file", { folder: "Notes", path: "x.txt" }), FOLDERS, f.files, 10), "abc\n(cut off: the file is longer than the app can read)");
+  f = fake({ read: { text: "abcdef", bytes: 900, truncated: true } });
+  assert.equal(await A.run(call("read_file", { folder: "Notes", path: "x.txt" }), FOLDERS, f.files, 4),
+    "abcd\n(characters 0-4 of more than 6; call read_file again with start=4 for the next part)");
+});
+
+test("run read_file: start reads the next part, and the last part has no next-part line", async () => {
+  const f = fake({ read: { text: "abcdefghij", bytes: 10, truncated: false } });
+  const read = (start, limit) => A.run(call("read_file", { folder: "Notes", path: "x.txt", start }), FOLDERS, f.files, limit);
+  assert.equal(await read(4, 4), "efgh\n(characters 4-8 of 10; call read_file again with start=8 for the next part)");
+  assert.equal(await read(8, 4), "ij");
+  assert.equal(await read("4", 6), "efghij", "a number given as a string is read");
+  assert.equal(await read(10, 4), "Error: start=10 is past the end; the file has 10 characters.");
+});
+
+test("describe: read_file checks start, and says where the read begins", () => {
+  const d = (start) => plain(A.describe(call("read_file", { folder: "Notes", path: "x.txt", start }), FOLDERS));
+  assert.equal(d(5000).title, "Read x.txt in Notes, from character 5000");
+  assert.equal(d(5000).start, 5000);
+  assert.equal(d(0).title, "Read x.txt in Notes");
+  assert.equal(d(undefined).start, undefined);
+  const bad = { ok: false, error: "start must be a whole number, 0 or more." };
+  for (const v of [-1, 2.5, "abc", "-3", true, {}]) assert.deepEqual(d(v), bad, String(v));
 });
 
 test("run write_file: created, and replaced", async () => {
