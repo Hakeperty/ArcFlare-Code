@@ -350,6 +350,13 @@ test("run: a missing read limit still gives the start of the file, not an empty 
   assert.match(out, /call read_file again with start=2500/);
 });
 
+test("SYSTEM quotes the words a part ends with, so the model knows to read on", async () => {
+  const files = { read: async () => ({ text: "abcdefghij" }) };
+  const out = await A.run(call("read_file", { folder: "Notes", path: "a.txt" }), ONE, files, 4);
+  const quoted = /ends with "([^"]+)"/.exec(A.SYSTEM)[1];
+  assert.ok(out.includes(quoted), out);
+});
+
 test("fit: then the oldest turns are dropped, never the system message or the latest question", () => {
   const msgs = [SYS, U(big(300)), AS(big(300)), U("two"), AS("ok"), U("three")];
   const r = A.fit(msgs, 40);
