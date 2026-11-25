@@ -42,6 +42,10 @@ const GOOD = `N: android=http://schemas.android.com/apk/res/android (line=2)
           E: data (line=46)
             A: android:scheme(0x01010027)="arcflare" (Raw: "arcflare")
             A: android:host(0x01010028)="pair" (Raw: "pair")
+      E: service (line=48)
+        A: android:name(0x01010003)="net.arcflare.app.CallService" (Raw: "net.arcflare.app.CallService")
+        A: android:exported(0x01010010)=(type 0x12)0x0
+        A: android:foregroundServiceType(0x01010599)=(type 0x11)0x80
       E: provider (line=50)
         A: android:name(0x01010003)="androidx.startup.InitializationProvider" (Raw: "androidx.startup.InitializationProvider")
         A: android:exported(0x01010010)=(type 0x12)0x0
@@ -84,6 +88,8 @@ const BREAKS = {
   "wrong package": [GOOD.replace('package="net.arcflare.app"', 'package="evil.app"'), "package name"],
   "extra permission": [GOOD.replace("E: uses-permission (line=9)", 'E: uses-permission (line=8)\n      A: android:name(0x01010003)="android.permission.READ_CONTACTS"\n    E: uses-permission (line=9)'), "no other permissions"],
   "exported service": [GOOD.replace("      E: provider (line=50)", '      E: service (line=49)\n        A: android:name(0x01010003)="net.arcflare.app.Svc"\n        A: android:exported(0x01010010)=(type 0x12)0xffffffff\n      E: provider (line=50)'), "nothing else is exported"],
+  "call service exported": [GOOD.replace('"net.arcflare.app.CallService")\n        A: android:exported(0x01010010)=(type 0x12)0x0', '"net.arcflare.app.CallService")\n        A: android:exported(0x01010010)=(type 0x12)0xffffffff'), "the call service exists and is not exported"],
+  "call service missing": [GOOD.replace(/ {6}E: service \(line=48\)\n(?: {8}.*\n){3}/, ""), "the call service exists and is not exported"],
   "filter without exported attribute": [GOOD.replace("      E: provider (line=50)", '      E: receiver (line=49)\n        A: android:name(0x01010003)="net.arcflare.app.R"\n        E: intent-filter (line=50)\n          E: action (line=51)\n            A: android:name(0x01010003)="x.Y"\n      E: provider (line=50)'), "nothing else is exported"],
   "exported provider": [GOOD.replace('"androidx.startup.InitializationProvider" (Raw: "androidx.startup.InitializationProvider")\n        A: android:exported(0x01010010)=(type 0x12)0x0', '"androidx.startup.InitializationProvider" (Raw: "androidx.startup.InitializationProvider")\n        A: android:exported(0x01010010)=(type 0x12)0xffffffff'), "no content provider is exported"],
   "web link added": [GOOD.replace('A: android:scheme(0x01010027)="arcflare" (Raw: "arcflare")', 'A: android:scheme(0x01010027)="https" (Raw: "https")'), "the only link scheme"],

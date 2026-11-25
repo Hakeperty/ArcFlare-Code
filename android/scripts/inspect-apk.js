@@ -129,7 +129,9 @@ function check(s, { mode, pkg = "net.arcflare.app" }) {
 
   // REQUEST_INSTALL_PACKAGES: the app installs its own updates from the hub (AppUpdaterPlugin); Android still
   // confirms each install and refuses any APK not signed with this app's key.
-  const ALLOWED = ["android.permission.INTERNET", "android.permission.REQUEST_INSTALL_PACKAGES", "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO", `${pkg}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`];
+  // FOREGROUND_SERVICE(_MICROPHONE): CallService keeps an answered call's microphone alive when the app leaves the screen.
+  const ALLOWED = ["android.permission.INTERNET", "android.permission.REQUEST_INSTALL_PACKAGES", "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO",
+    "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_MICROPHONE", `${pkg}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`];
   const extra = s.permissions.filter((p) => !ALLOWED.includes(p));
   ok(s.permissions.includes("android.permission.INTERNET"), "the INTERNET permission is requested", "");
   ok(extra.length === 0, "no other permissions are requested", extra.join(", "));
@@ -141,6 +143,8 @@ function check(s, { mode, pkg = "net.arcflare.app" }) {
   const unexpected = exported.filter((c) => c.name !== "net.arcflare.app.MainActivity" && !KNOWN_EXPORTED.has(c.name) && !agentOk(c));
   ok(exported.some((c) => c.name === "net.arcflare.app.MainActivity"), "the launcher activity exists and is exported", "");
   ok(unexpected.length === 0, "nothing else is exported", unexpected.map((c) => `${c.tag} ${c.name}`).join(", "));
+  const callService = s.components.find((c) => c.tag === "service" && c.name === "net.arcflare.app.CallService");
+  ok(callService !== undefined && callService.exported === false, "the call service exists and is not exported", callService ? String(callService.exported) : "missing");
   const providers = s.components.filter((c) => c.tag === "provider" && c.exported === true);
   ok(providers.length === 0, "no content provider is exported", providers.map((c) => c.name).join(", "));
   ok(!s.components.some((c) => /FileProvider/.test(String(c.name))), "no file provider", "");

@@ -38,6 +38,13 @@
 
         </activity>
 
+        <!-- Keeps the microphone working during an answered call from an agent when the app leaves the screen (CallPlugin).
+             Not exported: only this app can start it. -->
+        <service
+            android:name=".CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
         <!-- The template's FileProvider is removed: nothing in this app shares files. -->
     </application>
 
@@ -50,6 +57,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Calls from agents (CallPlugin): hearing and recording the answer. Asked for the first time a call is answered. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- An answered call keeps the microphone when you switch apps or the screen goes off (CallService). Android shows
+         a "Call in progress" notification for as long as it runs. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- Android 11+ hides other apps unless asked: the phone's speech recogniser and text-to-speech voice (CallPlugin). -->
     <queries>

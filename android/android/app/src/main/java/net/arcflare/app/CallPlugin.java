@@ -31,6 +31,7 @@ import android.util.Base64;
 import androidx.activity.result.ActivityResult;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.lifecycle.Lifecycle;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -266,6 +267,11 @@ public class CallPlugin extends Plugin {
                 stopRecording();
             }
         }
+        // Keeps the microphone alive when the person leaves the app mid-call. Android 14 refuses to start it from the
+        // background, so only while the app is on screen; CallService also catches a refusal.
+        if (getActivity() != null && getActivity().getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+            try { getContext().startService(new Intent(getContext(), CallService.class)); } catch (RuntimeException e) { /* the call goes on without it */ }
+        }
         JSObject r = new JSObject();
         r.put("recording", recording);
         call.resolve(r);
@@ -492,6 +498,7 @@ public class CallPlugin extends Plugin {
 
     private void stopRecording() {
         running = false;
+        getContext().stopService(new Intent(getContext(), CallService.class)); // the call's notification goes too
         endAnswer();
         if (loop != null) { try { loop.join(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } loop = null; }
         if (rec != null) { try { rec.stop(); } catch (IllegalStateException e) { /* never started */ } rec.release(); rec = null; }

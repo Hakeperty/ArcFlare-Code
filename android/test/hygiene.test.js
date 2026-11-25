@@ -101,16 +101,24 @@ test("manifest: allowBackup=false, rules files, networkSecurityConfig, no debugg
   assert.match(m, /android:fullBackupContent="@xml\/backup_rules"/);
   assert.match(m, /android:networkSecurityConfig="@xml\/network_security_config"/);
   assert.doesNotMatch(m, /android:debuggable/);
-  assert.doesNotMatch(m, /<provider|<service|<receiver/);
+  assert.doesNotMatch(m, /<provider|<receiver/);
+  // One service: CallService, not exported, microphone type only (keeps an answered call's microphone alive).
+  const services = [...m.matchAll(/<service\b([^>]*)>/g)].map((x) => x[1]);
+  assert.equal(services.length, 1);
+  assert.match(services[0], /android:name="\.CallService"/);
+  assert.match(services[0], /android:exported="false"/);
+  assert.match(services[0], /android:foregroundServiceType="microphone"/);
   assert.equal([...m.matchAll(/android:exported="true"/g)].length, 1);
   assert.equal([...m.matchAll(/<activity\b/g)].length, 1);
   assert.match(m, /android:exported="true"[\s\S]*<\/activity>/);
   // intent filter: arcflare://pair only, never https app links
   assert.match(m, /<data android:scheme="arcflare" android:host="pair" \/>/);
   assert.doesNotMatch(m, /android:autoVerify|android:scheme="https?"/);
-  // INTERNET, REQUEST_INSTALL_PACKAGES (AppUpdaterPlugin), POST_NOTIFICATIONS (NotifierPlugin), RECORD_AUDIO (CallPlugin). Nothing else.
+  // INTERNET, REQUEST_INSTALL_PACKAGES (AppUpdaterPlugin), POST_NOTIFICATIONS (NotifierPlugin), RECORD_AUDIO (CallPlugin),
+  // FOREGROUND_SERVICE and FOREGROUND_SERVICE_MICROPHONE (CallService). Nothing else.
   assert.deepEqual([...m.matchAll(/<uses-permission android:name="([^"]+)"/g)].map((x) => x[1]).sort(),
-    ["android.permission.INTERNET", "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO", "android.permission.REQUEST_INSTALL_PACKAGES"]);
+    ["android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_MICROPHONE", "android.permission.INTERNET",
+      "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO", "android.permission.REQUEST_INSTALL_PACKAGES"]);
 });
 
 test("backup rule files exclude every domain", () => {
@@ -169,8 +177,17 @@ test("two apps from one project: chat and agent flavors; only agent changes the 
 
 test("native source lint (greps only, cannot catch an inverted condition): MainActivity and NavPolicy", () => {
   const dir = path.join(native, "java", "net", "arcflare", "app");
-  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "CallPlugin.java", "MainActivity.java", "MuLawWav.java", "NavPolicy.java", "NotifierPlugin.java", "OnlineUpdate.java"].concat(["LlamaEngine.java", "LocalAiPlugin.java", "ModelCatalog.java"]).sort(), "no NavGuard plugin any more");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "CallPlugin.java", "CallService.java", "MainActivity.java", "MuLawWav.java", "NavPolicy.java", "NotifierPlugin.java", "OnlineUpdate.java"].concat(["LlamaEngine.java", "LocalAiPlugin.java", "ModelCatalog.java"]).sort(), "no NavGuard plugin any more");
   const main = read(path.join(dir, "MainActivity.java"));
+  // CallService: the microphone type only, a refused start caught (Android 14 from the background), never restarted by
+  // Android on its own; CallPlugin starts it only while the app is on screen and stops it with the recording.
+  const cs = read(path.join(dir, "CallService.java"));
+  assert.match(cs, /startForeground\(NOTE_ID, n, ServiceInfo\.FOREGROUND_SERVICE_TYPE_MICROPHONE\)/);
+  assert.match(cs, /catch \(RuntimeException e\) \{[^}]*stopSelf\(\);/);
+  assert.match(cs, /return START_NOT_STICKY;/);
+  const cp = read(path.join(dir, "CallPlugin.java"));
+  assert.match(cp, /isAtLeast\(Lifecycle\.State\.STARTED\)\) \{\s*try \{ getContext\(\)\.startService\(new Intent\(getContext\(\), CallService\.class\)\); \} catch \(RuntimeException e\)/);
+  assert.match(cp, /private void stopRecording\(\) \{\s*running = false;\s*getContext\(\)\.stopService\(new Intent\(getContext\(\), CallService\.class\)\);/);
   // The updater: only ever this app, a private receiver, an explicit intent, size and hash checked before
   // commit, and no file sharing (no FileProvider, no shared storage, no ACTION_VIEW of a file).
   const up = read(path.join(dir, "AppUpdaterPlugin.java"));

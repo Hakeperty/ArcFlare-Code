@@ -83,7 +83,11 @@ picker), says the agent's line with the phone's text-to-speech voice, and listen
 answer and (Android 13+, `EXTRA_AUDIO_SOURCE`) the recogniser. Before Android 13 the recogniser needs the microphone
 itself, so nothing is recorded. The recordings (mu-law WAV, `MuLawWav.java`, tested with javac in `test/mulaw.test.js`)
 are uploaded in 36 KB pieces when the call ends, saved on the computer, and deleted from the phone. Needs
-`RECORD_AUDIO`, asked the first time a call is answered. Mute and the hours under Tools stop calls on the computer's
+`RECORD_AUDIO`, asked the first time a call is answered. While an answered call is in progress, `CallService` (a
+foreground service of the microphone type, not exported) shows a "Call in progress" notification so Android lets the
+call keep the microphone when you switch apps or the screen goes off; that needs `FOREGROUND_SERVICE` and
+`FOREGROUND_SERVICE_MICROPHONE`. Android 14+ refuses to start it while the app is in the background, so it starts
+only when the call is answered with the app on screen, and the call goes on without it if Android says no. Mute and the hours under Tools stop calls on the computer's
 side. **None of this has run on a phone yet.**
 
 ## Layout
@@ -330,7 +334,8 @@ site.
   every build (`webContentsDebuggingEnabled:false`, so debug builds cannot be inspected with chrome://inspect either);
   `allowFileAccess`/`allowContentAccess` off; `importantForAutofill=noExcludeDescendants` on the WebView so the system does
   not offer to save the hub password; only the launcher activity is exported, the template FileProvider is removed,
-  the only permission is INTERNET; the intent filter is `arcflare://pair` only (no https app links); `FLAG_SECURE`
+  the permissions are INTERNET, REQUEST_INSTALL_PACKAGES (its own updates), POST_NOTIFICATIONS, and for calls from
+  agents RECORD_AUDIO, FOREGROUND_SERVICE and FOREGROUND_SERVICE_MICROPHONE (each explained in the manifest); the intent filter is `arcflare://pair` only (no https app links); `FLAG_SECURE`
   (no screenshots, blank recents thumbnail); system CAs only; minSdk 26; minimum WebView 133.
 - **Cleartext.** `network_security_config.xml` permits cleartext for **every host**. It cannot be limited to private addresses
   (the config matches host names, not CIDR ranges, and the hub's address is whatever the router handed out). The exposure
