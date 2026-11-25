@@ -288,6 +288,7 @@ test("Local AI: a file is read only after Allow, and the model gets its text", {
   assert.strictEqual(last[1], "system,user,assistant,user");
   assert.ok(last[4].includes("<tool_response>") && last[4].includes("buy milk"), "the model gets the file text");
   assert.ok(chats[0][3].includes("# Tools") && chats[0][3].includes("Shared folders: Notes."), "the model is told about the folder");
+  assert.ok(chats[0][3].includes("Your memory is about 4096 tokens"), "the model is told its window");
 });
 
 test("Local AI: a long file is read in a part sized to the room left, and the model is told how to read on", { skip }, async (t) => {

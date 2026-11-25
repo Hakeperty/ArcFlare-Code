@@ -350,3 +350,14 @@ test("fit: a turn with tool rounds is dropped whole, so no tool response is left
   assert.equal(r.dropped, 4);
   assert.deepEqual(plain(r.messages), plain([SYS, U("next")]));
 });
+
+test("prompt: with the window size, one line tells the model its memory, after the folders", () => {
+  const p = A.prompt(FOLDERS, 2048);
+  assert.equal(p, A.prompt(FOLDERS).replace("Shared folders: Notes, Work.",
+    "Shared folders: Notes, Work.\nYour memory is about 2048 tokens: read big files in parts and keep answers short."));
+});
+
+test("TOOLS: the tools block stays small, since it is sent with every message", () => {
+  // By the 3-characters-a-token estimate; it was 427 before the descriptions were shortened.
+  assert.ok(A.tokens(A.TOOLS.map((t) => JSON.stringify(t)).join("\n")) <= 390);
+});
