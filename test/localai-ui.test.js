@@ -357,6 +357,28 @@ test("Local AI: Stop during a tool question ends it, with no tool run and no new
   assert.strictEqual((await calls(page)).filter((c) => c[0] === "chat").length, 1, "the model was asked again after Stop");
 });
 
+// Stop while the first of two calls runs: the second is never offered or run.
+test("Local AI: Stop during a batch of tool calls runs none of the calls after it", { skip }, async (t) => {
+  const page = await open(t, { files: true, folders: [{ id: "tree-1", name: "Notes" }] });
+  await reachChat(page);
+  const two = toolCall("list_files", { folder: "Notes" }) + "\n" + toolCall("read_file", { folder: "Notes", path: "todo.txt" });
+  await page.evaluate((items) => {
+    window.__chatResults.push(...items);
+    const list = window.__files.list;
+    window.__files.list = async (...a) => { await new Promise((r) => { window.__go = r; }); return list(...a); };
+  }, [{ say: two }]);
+  await page.getByPlaceholder("Message").fill("list and read");
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Allow", exact: true }).click();
+  await page.waitForFunction(() => !!window.__go);
+  await page.getByRole("button", { name: "Stop" }).click();
+  await page.evaluate(() => window.__go());
+  await page.getByRole("button", { name: "Send" }).waitFor();
+  await new Promise((r) => setTimeout(r, 300));
+  assert.strictEqual(await APPROVE(page).count(), 0, "the second call was offered after Stop");
+  assert.ok(!(await calls(page)).some((c) => c[0] === "read"), "the second call ran after Stop");
+});
+
 // An answer with more calls than are taken: the ones not run still get a result, so the model is not left with calls
 // that never came back.
 test("Local AI: calls beyond the limit are not run, and the model is told", { skip }, async (t) => {
