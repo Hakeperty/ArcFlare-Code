@@ -46,7 +46,11 @@
      * checkOnline() and downloadOnline() do the same from arcflare.net (OnlineUpdate.java), with no computer or sign-in;
      * the address is fixed in Java, so nothing here can point them elsewhere.
      */
-    /** Local notifications (NotifierPlugin.java): state(), request(), notify({id, title, body, kind, sound}). null outside the app. */
+    /**
+     * Local notifications (NotifierPlugin.java): state(), request(), notify({id, title, body, kind, sound}).
+     * screenshots(allow): the "Allow screenshots" switch; a boolean sets it, anything else only reads it; resolves { allow }.
+     * null outside the app.
+     */
     notifier: function () {
       var p;
       try { p = plugin("Notifier"); } catch (e) { return null; }
@@ -54,6 +58,7 @@
         state: function () { return p.state(); },
         request: function () { return p.request(); },
         notify: function (o) { return p.notify({ id: o.id, title: o.title, body: o.body, kind: o.kind, sound: o.sound }); },
+        screenshots: function (allow) { return p.screenshots(typeof allow === "boolean" ? { allow: allow } : {}); },
       };
     },
     /**

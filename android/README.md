@@ -339,8 +339,9 @@ site.
   `allowFileAccess`/`allowContentAccess` off; `importantForAutofill=noExcludeDescendants` on the WebView so the system does
   not offer to save the hub password; only the launcher activity is exported, the template FileProvider is removed,
   the permissions are INTERNET, REQUEST_INSTALL_PACKAGES (its own updates), POST_NOTIFICATIONS, and for calls from
-  agents RECORD_AUDIO, FOREGROUND_SERVICE, FOREGROUND_SERVICE_MICROPHONE and USE_FULL_SCREEN_INTENT (each explained in the manifest); the intent filter is `arcflare://pair` only (no https app links); `FLAG_SECURE`
-  (no screenshots, blank recents thumbnail); system CAs only; minSdk 26; minimum WebView 133.
+  agents RECORD_AUDIO, FOREGROUND_SERVICE, FOREGROUND_SERVICE_MICROPHONE and USE_FULL_SCREEN_INTENT (each explained in the manifest); the intent filter is `arcflare://pair` only (no https app links); screenshots and
+  screen recording allowed by default; Tools, "Allow screenshots" off sets `FLAG_SECURE` (no screenshots, blank recents
+  thumbnail), kept in app-private preferences and applied before the page loads; system CAs only; minSdk 26; minimum WebView 133.
 - **Cleartext.** `network_security_config.xml` permits cleartext for **every host**. It cannot be limited to private addresses
   (the config matches host names, not CIDR ranges, and the hub's address is whatever the router handed out). The exposure
   is limited by what the app does, not by the config: the WebView can no longer navigate to a cleartext page (above), the
@@ -478,8 +479,8 @@ Nothing below was executed on Android. Check each on a real phone (Android 8+ wi
     `plugins.CapacitorCookies.enabled: false`; Forget reports a failure if it throws.
 15. **WebCrypto X25519 inside the real WebView**, IndexedDB persistence of the non-extractable `CryptoKey` across app restarts and
     updates, and that Android auto-backup/device transfer really exclude it.
-16. **FLAG_SECURE** hides the password screen in screenshots and recents (it does not cover dialogs, the keyboard or autofill
-    popups); `importantForAutofill` stops the autofill save prompt; `webContentsDebuggingEnabled:false` in debug and release.
+16. **Allow screenshots** (on by default): that turning it off sets FLAG_SECURE at once and after a restart, hiding the app
+    in screenshots and recents (it does not cover dialogs, the keyboard or autofill popups), and turning it on clears it; `importantForAutofill` stops the autofill save prompt; `webContentsDebuggingEnabled:false` in debug and release.
 17. **Install and signing:** the release APK signs and installs; icons render (generated, not designed).
 18. **Update the app (arcflare.net):** that `checkOnline()`/`downloadOnline()` reach arcflare.net from a real phone, that
     Android shows its confirmation and installs over the running app, and that an APK signed with another key is refused

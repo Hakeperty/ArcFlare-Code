@@ -1,5 +1,7 @@
 package net.arcflare.app;
 
+import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.os.Build;
@@ -23,11 +25,24 @@ public class MainActivity extends BridgeActivity {
     /** Set by CallPlugin.ring() on the intent of the call notification. */
     static final String FOR_CALL = "net.arcflare.app.FOR_CALL";
 
+    /** The "Allow screenshots" switch (Tools), in app-private preferences; set only by NotifierPlugin.screenshots(). */
+    static final String SCREEN_PREFS = "arcflare-screen";
+    static final String ALLOW_SCREENSHOTS = "allowScreenshots";
+
+    /** Screenshots allowed (the default): no FLAG_SECURE. Switched off: FLAG_SECURE, so no screenshots, no screen recording, blank recents thumbnail. */
+    static void applyScreenshots(Activity a) {
+        if (a.getSharedPreferences(SCREEN_PREFS, Context.MODE_PRIVATE).getBoolean(ALLOW_SCREENSHOTS, true)) {
+            a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        } else {
+            a.getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+        }
+    }
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         if (savedInstanceState == null) showForCall(getIntent());
-        // No screenshots, no screen recording, blank thumbnail in the recents screen.
-        getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+        // Before the page loads, so a person who turned screenshots off never has a capturable first frame.
+        applyScreenshots(this);
         // Updates of this app, downloaded from the signed-in hub (see AppUpdaterPlugin).
         registerPlugin(AppUpdaterPlugin.class);
         // Local notifications for chat answers and agent events (see NotifierPlugin).

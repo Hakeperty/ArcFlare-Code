@@ -251,7 +251,19 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.equal([...cpp.matchAll(/catch \(const std::exception &e\) \{[^}]*\} catch \(\.\.\.\) \{/g)].length, 2);
   assert.equal([...cpp.matchAll(/\btry \{/g)].length, 2);
   const java = main + read(path.join(dir, "NavPolicy.java"));
-  assert.match(main, /FLAG_SECURE/);
+  // Screenshots: allowed by default (the owner's choice); the "Allow screenshots" switch turned off sets FLAG_SECURE again.
+  // The flag is decided only from the app-private preference, before the page loads, and changed only by that switch.
+  assert.ok(main.includes('if (a.getSharedPreferences(SCREEN_PREFS, Context.MODE_PRIVATE).getBoolean(ALLOW_SCREENSHOTS, true)) {\n            a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);\n        } else {\n            a.getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);'), "default allowed; off sets FLAG_SECURE");
+  assert.ok(main.indexOf("applyScreenshots(this);") > 0 && main.indexOf("applyScreenshots(this);") < main.indexOf("super.onCreate(savedInstanceState);"), "applied before the page loads");
+  const all = fs.readdirSync(dir).filter((f) => f.endsWith(".java")).map((f) => [f, read(path.join(dir, f))]);
+  assert.deepEqual(all.filter(([, s]) => /FLAG_SECURE/.test(s)).map(([f]) => f), ["MainActivity.java"], "FLAG_SECURE is touched only in MainActivity.applyScreenshots");
+  assert.equal([...main.matchAll(/WindowManager\.LayoutParams\.FLAG_SECURE/g)].length, 3, "one clear, one set");
+  assert.deepEqual(all.filter(([, s]) => /applyScreenshots\(|ALLOW_SCREENSHOTS/.test(s)).map(([f]) => f).sort(), ["MainActivity.java", "NotifierPlugin.java"]);
+  assert.doesNotMatch(all.map(([, s]) => s).join("\n"), /setRecentsScreenshotEnabled/, "nothing else hides the app from captures or recents");
+  const notifier = read(path.join(dir, "NotifierPlugin.java"));
+  assert.ok(notifier.includes('Boolean allow = call.getBoolean("allow", null);'), "the page sends only a boolean");
+  assert.ok(notifier.includes("a.runOnUiThread(() -> MainActivity.applyScreenshots(a));"), "window flags change on the UI thread");
+  assert.ok(notifier.includes("getContext().getSharedPreferences(MainActivity.SCREEN_PREFS, Context.MODE_PRIVATE)"));
   assert.match(main, /setAllowFileAccess\(false\)/);
   assert.match(main, /setAllowContentAccess\(false\)/);
   assert.match(main, /setImportantForAutofill\(View\.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS\)/);
