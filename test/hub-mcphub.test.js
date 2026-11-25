@@ -114,7 +114,11 @@ test("only the computer's own config is read, never a workspace file", () => {
 test("shortError keeps the reason and drops paths", () => {
   assert.strictEqual(shortError(new Error("spawn /usr/local/bin/thing ENOENT")), "spawn … ENOENT");
   assert.ok(shortError("x".repeat(500)).length <= 200);
-  for (const p of ["/home/Jo Doe/.arcflare/mcp.json.12.tmp", "C:\\Users\\Jo Doe\\.arcflare\\mcp.json"]) {
+  for (const p of ["/home/Jo Doe/bin/thing", "C:\\Program Files\\node\\node.exe", "/home/Jo EVAN/x"]) {
+    assert.strictEqual(shortError(new Error(`spawn ${p} ENOENT`)), "spawn … ENOENT", p);
+  }
+  for (const p of ["/home/Jo Doe/.arcflare/mcp.json.12.tmp", "C:\\Users\\Jo Doe\\.arcflare\\mcp.json",
+    "/home/O'Brien/.arcflare/mcp.json", "C:\\Users\\O'Brien\\.arcflare\\mcp.json"]) {
     const s = shortError(new Error(`EACCES: permission denied, open '${p}'`));
     assert.strictEqual(s, "EACCES: permission denied, open …");
   }
