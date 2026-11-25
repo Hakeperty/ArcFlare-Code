@@ -114,6 +114,10 @@ test("only the computer's own config is read, never a workspace file", () => {
 test("shortError keeps the reason and drops paths", () => {
   assert.strictEqual(shortError(new Error("spawn /usr/local/bin/thing ENOENT")), "spawn … ENOENT");
   assert.ok(shortError("x".repeat(500)).length <= 200);
+  for (const p of ["/home/Jo Doe/.arcflare/mcp.json.12.tmp", "C:\\Users\\Jo Doe\\.arcflare\\mcp.json"]) {
+    const s = shortError(new Error(`EACCES: permission denied, open '${p}'`));
+    assert.strictEqual(s, "EACCES: permission denied, open …");
+  }
 });
 
 test("the supervisor hands switched-on servers to the agents it boots", async () => {
