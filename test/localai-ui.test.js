@@ -220,6 +220,26 @@ test("Local AI: the chat says when older messages are forgotten, and does not as
   assert.strictEqual(await page.getByText("Older messages no longer fit").count(), 0);
 });
 
+test("Local AI: a long chat is trimmed to the model's memory before it is sent, with no TOO_LONG", { skip }, async (t) => {
+  const page = await open(t, { files: true });
+  await reachChat(page);
+  // Each answer is 4,000 characters, about 1,340 tokens by the estimate; the window is 4,096 with 512 kept for the answer.
+  for (const [i, q] of ["one", "two", "three", "four"].entries()) {
+    await page.evaluate(() => window.__chatResults.push({ say: "w".repeat(4000) }));
+    await page.getByPlaceholder("Message").fill(q);
+    await page.getByRole("button", { name: "Send" }).click();
+    await page.locator(".local-msg.assistant").nth(i).filter({ hasText: "wwww" }).waitFor();
+    await page.getByRole("button", { name: "Send" }).waitFor();
+  }
+  const chats = (await calls(page)).filter((x) => x[0] === "chat");
+  assert.deepStrictEqual(chats.map((x) => x[1]), [
+    "system,user", "system,user,assistant,user", "system,user,assistant,user,assistant,user",
+    "system,user,assistant,user,assistant,user",
+  ], "the fourth question is sent without the first exchange, and nothing was sent twice");
+  assert.strictEqual(chats.at(-1)[4], "four");
+  await page.getByText("Older messages no longer fit in the model's memory, so Arc Pocket has forgotten them.").waitFor();
+});
+
 test("Local AI: without the agent build there is no Files button", { skip }, async (t) => {
   const page = await open(t);
   await reachChat(page);

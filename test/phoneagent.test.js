@@ -277,3 +277,53 @@ test("describe: with one shared folder, a folder name it does not know is a fold
 test("only the model that passed the tool measurements gets tools", () => {
   assert.deepEqual(plain(A.MODELS), ["qwen3-1.7b"]);
 });
+
+test("tokens: about one token per three characters, rounded up", () => {
+  assert.equal(A.tokens(""), 0);
+  assert.equal(A.tokens("abc"), 1);
+  assert.equal(A.tokens("abcd"), 2);
+  assert.equal(A.tokens(null), 0);
+  assert.equal(A.size([{ role: "user", content: "abc" }, { role: "assistant", content: "" }]), 1 + 4 + 0 + 4);
+});
+
+const SYS = { role: "system", content: "s" };
+const U = (t) => ({ role: "user", content: t });
+const AS = (t) => ({ role: "assistant", content: t });
+const TR = (t) => ({ role: "user", content: A.response(t) });
+const big = (n) => "x".repeat(n);
+
+test("fit: a list that fits is returned unchanged", () => {
+  const msgs = [SYS, U("hi"), AS("hello"), U("and?")];
+  assert.deepEqual(plain(A.fit(msgs, 1000)), { messages: msgs, stubbed: 0, dropped: 0 });
+});
+
+test("fit: older file texts become a stub first, oldest first, and the latest stays whole", () => {
+  const msgs = [SYS, U("read a and b"), AS("<tool_call>a</tool_call>"), TR(big(900)), AS("<tool_call>b</tool_call>"), TR(big(900)), AS("<tool_call>c</tool_call>"), TR(big(300))];
+  const r = A.fit(msgs, 260);
+  assert.equal(r.stubbed, 2);
+  assert.equal(r.dropped, 0);
+  assert.match(r.messages[3].content, /removed to save memory/);
+  assert.match(r.messages[5].content, /removed to save memory/);
+  assert.equal(r.messages[7].content, msgs[7].content, "the latest tool response is whole");
+  assert.ok(A.size(r.messages) <= 260);
+  assert.equal(msgs[3].content, A.response(big(900)), "the input is not changed");
+  // Only as many as needed: a budget that fits after one stub stubs one.
+  assert.equal(A.fit(msgs, A.size(msgs) - 200).stubbed, 1);
+});
+
+test("fit: then the oldest turns are dropped, never the system message or the latest question", () => {
+  const msgs = [SYS, U(big(300)), AS(big(300)), U("two"), AS("ok"), U("three")];
+  const r = A.fit(msgs, 40);
+  assert.equal(r.dropped, 2);
+  assert.deepEqual(plain(r.messages), plain([SYS, U("two"), AS("ok"), U("three")]));
+  const all = A.fit(msgs, 1);
+  assert.equal(all.dropped, 4);
+  assert.deepEqual(plain(all.messages), plain([SYS, U("three")]), "too long even then: the latest question still goes");
+});
+
+test("fit: a turn with tool rounds is dropped whole, so no tool response is left without its call", () => {
+  const msgs = [SYS, U("read"), AS("<tool_call>x</tool_call>"), TR(big(600)), AS(big(600)), U("next")];
+  const r = A.fit(msgs, 30);
+  assert.equal(r.dropped, 4);
+  assert.deepEqual(plain(r.messages), plain([SYS, U("next")]));
+});
