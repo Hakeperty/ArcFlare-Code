@@ -8,7 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
 const { EventEmitter } = require("node:events");
-const { McpHub, MAX_RESULT } = require("../lib/hub/mcphub");
+const { McpHub, MAX_RESULT, PHONE_TIMEOUT_MS } = require("../lib/hub/mcphub");
 const { createHubServer } = require("../lib/hub/server");
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "mcpphone-"));
@@ -207,4 +207,48 @@ test("tool names reach the phone clean and capped, and a call by the clean name 
     await assert.rejects(mcp.callTool("clock", bad, {}), (e) => e.status === 404, JSON.stringify(bad));
   }
   assert.strictEqual(ran.length, 2);
+});
+
+// A fake server with ArcFlare's phone tools: each call records the timeout the hub gave it.
+function PhoneRegistry() {
+  this.servers = new Map();
+  this.calls = [];
+  const reg = this;
+  this.add = async (name) => {
+    const tool = (n) => ({ name: n, inputSchema: { type: "object", properties: { say: { type: "string" }, call_id: { type: "string" } } } });
+    this.servers.set(name, {
+      tools: [tool("call_phone"), tool("notify_phone"), tool("ask_phone"), tool("now")],
+      async call(t, args, timeoutMs) { reg.calls.push({ t, timeoutMs }); return { content: [{ type: "text", text: "ok" }] }; },
+      stop() {},
+    });
+    return { ok: true };
+  };
+}
+
+test("tools that ring, notify or ask the phone wait for the person, and other tools keep two minutes", async () => {
+  const mcp = new McpHub({ dir: tmp(), load: () => CONFIG, Registry: PhoneRegistry });
+  await mcp.setEnabled("clock", true);
+  await mcp.callTool("clock", "ask_phone", {});
+  await mcp.callTool("clock", "now", {});
+  assert.ok(PHONE_TIMEOUT_MS >= 305000, "longer than ask_phone's default wait of 300 s");
+  assert.deepStrictEqual(mcp.reg.calls, [{ t: "ask_phone", timeoutMs: PHONE_TIMEOUT_MS }, { t: "now", timeoutMs: 120000 }]);
+});
+
+test("an AI on the phone can ring, notify or ask that phone at most 3 times a minute", async (t) => {
+  const mcp = new McpHub({ dir: tmp(), load: () => CONFIG, Registry: PhoneRegistry });
+  let now = Date.now();
+  t.mock.method(Date, "now", () => now);
+  await mcp.setEnabled("clock", true);
+  await mcp.callTool("clock", "call_phone", { say: "hi" });
+  await mcp.callTool("clock", "call_phone", { say: "go on", call_id: "c1" });   // the same call's next turn rings nothing
+  await mcp.callTool("clock", "notify_phone", {});
+  await mcp.callTool("clock", "ask_phone", {});
+  for (const tool of ["call_phone", "notify_phone", "ask_phone"]) {
+    await assert.rejects(mcp.callTool("clock", tool, { say: "again" }), (e) => e.status === 429, tool);
+  }
+  await mcp.callTool("clock", "now", {});   // other tools are not held back
+  assert.strictEqual(mcp.reg.calls.length, 5);
+  now += 61000;
+  await mcp.callTool("clock", "call_phone", { say: "later" });
+  assert.strictEqual(mcp.reg.calls.length, 6);
 });
