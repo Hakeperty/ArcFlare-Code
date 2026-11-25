@@ -295,6 +295,19 @@ test("hanging up is tried again when the connection drops", { skip }, async (t) 
   assert.ok(!(await page.isVisible("#call-error")));
 });
 
+// An Answer the computer never replies to: Decline and the one-tap answers were dead for good (the screen waited on
+// it). Now the screen ends with an error after a bounded wait.
+test("an Answer that never gets a reply does not leave the call screen stuck", { skip }, async (t) => {
+  const { page, calls } = await phone(t, { clock: true });
+  calls.start({ say: "Deploy now?", from: "Codex" });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
+  await page.route("**/answer", () => { /* never answered */ });
+  await page.click("#call-answer");
+  await page.clock.runFor(20000);
+  await page.locator("#sheet-call").waitFor({ state: "hidden" });
+  assert.match(await page.textContent("#call-error"), /did not answer/);
+});
+
 // The app that never stops recording and a hang-up the computer never answers: the call screen still ends, with an
 // error, instead of staying on "Saving" for good.
 test("a hang-up that never gets an answer still ends the call screen", { skip }, async (t) => {
