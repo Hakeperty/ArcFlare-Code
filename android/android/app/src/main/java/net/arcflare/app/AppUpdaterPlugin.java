@@ -159,8 +159,13 @@ public class AppUpdaterPlugin extends Plugin {
         if (apk == null) { call.reject("check for an update first"); return; }
         new Thread(() -> {
             HttpURLConnection c = null;
+            PackageInstaller.Session mine = null; // a newer begin() or download replaces it: then this one stops
             try {
-                synchronized (this) { abandon(); start(size, sha); }
+                synchronized (this) {
+                    abandon();
+                    try { start(size, sha); } catch (Exception e) { abandon(); throw e; }
+                    mine = session;
+                }
                 c = open(OnlineUpdate.apkUrl(apk));
                 long len = c.getContentLengthLong();
                 if (len != -1 && len != size) throw new IOException("the file is not the size arcflare.net announced");
@@ -169,7 +174,7 @@ public class AppUpdaterPlugin extends Plugin {
                     int n;
                     while ((n = in.read(buf)) > 0) {
                         synchronized (this) {
-                            if (out == null) throw new IOException("cancelled");
+                            if (out == null || session != mine) throw new IOException("cancelled");
                             if (written + n > expectedSize) throw new IOException("the download is larger than announced");
                             out.write(buf, 0, n);
                             digest.update(buf, 0, n);
@@ -179,7 +184,7 @@ public class AppUpdaterPlugin extends Plugin {
                 }
                 call.resolve(); // commit() checks the size and the SHA-256 before Android sees the file
             } catch (Exception e) {
-                synchronized (this) { abandon(); }
+                synchronized (this) { if (mine != null && session == mine) abandon(); } // never a newer session
                 call.reject("download failed: " + e.getMessage());
             } finally {
                 if (c != null) c.disconnect();
@@ -270,9 +275,13 @@ public class AppUpdaterPlugin extends Plugin {
         receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context ctx, Intent intent) {
-                if (pendingCommit == null) return; // nothing of ours is being installed: ignore
                 int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
-                if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                boolean asking = status == PackageInstaller.STATUS_PENDING_USER_ACTION;
+                PluginCall c;
+                // commit() sets pendingCommit on the plugin's thread; this runs on the main thread.
+                synchronized (AppUpdaterPlugin.this) { c = pendingCommit; if (!asking) pendingCommit = null; }
+                if (c == null) return; // nothing of ours is being installed: ignore
+                if (asking) {
                     Intent confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT);
                     // Launch it only if it opens a system app (the package installer's confirmation screen):
                     // never an arbitrary intent handed to us.
@@ -282,9 +291,6 @@ public class AppUpdaterPlugin extends Plugin {
                     }
                     return;
                 }
-                PluginCall c = pendingCommit;
-                pendingCommit = null;
-                if (c == null) return;
                 JSObject r = new JSObject();
                 r.put("status", status == PackageInstaller.STATUS_SUCCESS ? "installed" : "failed");
                 r.put("message", intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE));

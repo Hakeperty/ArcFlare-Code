@@ -35,19 +35,31 @@ test("a call: ring, answer, reply, the agent's next line, hang up, then both rec
   box.hangUp(id, ["conversation.wav", "answer-1.wav"]);
   assert.strictEqual(box.current(), null);
   assert.throws(() => box.audio(id, { name: "../x.wav", offset: 0, data: "" }), /Not a recording/);
+  const before = (await box.wait(id, -1, 0)).version;
   box.audio(id, { name: "conversation.wav", offset: 0, data: b64("RIFF") });
+  assert.ok((await box.wait(id, -1, 0)).version > before, "every piece shows the upload is still coming");
   box.audio(id, { name: "conversation.wav", offset: 0, data: b64("RIFF") });                 // a retried piece is not written twice
   assert.throws(() => box.audio(id, { name: "conversation.wav", offset: 99, data: b64("x") }), /Expected offset 4/);
   assert.strictEqual(box.audio(id, { name: "conversation.wav", offset: 4, data: b64("data"), last: true }).saved, false);
   assert.strictEqual(box.audio(id, { name: "answer-1.wav", offset: 0, data: b64("yes"), last: true }).saved, true);
 
   const done = await box.wait(id, -1, 0);
-  assert.strictEqual(done.status, "ended");
+  assert.deepStrictEqual([done.status, done.why], ["ended", "the agent hung up"], "the phone hung up because the agent asked it to");
   assert.strictEqual(fs.readFileSync(path.join(dir, id, "conversation.wav"), "utf8"), "RIFFdata");
   assert.deepStrictEqual(done.recordings.map((f) => path.basename(f)), ["conversation.wav", "answer-1.wav"]);
   const t = JSON.parse(fs.readFileSync(path.join(dir, id, "transcript.json"), "utf8"));
   assert.deepStrictEqual(t.turns.map((x) => [x.who, x.text]), [["agent", "The build failed. Retry?"], ["user", "Yes, retry it"], ["agent", "Retrying. Bye."]]);
   if (process.platform !== "win32") assert.strictEqual(fs.statSync(path.join(dir, id, "answer-1.wav")).mode & 0o077, 0, "recordings are private");
+});
+
+test("a user who hangs up while the agent's last line still plays is the one who hung up", async () => {
+  const box = new CallBox({ dir: tmp() });
+  const { id } = box.start({ say: "Deploy now?" });
+  box.answer(id);
+  box.reply(id, "Yes", "text");
+  box.say(id, { say: "Deploying. Bye.", hangUp: true });
+  box.hangUp(id, [], true);   // the phone says the user tapped Hang up
+  assert.strictEqual((await box.wait(id, -1, 0)).why, "the user hung up");
 });
 
 test("muted or outside the user's hours: the phone is not rung, and the agent is told why", () => {
@@ -94,7 +106,8 @@ test("answering or declining with a message: the agent gets the text, marked as 
   box.say(id, { say: "Deploying." });
   box.reply(id, "thanks");                      // spoken: the default, and it gets a recording name
   box.hangUp(id, []);
-  assert.deepStrictEqual((await box.wait(id, -1, 0)).turns.map((t) => t.via), [undefined, "text", undefined, "voice"]);
+  c = await box.wait(id, -1, 0);
+  assert.deepStrictEqual([c.why, c.turns.map((t) => t.via)], ["the user hung up", [undefined, "text", undefined, "voice"]]);
 });
 
 test("what call_phone tells the agent: typed and heard answers, a decline message, and why there is no recording", () => {
@@ -247,6 +260,19 @@ test("a scheduled call: when it may ring, listed until then, taken back, and kep
   assert.strictEqual(third.timers.size, 0);
   assert.strictEqual(events.filter((e) => e.type === "call").length, 1);
   assert.strictEqual(events.filter((e) => e.type === "call_end" && /already in a call/.test(e.why)).length, 9, "the phone takes one call at a time: the rest are left as missed calls");
+});
+
+test("a scheduled call waiting to ring is not pruned with old calls, so it still rings after a restart", () => {
+  const dir = tmp();
+  const box = new CallBox({ dir });
+  const { id } = box.schedule({ say: "Stand-up in five minutes.", at: new Date(Date.now() + 3600_000).toISOString() });
+  fs.utimesSync(path.join(dir, id), new Date(0), new Date(0));   // older than every call that follows
+  for (let i = 0; i < 25; i++) box.end(box.start({ say: "hi" }).id);
+  for (const t of box.timers.values()) clearTimeout(t);
+  assert.ok(fs.existsSync(path.join(dir, id, "transcript.json")));
+  const again = new CallBox({ dir });
+  assert.ok(again.timers.has(id), "armed again after the restart");
+  for (const t of again.timers.values()) clearTimeout(t);
 });
 
 test("a scheduled call rings one-way: the phone is told to hang up after the line, and a typed answer ends it and is kept", async () => {

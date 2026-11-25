@@ -172,10 +172,30 @@ test("a restarted hub has no one-time agents and no leftover scratch files", () 
   fs.writeFileSync(path.join(oneTimeDir(sid), "checkpoints.json"), "{}");
   const again = new Supervisor({ dir, roots: [ROOT], backend, makeAgent: fakeFactory() });   // the hub restarts
   assert.deepStrictEqual(again.list(), []);
-  assert.strictEqual(fs.existsSync(oneTimeDir(sid)), false, "the temp folder was swept");
+  assert.strictEqual(fs.existsSync(oneTimeDir(sid)), false, "the scratch folder was swept");
 });
 
-test("a one-time agent keeps its undo snapshots in the temp folder, and they go with it", async () => {
+test("a one-time agent's scratch folder is in this user's ArcFlare home, not the shared temp folder", () => {
+  const d = oneTimeDir("20260101-0000-abcdef");
+  assert.ok(d.startsWith(process.env.ARCFLARE_HOME + path.sep), d);
+  assert.ok(!d.startsWith(os.tmpdir() + path.sep + "arcflare-onetime"), d);
+});
+
+test("hub start removes the old shared-temp scratch folder, and nothing next to it", (t) => {
+  const tmp = fs.mkdtempSync(path.join(TMP, "ostmp-"));
+  const prev = process.env.TMPDIR;
+  process.env.TMPDIR = tmp;   // os.tmpdir() follows it on POSIX
+  t.after(() => { if (prev === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = prev; });
+  if (os.tmpdir() !== tmp) return t.skip("os.tmpdir() does not follow TMPDIR here");
+  fs.mkdirSync(path.join(tmp, "arcflare-onetime", "20250101-0000-abcdef"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "arcflare-onetime", "20250101-0000-abcdef", "checkpoints.json"), "{}");
+  fs.mkdirSync(path.join(tmp, "arcflare-onetime-other"));
+  fs.writeFileSync(path.join(tmp, "keep.txt"), "x");
+  make();   // a hub starts
+  assert.deepStrictEqual(fs.readdirSync(tmp).sort(), ["arcflare-onetime-other", "keep.txt"]);
+});
+
+test("a one-time agent keeps its undo snapshots in its scratch folder, and they go with it", async () => {
   const { sup, log } = make();
   const a = sup.create({ name: "once", cwd: PROJ, oneTime: true });
   await sup.wake(a.id, "hi");
@@ -272,4 +292,18 @@ test("a one-time chat's ttlMinutes is checked", () => {
   assert.throws(() => chats.create({ oneTime: true, ttlMinutes: 1000 }), { status: 400 });
   assert.strictEqual(chats.create({ oneTime: true, ttlMinutes: 2 }).ttlMinutes, 2);
   chats.purgeOneTime();
+});
+
+test("an answer that cannot be saved still ends with an error, so the chat does not stay answering", async () => {
+  const sse = 'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n';
+  const { chats } = chatMgr({ fetch: async () => new Response(sse) });
+  const c = chats.create({ title: "normal" });
+  const seen = [];
+  chats.on("event", (e) => seen.push(e.kind));
+  const write = chats._write.bind(chats);
+  await chats.send(c.id, "hello");
+  chats._write = (doc) => { if (doc.messages.some((m) => m.role === "assistant")) throw new Error("ENOSPC"); return write(doc); };
+  assert.ok(await waitFor(() => seen.includes("error") || seen.includes("done")), seen.join(","));
+  assert.ok(seen.includes("error"));
+  assert.strictEqual(chats.running.has(c.id), false);
 });

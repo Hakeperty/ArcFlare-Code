@@ -1,0 +1,62 @@
+// The MCP client against small misbehaving stdio servers.
+
+const test = require("node:test");
+const assert = require("node:assert");
+const { McpServer } = require("../lib/agent/mcp");
+
+/** A stdio server whose answer to each request is `reply(msg)` (null: no answer). */
+function fake(name, body) {
+  const src = `const rl = require("readline").createInterface({ input: process.stdin });
+    const say = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+    rl.on("line", (l) => { const msg = JSON.parse(l); ${body} });`;
+  return new McpServer(name, { command: process.execPath, args: ["-e", src] });
+}
+const INIT = `if (msg.method === "initialize") return say({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2024-11-05", capabilities: {} } });`;
+
+test("a stdio server that stops reading fails the call instead of crashing the agent", async () => {
+  // On Windows CI, writing to a pipe nobody reads never failed and the call timed out, so there this test only
+  // covers a server that exits while the call is pending (exited); the stop-reading case is checked on Linux and macOS.
+  const s = fake("deaf", `${INIT}
+    if (msg.method === "tools/list") {
+      say({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "t" }] } });
+      if (process.platform !== "win32") { rl.close(); require("fs").closeSync(0); setTimeout(() => {}, 20000); }
+    }
+    if (msg.method === "tools/call" && process.platform === "win32") process.exit(0);`);
+  try {
+    await s.start(10000);
+    // Off Windows the write lands on a pipe nobody reads: EPIPE, which used to be uncaught.
+    await assert.rejects(s.call("t", {}, 10000), /EPIPE|exited/);
+  } finally { s.stop(); }
+});
+
+test("a request from the server is not taken as the answer to ours", async () => {
+  const s = fake("asks", `${INIT}
+    if (msg.method === "tools/list") {
+      // Same id as our request, but it is the server asking, not answering.
+      say({ jsonrpc: "2.0", id: msg.id, method: "roots/list" });
+      say({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "real" }] } });
+    }`);
+  try {
+    await s.start(10000);
+    assert.deepStrictEqual(s.tools.map((t) => t.name), ["real"]);
+  } finally { s.stop(); }
+});
+
+test("a server that repeats its tools/list cursor does not page forever", async () => {
+  const s = fake("loops", `${INIT}
+    if (msg.method === "tools/list") say({ jsonrpc: "2.0", id: msg.id,
+      result: { tools: [{ name: msg.params.cursor ? "b" : "a" }], nextCursor: "same" } });`);
+  try {
+    await s.start(10000);
+    assert.deepStrictEqual(s.tools.map((t) => t.name), ["a", "b"]);
+  } finally { s.stop(); }
+});
+
+test("a stdio server whose command cannot be started fails at once, not after the timeout", async () => {
+  const s = new McpServer("missing", { command: "/no/such/arcflare-mcp-server", args: [] });
+  const t0 = Date.now();
+  try {
+    await assert.rejects(s.start(20000), /ENOENT/);
+    assert.ok(Date.now() - t0 < 5000, "it did not wait out the timeout");
+  } finally { s.stop(); }
+});

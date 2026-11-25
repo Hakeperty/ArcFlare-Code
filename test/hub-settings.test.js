@@ -31,6 +31,15 @@ test("the Arc chosen on the phone is remembered on the computer", () => {
   assert.strictEqual(new HubSettings({ dir }).arc(), null);
 });
 
+test("choosing an Arc keeps what another process wrote to the phone settings since", () => {
+  const dir = tmp();
+  const s = new HubSettings({ dir });
+  new HubSettings({ dir }).setPhone({ muted: true, from: "09:00" });   // as `arcflare phone mute` does
+  s.setArc("code");
+  assert.strictEqual(new HubSettings({ dir }).phone().muted, true);
+  assert.strictEqual(new HubSettings({ dir }).phone().from, "09:00");
+});
+
 test("what a phone is sent names each Arc and never carries its instructions", () => {
   const view = new HubSettings({ dir: tmp() }).view();
   assert.ok(view.arcs.length >= 7);
@@ -38,15 +47,16 @@ test("what a phone is sent names each Arc and never carries its instructions", (
   assert.doesNotMatch(JSON.stringify(view), /You are Arc|not for sharing/);
 });
 
-test("ArcFlare's web and desktop servers are offered, off, and a configured server of the same name wins", () => {
+test("ArcFlare's web, browser, desktop and phone servers are offered, off, and a configured server of the same name wins", () => {
   const dir = tmp();
   const hub = new McpHub({ dir, builtins: true, load: () => ({ servers: { mine: { command: "x" } } }) });
   const list = hub.list();
-  assert.deepStrictEqual(list.map((s) => s.name), ["arcflare-browser", "arcflare-desktop", "arcflare-web", "mine"]);
+  assert.deepStrictEqual(list.map((s) => s.name), ["arcflare-browser", "arcflare-desktop", "arcflare-phone", "arcflare-web", "mine"]);
   assert.ok(list.every((s) => s.enabled === false && s.status === "off"));
-  assert.strictEqual(list[2].builtin, true);
-  assert.match(list[2].about, /Search the web/);
-  assert.strictEqual(list[3].builtin, false);
+  assert.strictEqual(list[3].builtin, true);
+  assert.match(list[3].about, /Search the web/);
+  assert.match(list[2].about, /Ring, notify or ask you on your phone/);
+  assert.strictEqual(list[4].builtin, false);
   // Nothing about how a server is started reaches the phone.
   assert.doesNotMatch(JSON.stringify(list), /arcflare-mcp\.js|command|args/);
   // Without the option (as the tests of the hub itself run) there are none.

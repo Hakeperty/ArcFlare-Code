@@ -247,7 +247,7 @@ async function openAgentView(P, page, name) {
 
 async function send(page, text) {
   await page.locator("#compose-text").fill(text);
-  await page.locator("#compose button[type=submit]").tap();
+  await page.locator("#compose-send").tap();
 }
 
 /** Layout rules, measured in the page. Returns a list of problems. */
@@ -280,6 +280,7 @@ function measureLayout(expectDark) {
   const nav = document.getElementById("bottomnav");
   if (nav && !nav.hidden) {
     for (const a of nav.querySelectorAll("a")) {
+      if (!vis(a)) continue;   // a tab that is hidden (On phone outside the app) is not a touch target
       if (a.getBoundingClientRect().height < 55.9) issues.push(`nav tab ${a.textContent.trim()} is ${a.getBoundingClientRect().height}px tall, want 56`);
     }
     if (Math.abs(nav.getBoundingClientRect().bottom - window.innerHeight) > 1) issues.push("bottom nav is not at the bottom of the screen");
@@ -292,7 +293,9 @@ function measureLayout(expectDark) {
   for (const n of document.querySelectorAll("button, input, select, textarea, a[href]")) {
     if (n.tagName === "INPUT" && n.type === "hidden") continue;
     if (!vis(n)) continue;
-    const r = n.getBoundingClientRect();
+    // A checkbox or radio is tapped through its label, so the label is the touch target.
+    const hit = ["checkbox", "radio"].includes(n.type) && n.closest("label") ? n.closest("label") : n;
+    const r = hit.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;
     const label = `${n.tagName.toLowerCase()}#${n.id || ""}"${(n.textContent || n.getAttribute("placeholder") || n.type || "").trim().slice(0, 24)}"`;
     if (n.tagName === "A" && !tapLinks.has((n.textContent || "").trim())) continue;
@@ -383,19 +386,22 @@ flow(2, "wrong password: generic error, then lockout with the wait time", async 
   assert.ok(!/exist|no such|unknown user/i.test(b), `error leaks account info: ${b}`);
   P.step("lockout");
   H.clock.freeze();                             // the wait is exact while frozen
-  let msg = "";
-  for (let i = 0; i < 8; i++) {
-    msg = await tryLogin(page, USER, `wrong-password-${i + 2}`);
-    if (/too many|try again/i.test(msg)) break;
+  try {
+    let msg = "";
+    for (let i = 0; i < 8; i++) {
+      msg = await tryLogin(page, USER, `wrong-password-${i + 2}`);
+      if (/too many|try again/i.test(msg)) break;
+    }
+    const m = /try again in (\d+) seconds?/i.exec(msg);
+    assert.ok(m, `no lockout message with a wait time, last message: "${msg}"`);
+    assert.ok(Number(m[1]) >= 1);
+    const again = await tryLogin(page, USER, PASS);
+    assert.match(again, /too many|try again/i, "the right password must not get in during a lockout");
+    await visible(page, "#login-fields");
+    await screen(P, page, "login-locked");
+  } finally {
+    H.clock.thaw(30000);                        // even on failure: the lockout must clear for the later flows
   }
-  const m = /try again in (\d+) seconds?/i.exec(msg);
-  assert.ok(m, `no lockout message with a wait time, last message: "${msg}"`);
-  assert.ok(Number(m[1]) >= 1);
-  const again = await tryLogin(page, USER, PASS);
-  assert.match(again, /too many|try again/i, "the right password must not get in during a lockout");
-  await visible(page, "#login-fields");
-  await screen(P, page, "login-locked");
-  H.clock.thaw(30000);
 });
 
 flow(3, "login lands on dashboard; session survives reload; nothing secret in JS reach", async (P) => {

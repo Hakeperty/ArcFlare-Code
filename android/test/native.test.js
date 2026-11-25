@@ -116,3 +116,13 @@ test("assist: null outside the app and in a build without the agent plugin; true
   assert.equal(await mk(undefined).consume(), false);
   assert.deepEqual(Object.keys(mk({ assist: true })).sort(), ["consume", "on"]);
 });
+
+test("notifier().screenshots: sends only a boolean to the app; anything else only reads the switch", async () => {
+  const seen = [];
+  const plugin = new Proxy({}, { get: (_, m) => (arg) => { seen.push([String(m), { ...arg }]); return Promise.resolve({ allow: true }); } });
+  const { N } = load({ Capacitor: { registerPlugin: () => plugin } });
+  const n = N.notifier();
+  await n.screenshots(false); await n.screenshots(true); await n.screenshots(); await n.screenshots("false"); await n.screenshots(0);
+  assert.deepEqual(seen, [["screenshots", { allow: false }], ["screenshots", { allow: true }], ["screenshots", {}], ["screenshots", {}], ["screenshots", {}]]);
+  assert.equal(load({ Capacitor: undefined }).N.notifier(), null);
+});

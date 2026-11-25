@@ -42,6 +42,16 @@ test("every server starts off; list shows transport and never the command or env
   assert.ok(!JSON.stringify(list).includes("s3cret") && !JSON.stringify(list).includes("py"));
 });
 
+test("names like constructor are not servers: no switch, no tools, nothing saved", async () => {
+  const h = hub();
+  for (const name of ["constructor", "toString", "hasOwnProperty"]) {
+    await assert.rejects(h.setEnabled(name, true), { status: 404 }, name);
+    assert.throws(() => h.tools(name), { status: 404 }, name);
+  }
+  assert.deepStrictEqual(h.reg.added, []);
+  assert.strictEqual(h.enabled.size, 0);
+});
+
 test("switching on connects and is remembered; off stops the server", async () => {
   const dir = tmp();
   const h = hub(dir);
@@ -104,6 +114,20 @@ test("only the computer's own config is read, never a workspace file", () => {
 test("shortError keeps the reason and drops paths", () => {
   assert.strictEqual(shortError(new Error("spawn /usr/local/bin/thing ENOENT")), "spawn … ENOENT");
   assert.ok(shortError("x".repeat(500)).length <= 200);
+  for (const p of ["/home/Jo Doe/bin/thing", "C:\\Program Files\\node\\node.exe", "/home/Jo EVAN/x"]) {
+    assert.strictEqual(shortError(new Error(`spawn ${p} ENOENT`)), "spawn … ENOENT", p);
+  }
+  for (const p of ["/home/Jo Doe/.arcflare/mcp.json.12.tmp", "C:\\Users\\Jo Doe\\.arcflare\\mcp.json",
+    "/home/O'Brien/.arcflare/mcp.json", "C:\\Users\\O'Brien\\.arcflare\\mcp.json"]) {
+    const s = shortError(new Error(`EACCES: permission denied, open '${p}'`));
+    assert.strictEqual(s, "EACCES: permission denied, open …");
+  }
+});
+
+test("shortError stays fast on very long server text", () => {
+  const t0 = Date.now();
+  shortError("spawn ".repeat(200000));
+  assert.ok(Date.now() - t0 < 500);
 });
 
 test("the supervisor hands switched-on servers to the agents it boots", async () => {

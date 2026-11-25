@@ -78,6 +78,17 @@ test("a tool that throws is a result, not a protocol error", async () => {
   assert.ok(!/^ERROR: ERROR/.test(res.result.content[0].text));
 });
 
+test("arguments that are not an object are refused before the tool runs", async () => {
+  const s = new Server({});
+  let ran = false;
+  s.tool("need", "needs x", { type: "object", properties: { x: { type: "string" } }, required: ["x"] }, () => { ran = true; return "ran"; });
+  for (const args of ["x", 7, true, ["x"]]) {
+    const res = await s.handle({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "need", arguments: args } });
+    assert.strictEqual(res.result.isError, true, JSON.stringify(args));
+  }
+  assert.strictEqual(ran, false);
+});
+
 test("calling a tool that does not exist is an invalid-params error", async () => {
   const s = new Server({});
   const res = await s.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "ghost" } });
@@ -136,6 +147,18 @@ test("a background process can be started, read, written to and stopped", async 
   s.stop(rec.id);
   await s.waitFor(rec.id, (r) => r.exitedAt != null, 8000);
   assert.ok(s.get(rec.id).exitedAt != null, "stopped");
+});
+
+test("writing to a process that stopped reading does not crash the server", async () => {
+  const s = new Supervisor();
+  const r = await s.run({ command: `node -e "process.exit(0)"`, input: "x".repeat(8 << 20) });
+  assert.strictEqual(r.code, 0);
+  const rec = s.start({ command: `node -e "process.stdin.destroy(); setTimeout(()=>{}, 2000)"` });
+  await new Promise((res) => setTimeout(res, 300));
+  s.write(rec.id, "y".repeat(8 << 20));
+  await new Promise((res) => setTimeout(res, 300));
+  s.stop(rec.id);
+  await s.waitFor(rec.id, (p) => p.exitedAt != null, 8000);
 });
 
 test("stopping a process that already exited is reported, not thrown", async () => {
@@ -530,4 +553,43 @@ test("call_phone refuses a time (at) on a call that is already under way, before
   const res = await s.handle({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "call_phone", arguments: { say: "Still there?", call_id: "0123456789abcdef", at: "08:00" } } });
   assert.strictEqual(res.result.isError, true);
   assert.match(res.result.content[0].text, /at starts a new call for later: it cannot be used with call_id/);
+});
+
+test("call_phone hang_up stops waiting for recordings once the phone stops sending them", async () => {
+  const local = require("../lib/hub/local");
+  const real = local.callHub;
+  let polls = 0;
+  // The phone hung up, named its recordings, then its upload failed: the call never changes again.
+  const ended = { id: "0123456789abcdef", status: "ended", why: "the user hung up", version: 7, saved: false, recordings: [], turns: [{ who: "agent", text: "Bye." }], folder: "/x" };
+  local.callHub = async (method) => {
+    if (method === "GET" && ++polls > 5) throw new Error("still polling a call that went quiet");
+    return method === "GET" ? ended : {};
+  };
+  try {
+    const s = createServer({});
+    const res = await s.handle({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "call_phone", arguments: { say: "Bye.", call_id: ended.id, hang_up: true } } });
+    assert.match(res.result.content[0].text, /not uploaded yet/);
+    assert.strictEqual(polls, 2, "one wait with no change is enough");
+  } finally { local.callHub = real; }
+});
+
+test("two browser tools called at once share one browser launch", async () => {
+  const { Browser } = require("../lib/mcp/browser");
+  const b = new Browser();
+  let launches = 0;
+  b._start = async () => { launches++; await new Promise((r) => setTimeout(r, 50)); b.cdp = {}; };
+  await Promise.all([b.start(), b.start(), b.start()]);
+  assert.strictEqual(launches, 1);
+  await b.start();
+  assert.strictEqual(launches, 1, "a running browser is reused");
+});
+
+test("smoke with a bad ready_log pattern starts nothing", async () => {
+  const s = createServer({});
+  const d = tmpdir("smoke-re");
+  const res = await s.handle({ jsonrpc: "2.0", id: 10, method: "tools/call",
+    params: { name: "smoke", arguments: { dir: d, command: `node -e "setTimeout(()=>{}, 20000)"`, ready_log: "(" } } });
+  assert.strictEqual(res.result.isError, true);
+  assert.match(res.result.content[0].text, /bad ready_log/);
+  assert.strictEqual(s.procs.list().length, 0, "no process left behind");
 });

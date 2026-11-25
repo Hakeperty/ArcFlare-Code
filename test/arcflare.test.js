@@ -86,6 +86,13 @@ test("maxContextFor never exceeds the trained context", () => {
   assert.strictEqual(gguf.maxContextFor(QWEN36_MOE, huge, "f16"), 262144);
 });
 
+test("maxContextFor does not promise more context than the budget holds", () => {
+  const per = gguf.kvBytesPerToken(QWEN36_MOE, "f16");
+  assert.strictEqual(gguf.maxContextFor(QWEN36_MOE, per * 2048, "f16"), 2048);
+  assert.strictEqual(gguf.maxContextFor(QWEN36_MOE, per * 100, "f16"), 0);
+  assert.strictEqual(require("../lib/fit").staticFit({ id: "m", size: 1e9, meta: QWEN36_MOE }, 1e9 + 1.5e9 + per * 100).verdict, "no");
+});
+
 test("maxContextFor shrinks to fit a small budget", () => {
   // 1 GiB of cache at 20 KiB/token ~= 52k tokens
   const ctx = gguf.maxContextFor(QWEN36_MOE, 1024 * 1024 * 1024, "f16");
@@ -711,4 +718,71 @@ test("a quote or newline in a model id cannot add TOML keys", () => {
     assert.ok(txt.includes(String.raw`model = "x\"\nsandbox_mode = \"danger-full-access"`), id + ": escaped as one string");
   }
   fs.rmSync(d, { recursive: true, force: true });
+});
+
+// `mcp login` used to connect to a server named by the repo's own .mcp.json,
+// sending the env vars in its headers, without the trust the agent requires.
+test("mcp login refuses a workspace server that has not been trusted", () => {
+  const { spawnSync } = require("child_process");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "af-mcplogin-"));
+  fs.writeFileSync(path.join(dir, ".mcp.json"), JSON.stringify({
+    mcpServers: { evil: { url: "http://127.0.0.1:1/mcp", headers: { Authorization: "Bearer ${HOME}" } } },
+  }));
+  const r = spawnSync(process.execPath, [path.join(__dirname, "..", "bin", "arcflare.js"), "mcp", "login", "evil"],
+    { cwd: dir, encoding: "utf8", timeout: 20000, env: { ...process.env, ARCFLARE_HOME: path.join(dir, "home"), NO_COLOR: "1" } });
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.stdout + r.stderr, /has not been trusted/);
+  assert.doesNotMatch(r.stdout + r.stderr, /Signing in/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("engine.start rejects, instead of crashing, when llama-server cannot be run", () => {
+  const home = tmpdir("enginestart");
+  const bad = path.join(home, "llama-server");
+  fs.writeFileSync(bad, "not a program"); // not executable
+  const code = `require(${JSON.stringify(path.join(__dirname, "../lib/engine"))})
+    .start({ exe: ${JSON.stringify(bad)}, port: 1, detach: false })
+    .then(() => console.log("resolved"), (e) => console.log("rejected " + e.message));`;
+  const r = require("child_process").spawnSync(process.execPath, ["-e", code],
+    { encoding: "utf8", env: { ...process.env, ARCFLARE_HOME: home } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^rejected could not start/);
+});
+
+test("engine.stop does not kill a process that is not llama-server", () => {
+  const { spawn, spawnSync } = require("child_process");
+  const home = tmpdir("enginestop");
+  const other = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)"], { stdio: "ignore" });
+  try {
+    // A stale server.json whose PID now belongs to some other program.
+    fs.writeFileSync(path.join(home, "server.json"), JSON.stringify({ pid: other.pid, port: 1, exe: "/x/llama-server" }));
+    const code = `console.log(require(${JSON.stringify(path.join(__dirname, "../lib/engine"))}).stop())`;
+    const r = spawnSync(process.execPath, ["-e", code], { encoding: "utf8", env: { ...process.env, ARCFLARE_HOME: home } });
+    assert.strictEqual(r.stdout.trim(), "false", r.stderr);
+    assert.doesNotThrow(() => process.kill(other.pid, 0), "the other process is still running");
+    assert.ok(!fs.existsSync(path.join(home, "server.json")), "the stale record is cleared");
+  } finally { other.kill(); }
+});
+
+// `arcflare run` showed an HTTP error as an empty answer, and waited forever
+// on a server that died mid-answer.
+test("chat reports server errors and cut-off answers instead of an empty reply", async () => {
+  const http = require("http");
+  const srv = http.createServer((req, res) => {
+    req.resume();
+    const which = srv.next.shift();
+    if (which === "500") { res.writeHead(500, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: { message: "context too long" } })); }
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "hel" } }] })}\n\n`);
+    if (which === "cut") return setTimeout(() => res.socket.destroy(), 50);
+    res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: "lo" } }] })}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const port = srv.address().port;
+  const ask = (which) => { srv.next = [which]; return cli.chatOnce(port, "m", [{ role: "user", content: "hi" }], () => {}); };
+  try {
+    assert.strictEqual(await ask("ok"), "hello");
+    await assert.rejects(ask("500"), /HTTP 500: context too long/);
+    await assert.rejects(ask("cut"), /aborted|closed the answer early/);
+  } finally { srv.close(); }
 });

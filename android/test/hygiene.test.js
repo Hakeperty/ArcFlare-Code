@@ -101,16 +101,26 @@ test("manifest: allowBackup=false, rules files, networkSecurityConfig, no debugg
   assert.match(m, /android:fullBackupContent="@xml\/backup_rules"/);
   assert.match(m, /android:networkSecurityConfig="@xml\/network_security_config"/);
   assert.doesNotMatch(m, /android:debuggable/);
-  assert.doesNotMatch(m, /<provider|<service|<receiver/);
+  assert.doesNotMatch(m, /<provider|<receiver/);
+  // One service: CallService, not exported, microphone type only (keeps an answered call's microphone alive).
+  const services = [...m.matchAll(/<service\b([^>]*)>/g)].map((x) => x[1]);
+  assert.equal(services.length, 1);
+  assert.match(services[0], /android:name="\.CallService"/);
+  assert.match(services[0], /android:exported="false"/);
+  assert.match(services[0], /android:foregroundServiceType="microphone"/);
   assert.equal([...m.matchAll(/android:exported="true"/g)].length, 1);
   assert.equal([...m.matchAll(/<activity\b/g)].length, 1);
   assert.match(m, /android:exported="true"[\s\S]*<\/activity>/);
   // intent filter: arcflare://pair only, never https app links
   assert.match(m, /<data android:scheme="arcflare" android:host="pair" \/>/);
   assert.doesNotMatch(m, /android:autoVerify|android:scheme="https?"/);
-  // INTERNET, REQUEST_INSTALL_PACKAGES (AppUpdaterPlugin), POST_NOTIFICATIONS (NotifierPlugin), RECORD_AUDIO (CallPlugin). Nothing else.
+  // INTERNET, REQUEST_INSTALL_PACKAGES (AppUpdaterPlugin), POST_NOTIFICATIONS (NotifierPlugin), RECORD_AUDIO (CallPlugin),
+  // FOREGROUND_SERVICE and FOREGROUND_SERVICE_MICROPHONE (CallService), USE_FULL_SCREEN_INTENT (ringing over the lock
+  // screen). Nothing else.
   assert.deepEqual([...m.matchAll(/<uses-permission android:name="([^"]+)"/g)].map((x) => x[1]).sort(),
-    ["android.permission.INTERNET", "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO", "android.permission.REQUEST_INSTALL_PACKAGES"]);
+    ["android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_MICROPHONE", "android.permission.INTERNET",
+      "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO", "android.permission.REQUEST_INSTALL_PACKAGES",
+      "android.permission.USE_FULL_SCREEN_INTENT"]);
 });
 
 test("backup rule files exclude every domain", () => {
@@ -169,8 +179,24 @@ test("two apps from one project: chat and agent flavors; only agent changes the 
 
 test("native source lint (greps only, cannot catch an inverted condition): MainActivity and NavPolicy", () => {
   const dir = path.join(native, "java", "net", "arcflare", "app");
-  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "CallPlugin.java", "MainActivity.java", "MuLawWav.java", "NavPolicy.java", "NotifierPlugin.java", "OnlineUpdate.java"].concat(["LlamaEngine.java", "LocalAiPlugin.java", "ModelCatalog.java"]).sort(), "no NavGuard plugin any more");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["AppUpdaterPlugin.java", "CallPlugin.java", "CallService.java", "MainActivity.java", "MuLawWav.java", "NavPolicy.java", "NotifierPlugin.java", "OnlineUpdate.java"].concat(["LlamaEngine.java", "LocalAiPlugin.java", "ModelCatalog.java"]).sort(), "no NavGuard plugin any more");
   const main = read(path.join(dir, "MainActivity.java"));
+  // CallService: the microphone type only, a refused start caught (Android 14 from the background), never restarted by
+  // Android on its own; CallPlugin starts it only while the app is on screen and stops it with the recording.
+  const cs = read(path.join(dir, "CallService.java"));
+  assert.match(cs, /startForeground\(NOTE_ID, n, ServiceInfo\.FOREGROUND_SERVICE_TYPE_MICROPHONE\)/);
+  assert.match(cs, /catch \(RuntimeException e\) \{[^}]*stopSelf\(\);/);
+  assert.match(cs, /return START_NOT_STICKY;/);
+  const cp = read(path.join(dir, "CallPlugin.java"));
+  assert.match(cp, /isAtLeast\(Lifecycle\.State\.STARTED\)\) \{\s*try \{ getContext\(\)\.startService\(new Intent\(getContext\(\), CallService\.class\)\); \} catch \(RuntimeException e\)/);
+  // Ringing over the lock screen: only when Android 14+ allows it. The screen turns on for a call's intent only, and the
+  // app is never shown over the lock screen: it can run commands on the owner's computer.
+  assert.match(cp, /if \(Build\.VERSION\.SDK_INT < 34 \|\| nm\.canUseFullScreenIntent\(\)\) b\.setFullScreenIntent\(tap, true\);/);
+  assert.match(cp, /\.putExtra\(MainActivity\.FOR_CALL, true\)/);
+  assert.match(main, /if \(Build\.VERSION\.SDK_INT < 27 \|\| intent == null \|\| !intent\.getBooleanExtra\(FOR_CALL, false\)\) return;\s*setTurnScreenOn\(true\);/);
+  assert.match(main, /public void onStop\(\) \{\s*super\.onStop\(\);\s*if \(Build\.VERSION\.SDK_INT >= 27\) setTurnScreenOn\(false\);/);
+  assert.equal([...main.matchAll(/setShowWhenLocked/g)].length, 0, "the app must never show over the lock screen");
+  assert.match(cp, /private void stopRecording\(\) \{\s*running = false;\s*getContext\(\)\.stopService\(new Intent\(getContext\(\), CallService\.class\)\);/);
   // The updater: only ever this app, a private receiver, an explicit intent, size and hash checked before
   // commit, and no file sharing (no FileProvider, no shared storage, no ACTION_VIEW of a file).
   const up = read(path.join(dir, "AppUpdaterPlugin.java"));
@@ -178,7 +204,13 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.ok(up.includes("ContextCompat.registerReceiver(getContext(), receiver, new IntentFilter(ACTION), ContextCompat.RECEIVER_NOT_EXPORTED)"));
   assert.ok(!up.includes("getContext().registerReceiver("), "never the bare call: exported below Android 13");
   assert.ok(up.includes("if (confirm != null && opensSystemApp(ctx, confirm))"));
-  assert.ok(up.includes("if (pendingCommit == null) return;"));
+  assert.ok(up.includes("if (c == null) return; // nothing of ours is being installed: ignore"));
+  // the install result is read under the plugin's lock (commit() sets pendingCommit on another thread)
+  assert.ok(up.includes("synchronized (AppUpdaterPlugin.this) { c = pendingCommit; if (!asking) pendingCommit = null; }"));
+  // an online download writes only into the session it started: a newer begin() or download makes it stop
+  assert.match(up, /synchronized \(this\) \{\s*abandon\(\);\s*try \{ start\(size, sha\); \} catch \(Exception e\) \{ abandon\(\); throw e; \}\s*mine = session;\s*\}/);
+  assert.ok(up.includes('if (out == null || session != mine) throw new IOException("cancelled");'));
+  assert.ok(up.includes("synchronized (this) { if (mine != null && session == mine) abandon(); } // never a newer session"));
   assert.match(up, /new Intent\(ACTION\)\.setPackage\(getContext\(\)\.getPackageName\(\)\)/);
   assert.match(up, /if \(!got\.equals\(expectedSha\)\) \{ abandon\(\);/);
   assert.match(up, /if \(written != expectedSize\) \{ abandon\(\);/);
@@ -214,8 +246,24 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.ok(/if \(cancel\.get\(\)\) throw new IOException\("cancelled"\);[^\n]*\n\s*if \(!part\.renameTo\(done\)\)/.test(ai), "a cancel is checked right before the file is kept");
   const cpp = read(path.join(native, "cpp", "arcflare_llm.cpp"));
   assert.equal([...cpp.matchAll(/env->DeleteLocalRef\(/g)].length, 2, "nBegin releases each message's references (ART allows 512 per call)");
+  // no exception leaves a JNI call (the app would abort): each try that catches std::exception also catches everything else
+  assert.ok(cpp.includes("#include <exception>"));
+  assert.equal([...cpp.matchAll(/catch \(const std::exception &e\) \{[^}]*\} catch \(\.\.\.\) \{/g)].length, 2);
+  assert.equal([...cpp.matchAll(/\btry \{/g)].length, 2);
   const java = main + read(path.join(dir, "NavPolicy.java"));
-  assert.match(main, /FLAG_SECURE/);
+  // Screenshots: allowed by default (the owner's choice); the "Allow screenshots" switch turned off sets FLAG_SECURE again.
+  // The flag is decided only from the app-private preference, before the page loads, and changed only by that switch.
+  assert.ok(main.includes('if (a.getSharedPreferences(SCREEN_PREFS, Context.MODE_PRIVATE).getBoolean(ALLOW_SCREENSHOTS, true)) {\n            a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);\n        } else {\n            a.getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);'), "default allowed; off sets FLAG_SECURE");
+  assert.ok(main.indexOf("applyScreenshots(this);") > 0 && main.indexOf("applyScreenshots(this);") < main.indexOf("super.onCreate(savedInstanceState);"), "applied before the page loads");
+  const all = fs.readdirSync(dir).filter((f) => f.endsWith(".java")).map((f) => [f, read(path.join(dir, f))]);
+  assert.deepEqual(all.filter(([, s]) => /FLAG_SECURE/.test(s)).map(([f]) => f), ["MainActivity.java"], "FLAG_SECURE is touched only in MainActivity.applyScreenshots");
+  assert.equal([...main.matchAll(/WindowManager\.LayoutParams\.FLAG_SECURE/g)].length, 3, "the set line names it twice, the clear line once");
+  assert.deepEqual(all.filter(([, s]) => /applyScreenshots\(|ALLOW_SCREENSHOTS/.test(s)).map(([f]) => f).sort(), ["MainActivity.java", "NotifierPlugin.java"]);
+  assert.doesNotMatch(all.map(([, s]) => s).join("\n"), /setRecentsScreenshotEnabled/, "nothing else hides the app from captures or recents");
+  const notifier = read(path.join(dir, "NotifierPlugin.java"));
+  assert.ok(notifier.includes('Boolean allow = call.getBoolean("allow", null);'), "the page sends only a boolean");
+  assert.ok(notifier.includes("a.runOnUiThread(() -> MainActivity.applyScreenshots(a));"), "window flags change on the UI thread");
+  assert.ok(notifier.includes("getContext().getSharedPreferences(MainActivity.SCREEN_PREFS, Context.MODE_PRIVATE)"));
   assert.match(main, /setAllowFileAccess\(false\)/);
   assert.match(main, /setAllowContentAccess\(false\)/);
   assert.match(main, /setImportantForAutofill\(View\.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS\)/);
@@ -261,6 +309,13 @@ test("native source lint: no Android call that needs a permission the manifest d
     for (const f of fs.readdirSync(dir)) if (f.endsWith(".java")) files.push(path.join(dir, f));
   }
   assert.ok(files.length >= 12, "the app's Java was found");
+  // The app can run commands on the owner's computer, so nothing may show it over a locked phone: not the Activity
+  // methods, not the window flags, not a manifest attribute, not a keyguard dismissal, in any source set.
+  const OVER_LOCK = /setShowWhenLocked|setInheritShowWhenLocked|FLAG_SHOW_WHEN_LOCKED|FLAG_DISMISS_KEYGUARD|showWhenLocked|requestDismissKeyguard/;
+  const manifests = [];
+  for (const set of fs.readdirSync(src)) { const m = path.join(src, set, "AndroidManifest.xml"); if (fs.existsSync(m)) manifests.push(m); }
+  assert.ok(manifests.length >= 1, "the manifests were found");
+  for (const f of [...files, ...manifests]) assert.doesNotMatch(read(f), OVER_LOCK, `${path.basename(f)} must not show the app over the lock screen`);
   for (const [permission, api] of Object.entries(NEEDS)) {
     if (manifest.includes("android.permission." + permission + '"')) continue;
     for (const f of files) assert.doesNotMatch(strip(read(f)), api, path.basename(f) + " uses an API that needs " + permission);
@@ -277,6 +332,33 @@ test("native source lint: Local AI answers the page with an error instead of thr
   assert.match(p, /try \{ if \(LlamaEngine\.AVAILABLE\) LlamaEngine\.nStop\(\); \} catch \(Throwable t\)/);
   assert.equal([...strip(p).matchAll(/LlamaEngine\.nStop\(/g)].length, 1);
   assert.match(p, /\} catch \(Throwable e\) \{\s*part\.delete\(\);/);
+});
+
+test("native source lint: CallPlugin (greps only, nothing here can run it)", () => {
+  const c = strip(read(path.join(native, "java", "net", "arcflare", "app", "CallPlugin.java")));
+  // the answer counter: one lock, and a listen settled after the next call began leaves that call's answers alone
+  assert.ok(c.includes("synchronized (answerLock) { callNo++; files.clear(); answers = 0; }"));
+  assert.ok(c.includes('synchronized (answerLock) { name = "answer-" + (++answers) + ".wav"; kept[0] = name; keptCall[0] = callNo; files.add(name); }'));
+  assert.match(c, /synchronized \(answerLock\) \{\s*if \(kept\[0\] == null \|\| keptCall\[0\] != callNo\) return;[^}]*answers--;/);
+  assert.equal([...c.matchAll(/\banswers\b/g)].length, 4, "answers is touched only in those three places (and declared)");
+  // a listen whose answer file cannot be opened closes the pipe's write end too
+  assert.match(c, /\} catch \(IOException e\) \{\s*if \(p != null\) try \{ p\[1\]\.close\(\); \}/);
+  // hanging up stops the agent's line still playing: stop() runs endLine, which releases the player and settles playLine
+  assert.match(c, /public void stop\(PluginCall call\) \{[\s\S]*?main\.post\(\(\) -> \{[^}]*if \(endLine != null\) endLine\.run\(\);/);
+  assert.match(c, /stopIt\[0\] = \(\) -> finish\.accept\(null\);\s*endLine = stopIt\[0\];/);
+  assert.match(c, /if \(endLine == stopIt\[0\]\) endLine = null;\s*mp\.release\(\);/);
+  // a listen always ends: finish settles the call once and clears both timers; when the time is up the recogniser is
+  // told to stop and gets 3 s more, then the call answers ""; stop() settles a listen still waiting
+  assert.match(c, /BiConsumer<String, String> finish = \(text, error\) -> \{\s*if \(done\[0\]\) return;\s*done\[0\] = true;\s*main\.removeCallbacks\(timers\[0\]\);\s*main\.removeCallbacks\(timers\[1\]\);\s*if \(endListen == timers\[1\]\) endListen = null;/);
+  assert.match(c, /call\.setKeepAlive\(false\);\s*if \(error != null\) \{ call\.reject\(error\); return; \}[^}]*call\.resolve\(o\);/);
+  assert.match(c, /timers\[1\] = \(\) -> finish\.accept\("", null\);\s*timers\[0\] = \(\) -> \{ r\.stopListening\(\); closePipe\(\); main\.postDelayed\(timers\[1\], 3000\); \};\s*endListen = timers\[1\];\s*main\.postDelayed\(timers\[0\], seconds \* 1000L\);/);
+  assert.match(c, /running = false;[^\n]*\n\s*main\.post\(\(\) -> \{\s*if \(endListen != null\) endListen\.run\(\);/, "stop() clears running before it settles the listen");
+  // hanging up while the phone speaks: tts.stop() ends the line with onStop only, which must settle speak()
+  assert.match(c, /public void onStop\(String id, boolean interrupted\) \{ finishSpeaking\(id, null\); \}/);
+  // a microphone error ends the audio loop instead of spinning on it
+  assert.match(c, /int n = rec\.read\(buf, 0, buf\.length\);\s*if \(n < 0\) break;/);
+  // closing the app settles a listen in progress (its recogniser is destroyed) and stops a line still playing
+  assert.match(c, /protected void handleOnDestroy\(\) \{[^}]*stopRecording\(\);[^}]*if \(endListen != null\) endListen\.run\(\);\s*if \(endLine != null\) endLine\.run\(\);/);
 });
 
 test("native source lint: cleartext is allowed only in the network security config, and the plain-HTTP page path is gone from the project", () => {

@@ -83,7 +83,15 @@ picker), says the agent's line with the phone's text-to-speech voice, and listen
 answer and (Android 13+, `EXTRA_AUDIO_SOURCE`) the recogniser. Before Android 13 the recogniser needs the microphone
 itself, so nothing is recorded. The recordings (mu-law WAV, `MuLawWav.java`, tested with javac in `test/mulaw.test.js`)
 are uploaded in 36 KB pieces when the call ends, saved on the computer, and deleted from the phone. Needs
-`RECORD_AUDIO`, asked the first time a call is answered. Mute and the hours under Tools stop calls on the computer's
+`RECORD_AUDIO`, asked the first time a call is answered. While an answered call is in progress, `CallService` (a
+foreground service of the microphone type, not exported) shows a "Call in progress" notification so Android lets the
+call keep the microphone when you switch apps or the screen goes off; that needs `FOREGROUND_SERVICE` and
+`FOREGROUND_SERVICE_MICROPHONE`. Android 14+ refuses to start it while the app is in the background, so it starts
+only when the call is answered with the app on screen, and the call goes on without it if Android says no. A call
+rings on the lock screen and turns the screen on (a full-screen notification, `USE_FULL_SCREEN_INTENT`). The app is
+never shown over the lock screen, because it can run commands on your computer: you unlock the phone to answer.
+Android 14+ can switch full-screen notifications off for the app (Settings, Apps, ArcFlare); the call then rings as a
+normal notification at the top of the screen. Mute and the hours under Tools stop calls on the computer's
 side. **None of this has run on a phone yet.**
 
 ## Layout
@@ -330,8 +338,10 @@ site.
   every build (`webContentsDebuggingEnabled:false`, so debug builds cannot be inspected with chrome://inspect either);
   `allowFileAccess`/`allowContentAccess` off; `importantForAutofill=noExcludeDescendants` on the WebView so the system does
   not offer to save the hub password; only the launcher activity is exported, the template FileProvider is removed,
-  the only permission is INTERNET; the intent filter is `arcflare://pair` only (no https app links); `FLAG_SECURE`
-  (no screenshots, blank recents thumbnail); system CAs only; minSdk 26; minimum WebView 133.
+  the permissions are INTERNET, REQUEST_INSTALL_PACKAGES (its own updates), POST_NOTIFICATIONS, and for calls from
+  agents RECORD_AUDIO, FOREGROUND_SERVICE, FOREGROUND_SERVICE_MICROPHONE and USE_FULL_SCREEN_INTENT (each explained in the manifest); the intent filter is `arcflare://pair` only (no https app links); screenshots and
+  screen recording allowed by default; Tools, "Allow screenshots" off sets `FLAG_SECURE` (no screenshots, blank recents
+  thumbnail), kept in app-private preferences and applied before the page loads; system CAs only; minSdk 26; minimum WebView 133.
 - **Cleartext.** `network_security_config.xml` permits cleartext for **every host**. It cannot be limited to private addresses
   (the config matches host names, not CIDR ranges, and the hub's address is whatever the router handed out). The exposure
   is limited by what the app does, not by the config: the WebView can no longer navigate to a cleartext page (above), the
@@ -469,8 +479,8 @@ Nothing below was executed on Android. Check each on a real phone (Android 8+ wi
     `plugins.CapacitorCookies.enabled: false`; Forget reports a failure if it throws.
 15. **WebCrypto X25519 inside the real WebView**, IndexedDB persistence of the non-extractable `CryptoKey` across app restarts and
     updates, and that Android auto-backup/device transfer really exclude it.
-16. **FLAG_SECURE** hides the password screen in screenshots and recents (it does not cover dialogs, the keyboard or autofill
-    popups); `importantForAutofill` stops the autofill save prompt; `webContentsDebuggingEnabled:false` in debug and release.
+16. **Allow screenshots** (on by default): that turning it off sets FLAG_SECURE at once and after a restart, hiding the app
+    in screenshots and recents (it does not cover dialogs, the keyboard or autofill popups), and turning it on clears it; `importantForAutofill` stops the autofill save prompt; `webContentsDebuggingEnabled:false` in debug and release.
 17. **Install and signing:** the release APK signs and installs; icons render (generated, not designed).
 18. **Update the app (arcflare.net):** that `checkOnline()`/`downloadOnline()` reach arcflare.net from a real phone, that
     Android shows its confirmation and installs over the running app, and that an APK signed with another key is refused

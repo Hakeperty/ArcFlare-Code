@@ -31,6 +31,7 @@ import android.util.Base64;
 import androidx.activity.result.ActivityResult;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.lifecycle.Lifecycle;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -53,6 +54,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * Calls from agents on the computer (call_phone, lib/hub/calls.js). The hub's event reaches the app over the tunnel;
@@ -99,8 +102,15 @@ public class CallPlugin extends Plugin {
     private volatile OutputStream pipe;
     // Written by begin() (plugin thread) and listen() (main thread), read by stop() (plugin thread): copy-on-write is safe for all.
     private final List<String> files = new CopyOnWriteArrayList<>();
+    // The answer counter and the call's number are shared by begin() (plugin thread) and listen() (main thread): this
+    // lock guards both, so a listen settled after the next call began never touches that call's answers.
+    private final Object answerLock = new Object();
     private int answers;
-    private SpeechRecognizer recognizer;
+    private int callNo;
+    // Main thread only: settles the listen() in progress with "" and lets its recogniser go. null when none is.
+    private Runnable endListen;
+    // Main thread only: stops the agent's line still playing (playLine) and settles it. null when none is.
+    private Runnable endLine;
 
     @Override
     public void load() {
@@ -109,6 +119,8 @@ public class CallPlugin extends Plugin {
             @Override public void onStart(String id) { }
             @Override public void onDone(String id) { finishSpeaking(id, null); }
             @Override public void onError(String id) { finishSpeaking(id, "the phone could not say the line"); }
+            // tts.stop() at hang-up, and a newer line (QUEUE_FLUSH), end a line with onStop only: settle it too.
+            @Override public void onStop(String id, boolean interrupted) { finishSpeaking(id, null); }
         });
     }
 
@@ -116,6 +128,9 @@ public class CallPlugin extends Plugin {
     protected void handleOnDestroy() {
         stopRinging();
         stopRecording();
+        // On the main thread here: let a listen's recogniser (a bound service) and a playing line go with the app.
+        if (endListen != null) endListen.run();
+        if (endLine != null) endLine.run();
         if (tts != null) tts.shutdown();
     }
 
@@ -181,15 +196,16 @@ public class CallPlugin extends Plugin {
             main.postDelayed(ringStop, seconds * 1000L);
         });
         // The notification is how a call reaches someone with the app in the background: a tap opens it.
+        NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationManager nm = ctx.getSystemService(NotificationManager.class);
             if (nm.getNotificationChannel(CHANNEL) == null) {
                 NotificationChannel ch = new NotificationChannel(CHANNEL, "Calls from agents", NotificationManager.IMPORTANCE_HIGH);
                 ch.setSound(null, null); // the ringtone above is the sound
                 nm.createNotificationChannel(ch);
             }
         }
-        Intent open = new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        Intent open = new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(MainActivity.FOR_CALL, true); // turns the screen on for this call; the app is never shown over the lock screen
         PendingIntent tap = PendingIntent.getActivity(ctx, 1, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -201,6 +217,8 @@ public class CallPlugin extends Plugin {
             .setAutoCancel(true)
             .setTimeoutAfter(seconds * 1000L)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE);
+        // Rings over the lock screen. Android 14+ lets the person turn this off: then the heads-up notification above.
+        if (Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()) b.setFullScreenIntent(tap, true);
         try { NotificationManagerCompat.from(ctx).notify(NOTE_ID, b.build()); } catch (SecurityException e) { /* notifications off: it still rings */ }
         call.resolve();
     }
@@ -234,8 +252,7 @@ public class CallPlugin extends Plugin {
     private void begin(PluginCall call) {
         stopRecording();
         clearFiles();
-        files.clear();
-        answers = 0;
+        synchronized (answerLock) { callNo++; files.clear(); answers = 0; }
         boolean recording = false;
         if (Build.VERSION.SDK_INT >= 33) {
             try {
@@ -253,6 +270,11 @@ public class CallPlugin extends Plugin {
                 stopRecording();
             }
         }
+        // Keeps the microphone alive when the person leaves the app mid-call. Android 14 refuses to start it from the
+        // background, so only while the app is on screen; CallService also catches a refusal.
+        if (getActivity() != null && getActivity().getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+            try { getContext().startService(new Intent(getContext(), CallService.class)); } catch (RuntimeException e) { /* the call goes on without it */ }
+        }
         JSObject r = new JSObject();
         r.put("recording", recording);
         call.resolve(r);
@@ -264,7 +286,8 @@ public class CallPlugin extends Plugin {
         byte[] le = new byte[buf.length * 2];
         while (running) {
             int n = rec.read(buf, 0, buf.length);
-            if (n <= 0) continue;
+            if (n < 0) break; // an AudioRecord error (the microphone was taken away): it would only repeat
+            if (n == 0) continue;
             MuLawWav c = convo;
             if (c == null) break;
             try { c.write(buf, n); } catch (IOException e) { running = false; }
@@ -273,7 +296,10 @@ public class CallPlugin extends Plugin {
             OutputStream p = pipe;
             if (p != null) {
                 for (int i = 0; i < n; i++) { le[2 * i] = (byte) buf[i]; le[2 * i + 1] = (byte) (buf[i] >> 8); }
-                try { p.write(le, 0, n * 2); } catch (IOException e) { pipe = null; }
+                try { p.write(le, 0, n * 2); } catch (IOException e) {
+                    if (pipe == p) pipe = null;
+                    try { p.close(); } catch (IOException x) { /* the recogniser sees the end either way */ }
+                }
             }
         }
     }
@@ -316,19 +342,30 @@ public class CallPlugin extends Plugin {
     public void playLine(PluginCall call) {
         call.setKeepAlive(true);
         main.post(() -> {
+            if (endLine != null) endLine.run(); // a newer line replaces the one still playing, which resolves
             MediaPlayer mp = new MediaPlayer();
+            final boolean[] done = { false };
+            final Runnable[] stopIt = { null };
+            Consumer<String> finish = (error) -> {
+                if (done[0]) return;
+                done[0] = true;
+                if (endLine == stopIt[0]) endLine = null;
+                mp.release(); // stops it too when it is still playing
+                call.setKeepAlive(false);
+                if (error != null) call.reject(error); else call.resolve();
+            };
+            stopIt[0] = () -> finish.accept(null);
+            endLine = stopIt[0];
             try {
                 mp.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
                 mp.setDataSource(lineFile().getPath());
-                mp.setOnCompletionListener((p) -> { p.release(); call.setKeepAlive(false); call.resolve(); });
-                mp.setOnErrorListener((p, what, extra) -> { p.release(); call.setKeepAlive(false); call.reject("could not play the line"); return true; });
+                mp.setOnCompletionListener((p) -> finish.accept(null));
+                mp.setOnErrorListener((p, what, extra) -> { finish.accept("could not play the line"); return true; });
                 mp.prepare();
                 mp.start();
             } catch (IOException | RuntimeException e) {
-                mp.release();
-                call.setKeepAlive(false);
-                call.reject("could not play the line");
+                finish.accept("could not play the line");
             }
         });
     }
@@ -338,49 +375,82 @@ public class CallPlugin extends Plugin {
         int seconds = Math.max(3, Math.min(60, call.getInt("seconds", 30)));
         call.setKeepAlive(true);
         main.post(() -> {
+            if (endListen != null) endListen.run(); // a newer listen replaces the older one, which answers ""
             if (!SpeechRecognizer.isRecognitionAvailable(getContext())) { call.setKeepAlive(false); call.reject("This phone has no speech recognition. Type the answer instead."); return; }
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500);
+            // The hub names the k-th spoken reply answer-k.wav, so a listen that sends nothing keeps no answer file.
+            final String[] kept = { null };
+            final int[] keptCall = { 0 }; // the call kept[0] was counted in
+            final ParcelFileDescriptor[] src = { null }; // the pipe's read end, handed to the recogniser
+            Runnable drop = () -> {
+                synchronized (answerLock) {
+                    if (kept[0] == null || keptCall[0] != callNo) return;
+                    files.remove(kept[0]);
+                    new File(dir(), kept[0]).delete();
+                    answers--;
+                    kept[0] = null;
+                }
+            };
             if (running && Build.VERSION.SDK_INT >= 33) {
+                ParcelFileDescriptor[] p = null;
                 try {
-                    ParcelFileDescriptor[] p = ParcelFileDescriptor.createPipe();
-                    String name = "answer-" + (++answers) + ".wav";
+                    p = ParcelFileDescriptor.createPipe();
+                    String name;
+                    synchronized (answerLock) { name = "answer-" + (++answers) + ".wav"; kept[0] = name; keptCall[0] = callNo; files.add(name); }
+                    src[0] = p[0];
                     answer = new MuLawWav(new File(dir(), name));
-                    files.add(name);
                     pipe = new ParcelFileDescriptor.AutoCloseOutputStream(p[1]);
                     i.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, p[0])
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
                         .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, MuLawWav.RATE);
-                } catch (IOException e) { endAnswer(); }
-            }
-            if (recognizer != null) recognizer.destroy();
-            recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
-            final boolean[] done = { false };
-            Runnable timeUp = () -> { if (recognizer != null) recognizer.stopListening(); };
-            main.postDelayed(timeUp, seconds * 1000L);
-            recognizer.setRecognitionListener(new RecognitionListener() {
-                private void finish(String text, String error) {
-                    if (done[0]) return;
-                    done[0] = true;
-                    main.removeCallbacks(timeUp);
+                } catch (IOException e) {
+                    // the answer file failed before the write end became the pipe endAnswer() closes: close it here
+                    if (p != null) try { p[1].close(); } catch (IOException x) { /* already closed */ }
                     endAnswer();
-                    call.setKeepAlive(false);
-                    if (error != null) { call.reject(error); return; }
-                    JSObject r = new JSObject();
-                    r.put("text", text);
-                    call.resolve(r);
+                    drop.run();
                 }
+            }
+            final SpeechRecognizer r = SpeechRecognizer.createSpeechRecognizer(getContext());
+            final boolean[] done = { false };
+            final Runnable[] timers = new Runnable[2]; // [0] time is up: stop and wait for the answer, [1] give up
+            BiConsumer<String, String> finish = (text, error) -> {
+                if (done[0]) return;
+                done[0] = true;
+                main.removeCallbacks(timers[0]);
+                main.removeCallbacks(timers[1]);
+                if (endListen == timers[1]) endListen = null;
+                endAnswer();
+                // Not after stop() (running is false): it is already listing the files for the page to upload.
+                if (running && (error != null || text.trim().isEmpty())) drop.run();
+                main.post(() -> { // not from inside its own callback
+                    r.destroy();
+                    // Our copy of the read end too: a write still blocked on a full pipe then fails instead of waiting.
+                    if (src[0] != null) try { src[0].close(); } catch (IOException e) { /* already closed */ }
+                });
+                call.setKeepAlive(false);
+                if (error != null) { call.reject(error); return; }
+                JSObject o = new JSObject();
+                o.put("text", text);
+                call.resolve(o);
+            };
+            // A recogniser that says nothing after stopListening must not leave the call waiting for ever.
+            timers[1] = () -> finish.accept("", null);
+            timers[0] = () -> { r.stopListening(); closePipe(); main.postDelayed(timers[1], 3000); };
+            endListen = timers[1];
+            main.postDelayed(timers[0], seconds * 1000L);
+            r.setRecognitionListener(new RecognitionListener() {
                 @Override public void onResults(Bundle b) {
                     ArrayList<String> m = b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                    finish(m != null && !m.isEmpty() ? m.get(0) : "", null);
+                    finish.accept(m != null && !m.isEmpty() ? m.get(0) : "", null);
                 }
                 @Override public void onError(int code) {
-                    if (code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) finish("", null);
-                    else finish(null, "Speech recognition failed (" + code + "). Type the answer instead.");
+                    if (code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) finish.accept("", null);
+                    else finish.accept(null, "Speech recognition failed (" + code + "). Type the answer instead.");
                 }
-                @Override public void onEndOfSpeech() { closePipe(); }
+                @Override public void onEndOfSpeech() { if (!done[0]) closePipe(); }
                 @Override public void onReadyForSpeech(Bundle b) { }
                 @Override public void onBeginningOfSpeech() { }
                 @Override public void onRmsChanged(float v) { }
@@ -388,7 +458,7 @@ public class CallPlugin extends Plugin {
                 @Override public void onPartialResults(Bundle b) { }
                 @Override public void onEvent(int t, Bundle b) { }
             });
-            recognizer.startListening(i);
+            r.startListening(i);
         });
     }
 
@@ -408,7 +478,11 @@ public class CallPlugin extends Plugin {
     @PluginMethod
     public void stop(PluginCall call) {
         // The recogniser lives on the main thread; the recording is stopped here, off it (it waits for the audio thread).
-        main.post(() -> { if (recognizer != null) { recognizer.destroy(); recognizer = null; } });
+        running = false; // before the post: the listen it settles keeps its answer file (see listen)
+        main.post(() -> {
+            if (endListen != null) endListen.run(); // a listen still waiting answers ""
+            if (endLine != null) endLine.run();     // the agent's line still playing stops
+        });
         if (tts != null) tts.stop();
         stopRecording();
         JSArray list = new JSArray();
@@ -427,6 +501,7 @@ public class CallPlugin extends Plugin {
 
     private void stopRecording() {
         running = false;
+        getContext().stopService(new Intent(getContext(), CallService.class)); // the call's notification goes too
         endAnswer();
         if (loop != null) { try { loop.join(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } loop = null; }
         if (rec != null) { try { rec.stop(); } catch (IllegalStateException e) { /* never started */ } rec.release(); rec = null; }

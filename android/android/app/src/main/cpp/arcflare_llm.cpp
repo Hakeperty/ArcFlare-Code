@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <exception>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -102,15 +103,24 @@ Java_net_arcflare_app_LlamaEngine_nLoad(JNIEnv *env, jclass, jstring jpath, jint
     cp.n_threads_batch = threads;
     g_ctx = llama_init_from_model(g_model, cp);
     if (!g_ctx) { free_all(); return env->NewStringUTF("not enough memory for this model"); }
-    g_tmpls = common_chat_templates_init(g_model, "");
-    // Arc Pocket's sampling (lib/arcs/arc-pocket.Modelfile; android/test/localai.test.js keeps them equal), which is
-    // Qwen3's own advice for chat without thinking. shortcut: one set for every model, until a second family is added.
-    common_params_sampling sp;
-    sp.temp = 0.7f;
-    sp.top_p = 0.8f;
-    sp.top_k = 20;
-    sp.min_p = 0.0f;
-    g_smpl = common_sampler_init(g_model, sp);
+    // An exception must not leave a JNI call: the app would abort. A model whose template or sampler fails is refused.
+    try {
+        g_tmpls = common_chat_templates_init(g_model, "");
+        // Arc Pocket's sampling (lib/arcs/arc-pocket.Modelfile; android/test/localai.test.js keeps them equal), which is
+        // Qwen3's own advice for chat without thinking. shortcut: one set for every model, until a second family is added.
+        common_params_sampling sp;
+        sp.temp = 0.7f;
+        sp.top_p = 0.8f;
+        sp.top_k = 20;
+        sp.min_p = 0.0f;
+        g_smpl = common_sampler_init(g_model, sp);
+    } catch (const std::exception &e) {
+        free_all();
+        return env->NewStringUTF((std::string("the model could not be set up: ") + e.what()).c_str());
+    } catch (...) { // anything else thrown must not leave the JNI call either
+        free_all();
+        return env->NewStringUTF("the model could not be set up");
+    }
     if (!g_smpl) { free_all(); return env->NewStringUTF("could not set up sampling"); }
     return nullptr;
 }
@@ -145,6 +155,8 @@ Java_net_arcflare_app_LlamaEngine_nBegin(JNIEnv *env, jclass, jobjectArray roles
         p = common_chat_templates_apply(g_tmpls.get(), in);
     } catch (const std::exception &e) {
         return env->NewStringUTF((std::string("the model's chat template failed: ") + e.what()).c_str());
+    } catch (...) {
+        return env->NewStringUTF("the model's chat template failed");
     }
     // The template's own text may hold control tokens; what people typed is never read as one.
     const llama_vocab *vocab = llama_model_get_vocab(g_model);

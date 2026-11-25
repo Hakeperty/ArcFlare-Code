@@ -45,7 +45,7 @@ test("digest: the advisor sees requests, claims, calls and results; the oldest g
 
 function fakeHelper() {
   const uses = [];
-  return { uses, use: async (model, o) => { uses.push([model.id, o.slots]); return 4242; }, stop() {} };
+  return { uses, use: async (model, o) => { uses.push([model.id, o.slots]); return 4242; }, release() {}, stop() {} };
 }
 
 test("delegate: up to 4 read-only jobs run side by side on the swarm model, answers come back labelled", async () => {
@@ -170,7 +170,7 @@ test("memory: helpers are only picked when they fit beside the lead, and the res
 test("the advisor falls back to the swarm model when it will not load", async () => {
   const tried = [];
   const team = new T.Team({
-    helper: { use: async (mm) => { tried.push(mm.id); if (mm.id === "adv") throw new Error("out of memory"); return 1; } },
+    helper: { use: async (mm) => { tried.push(mm.id); if (mm.id === "adv") throw new Error("out of memory"); return 1; }, release() {} },
     swarm: m("small", 6), advisor: m("adv", 12), cwd: "/p", chat: async () => ({ content: "LGTM" }),
   });
   assert.strictEqual(await team.beforeDone([]), "");
@@ -274,4 +274,36 @@ test("security: helper answers only make ArcFlare look inside the project", () =
     assert.strictEqual(T.checkRefs(`see ${outside}:3 and ../x/y.js`, dir, [dir]), "", "paths outside are not probed");
     assert.match(T.checkRefs("see src/nope.js", dir, [dir]), /not on disk: src\/nope\.js/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// delegate and ask_advisor run side by side, and every hub agent shares one
+// helper server: asking for another model used to kill the one still answering.
+test("the helper server does not swap its model while a caller is still using it", async () => {
+  const http = require("http");
+  const events = [];
+  const spawnImpl = (exe, args) => {
+    const id = args[args.indexOf("-m") + 1];
+    const srv = http.createServer((q, r) => r.end(JSON.stringify({ status: "ok" })));
+    srv.listen(Number(args[args.indexOf("--port") + 1]), "127.0.0.1");
+    const child = { exitCode: null, on() {}, kill() { events.push(`kill ${id}`); this.exitCode = 0; srv.close(); } };
+    events.push(`start ${id}`);
+    return child;
+  };
+  const hs = new T.HelperServer({ exe: "llama-server", logFile: require("path").join(require("os").tmpdir(), `af-helper-${process.pid}.log`), spawnImpl });
+  try {
+    await hs.use({ id: "a", file: "a" }, { ctx: 1024 });
+    const b = hs.use({ id: "b", file: "b" }, { ctx: 1024 });
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepStrictEqual(events, ["start a"], "a is kept while its caller has not released it");
+    hs.release();
+    await b;
+    assert.deepStrictEqual(events, ["start a", "kill a", "start b"]);
+    hs.release();
+  } finally { hs.stop(); }
+});
+
+test("a helper llama-server that cannot be started is an error, not a crash", async () => {
+  const hs = new T.HelperServer({ exe: "/nonexistent/llama-server", readyMs: 5000,
+    logFile: require("path").join(require("os").tmpdir(), `af-helper-missing-${process.pid}.log`) });
+  await assert.rejects(hs.use({ id: "m", file: "m" }, { ctx: 1024 }), (e) => e.code === "HELPER_DOWN" && /ENOENT/.test(e.message));
 });

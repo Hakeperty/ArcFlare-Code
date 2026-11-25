@@ -268,6 +268,7 @@ test("link rules: http only for the LAN (private IPv4 / .local); the internet re
   assert.throws(() => TC.parsePairingLink(link("http://relay.example", null)), { code: "BAD_LINK" });
   assert.throws(() => TC.parsePairingLink(link("https://arcflare.net", "http://8.8.8.8:7878")), { code: "BAD_LINK" });
   assert.throws(() => TC.parsePairingLink(link("https://arcflare.net", "http://evil.example")), { code: "BAD_LINK" });
+  assert.throws(() => TC.parsePairingLink(link("https://arcflare.net", null) + "&x=%E0%A4%A"), { code: "BAD_LINK" }, "a broken %-escape");
 });
 
 // ---- contract with the phone app ------------------------------------------

@@ -1,11 +1,13 @@
 package net.arcflare.app;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
@@ -34,6 +36,9 @@ import com.getcapacitor.annotation.PermissionCallback;
  *                                  picks the channel and its sound (res/raw, made by scripts/make-sounds.js); sound
  *                                  false (muted on the computer, or outside the user's hours) uses a silent channel.
  *                                  Each channel's sound can be changed in Android's notification settings.
+ *   screenshots({ allow })      -> the "Allow screenshots" switch: stores a boolean and applies it to the window now
+ *                                  (MainActivity.applyScreenshots, also run at start). Anything but a boolean only
+ *                                  reads it. { allow }, true unless the person turned it off.
  */
 @CapacitorPlugin(
     name = "Notifier",
@@ -130,5 +135,19 @@ public class NotifierPlugin extends Plugin {
     private static String clip(String s, int n) {
         if (s == null) return "";
         return s.length() > n ? s.substring(0, n - 1) + "…" : s;
+    }
+
+    @PluginMethod
+    public void screenshots(PluginCall call) {
+        Boolean allow = call.getBoolean("allow", null);
+        SharedPreferences prefs = getContext().getSharedPreferences(MainActivity.SCREEN_PREFS, Context.MODE_PRIVATE);
+        if (allow != null) {
+            prefs.edit().putBoolean(MainActivity.ALLOW_SCREENSHOTS, allow).commit();
+            Activity a = getActivity();
+            if (a != null) a.runOnUiThread(() -> MainActivity.applyScreenshots(a)); // window flags only on the UI thread
+        }
+        JSObject r = new JSObject();
+        r.put("allow", prefs.getBoolean(MainActivity.ALLOW_SCREENSHOTS, true));
+        call.resolve(r);
     }
 }

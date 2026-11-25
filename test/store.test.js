@@ -85,6 +85,40 @@ test("adding a server writes only its own entry in mcp.json", () => {
   assert.ok(JSON.parse(fs.readFileSync(path.join(home, "mcp.json"), "utf8")).mcpServers.mine);
 });
 
+test("adding or removing a server keeps mcp.json's file mode, and a new mcp.json is 0600", { skip: process.platform === "win32" }, () => {
+  const home = tmp();
+  const file = path.join(home, "mcp.json");
+  const mem = store.bundled().mcp.find((m) => m.id === "memory");
+  store.addMcp(mem, { home });
+  assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600);
+  fs.chmodSync(file, 0o640);
+  store.removeMcp("memory", { home });
+  assert.strictEqual(fs.statSync(file).mode & 0o777, 0o640);
+  fs.chmodSync(file, 0o644);
+  store.addMcp(mem, { home });
+  assert.strictEqual(fs.statSync(file).mode & 0o777, 0o644);
+});
+
+test("a stale 0644 tmp file never holds mcp.json's contents at 0644", { skip: process.platform === "win32" }, () => {
+  const home = tmp();
+  const stale = path.join(home, `mcp.json.${process.pid}.tmp`);
+  fs.writeFileSync(stale, "old");
+  fs.chmodSync(stale, 0o644);
+  const seen = [];
+  const { writeFileSync, writeSync } = fs;
+  const look = (target) => {
+    try { seen.push((typeof target === "number" ? fs.fstatSync(target) : fs.statSync(target)).mode & 0o777); } catch { /* not there yet */ }
+  };
+  fs.writeFileSync = (t, ...a) => { if (String(t).endsWith(".tmp") || typeof t === "number") look(t); return writeFileSync(t, ...a); };
+  fs.writeSync = (fd, ...a) => { look(fd); return writeSync(fd, ...a); };
+  try {
+    store.addMcp(store.bundled().mcp.find((m) => m.id === "memory"), { home });
+  } finally { fs.writeFileSync = writeFileSync; fs.writeSync = writeSync; }
+  assert.ok(seen.length > 0 && seen.every((m) => m === 0o600), `modes while writing: ${seen.map((m) => m.toString(8))}`);
+  assert.strictEqual(fs.statSync(path.join(home, "mcp.json")).mode & 0o777, 0o600);
+  assert.ok(!fs.existsSync(stale));
+});
+
 test("one of ArcFlare's parts added as its own server is not also given by the built-in one", () => {
   const cfg = { servers: { "arcflare-browser": { command: "arcflare", args: ["mcp", "browser"] } } };
   const parts = run.withBuiltinServer(cfg, {}).servers.arcflare.args.slice(2)[0].split(",");

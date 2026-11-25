@@ -728,7 +728,10 @@ In ArcFlare's own agent each has a switch (`arcflare mcp enable|disable desktop|
 or `--no-web` / `--no-desktop` for one run; the web switch covers the browser too), and
 the agent's system prompt names the ones that are on with their exact tool ids, so a
 model does not have to discover that it can browse. The phone's Tools screen lists the
-three as servers an owner can switch on.
+three as servers an owner can switch on, and a fourth, `arcflare-phone` (the `phone` part:
+`ask_phone`, `notify_phone`, `call_phone` and the local model tools), so the AI on the
+phone and the agents started from it can ring, notify or ask you without editing
+`mcp.json`. The phone tools are limited to 3 calls a minute from the phone's AI.
 
 **The web tools** reach the public internet only: an address on this machine or this
 network is refused, at every redirect. `web_fetch` returns headings, paragraphs, lists
@@ -1149,7 +1152,8 @@ What it does and does not protect:
   your project are not touched. Chats have Delete too.
 - **One-time agents and chats.** Tick "One-time agent" when making an agent, or tap
   "One-time chat". Nothing about it is written to disk: no saved conversation, no entry
-  in `agents.json`, and its undo snapshots live in the OS temp folder. It deletes itself
+  in `agents.json`, and its undo snapshots live in a scratch folder (`~/.arcflare/onetime`) that is
+  wiped with it and at every hub start. It deletes itself
   when you stop it, after it sits idle (5 minutes to 1 hour, your choice; 10 by default), when the hub
   shuts down, and, for a chat, when the model is stopped from the phone. A turn in
   progress or an approval waiting for you is not idle. Notifications for a one-time

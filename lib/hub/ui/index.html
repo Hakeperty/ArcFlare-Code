@@ -39,7 +39,7 @@
         <span class="wordmark">arcflare<span class="us">_</span></span>
       </a>
       <div id="tb-agent" class="tb-agent" hidden>
-        <a id="agent-back" class="icon-btn" href="#/" aria-label="Back">
+        <a id="agent-back" class="icon-btn" href="#/agents" aria-label="Back">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
         </a>
         <h1 id="agent-name" class="tb-title"></h1>
@@ -221,6 +221,16 @@
           </div>
           <p id="phone-note" class="dev-meta sub" hidden></p>
         </div>
+        <!-- This phone only (NotifierPlugin.screenshots): hidden in a browser -->
+        <div id="screen-card" class="card arc-card" hidden>
+          <div class="dev-top phone-top">
+            <div class="dev-body">
+              <p class="dev-name">Allow screenshots</p>
+              <p class="dev-meta sub">Turn off to block screenshots and screen recording of this app and hide it in recent apps. Approvals, commands and pairing codes are on these screens.</p>
+            </div>
+            <label class="switch"><input id="screen-allow" type="checkbox" role="switch" aria-label="Allow screenshots"><span class="switch-ui" aria-hidden="true"></span></label>
+          </div>
+        </div>
         <div id="calls-card" class="card arc-card" hidden>
           <p class="dev-name">Calls from agents</p>
           <p class="dev-meta sub">The newest 20 calls, kept on your computer. Tap one to read it.</p>
@@ -234,6 +244,7 @@
         </div>
         <p class="lead">MCP servers on the computer. Switch one on and agents you start get its tools; every call still asks you first.</p>
         <p id="tools-note" class="dev-meta sub tools-note" hidden></p>
+        <button id="mcp-add" class="btn outline block" type="button" hidden>Add a tool server</button>
         <ul id="tools-skeleton" class="stack" aria-hidden="true" hidden>
           <li class="card skel"><span class="bar w60"></span><span class="bar w90"></span></li>
           <li class="card skel"><span class="bar w40"></span><span class="bar w90"></span></li>
@@ -248,7 +259,6 @@
 
       <!-- Local AI: a chat model on this phone (localai.js). Only inside the app. -->
       <section id="view-local" class="view" hidden>
-        <h1 class="view-title">On phone</h1>
         <div id="local-root" class="local-root" data-assets="assets/"></div>
       </section>
 
@@ -320,7 +330,7 @@
     </main>
 
     <nav id="bottomnav" class="bottomnav" aria-label="Main" hidden>
-      <a id="tab-agents" href="#/">
+      <a id="tab-agents" href="#/agents">
         <span class="pill"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8V4H8"/><path d="M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></span>
         <span class="lbl">Agents</span>
       </a>
@@ -488,6 +498,20 @@
     </div>
   </div>
 
+  <!-- Add an MCP server from the store's catalogue (owner accounts). The command shown is the one the computer runs. -->
+  <div id="sheet-mcp-add" class="sheet-wrap" hidden>
+    <div class="scrim" data-dismiss="sheet-mcp-add"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mcp-add-title" aria-describedby="mcp-add-warn" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <h2 id="mcp-add-title" class="sheet-title">Add a tool server</h2>
+      <p id="mcp-add-warn" class="hint">Adding one puts its command on your computer. The command runs there, as you, when you switch the server on; it may download the program first. Every tool call still asks you first.</p>
+      <p id="mcp-add-error" class="banner error" role="alert" hidden></p>
+      <p id="mcp-add-result" class="hint mcp-result" role="status" hidden></p>
+      <ul id="mcp-cat" class="stack mcp-cat"></ul>
+      <button id="mcp-add-done" class="btn outline block lg" type="button">Done</button>
+    </div>
+  </div>
+
   <!-- A question an agent on the computer asked (ask_phone). "Later" keeps it open on the hub. -->
   <div id="sheet-question" class="sheet-wrap" hidden>
     <div class="scrim" data-dismiss="sheet-question"></div>
@@ -518,6 +542,7 @@
       <p id="call-line" class="lead"></p>
       <p id="call-heard" class="call-heard" hidden></p>
       <p id="call-error" class="banner error" role="alert" hidden></p>
+      <p id="call-approval" class="dev-meta sub" hidden>An agent is waiting for your approval. It opens when the call ends.</p>
       <div id="call-quick" class="call-quick" role="group" aria-label="Answer with one tap">
         <button class="btn outline" type="button" data-say="Yes.">Yes</button>
         <button class="btn outline" type="button" data-say="No.">No</button>

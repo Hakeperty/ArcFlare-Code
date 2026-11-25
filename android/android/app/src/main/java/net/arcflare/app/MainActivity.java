@@ -1,6 +1,10 @@
 package net.arcflare.app;
 
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
@@ -18,10 +22,27 @@ import java.util.HashMap;
 
 public class MainActivity extends BridgeActivity {
 
+    /** Set by CallPlugin.ring() on the intent of the call notification. */
+    static final String FOR_CALL = "net.arcflare.app.FOR_CALL";
+
+    /** The "Allow screenshots" switch (Tools), in app-private preferences; set only by NotifierPlugin.screenshots(). */
+    static final String SCREEN_PREFS = "arcflare-screen";
+    static final String ALLOW_SCREENSHOTS = "allowScreenshots";
+
+    /** Screenshots allowed (the default): no FLAG_SECURE. Switched off: FLAG_SECURE, so no screenshots, no screen recording, blank recents thumbnail. */
+    static void applyScreenshots(Activity a) {
+        if (a.getSharedPreferences(SCREEN_PREFS, Context.MODE_PRIVATE).getBoolean(ALLOW_SCREENSHOTS, true)) {
+            a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        } else {
+            a.getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+        }
+    }
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // No screenshots, no screen recording, blank thumbnail in the recents screen.
-        getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+        if (savedInstanceState == null) showForCall(getIntent());
+        // Before the page loads, so a person who turned screenshots off never has a capturable first frame.
+        applyScreenshots(this);
         // Updates of this app, downloaded from the signed-in hub (see AppUpdaterPlugin).
         registerPlugin(AppUpdaterPlugin.class);
         // Local notifications for chat answers and agent events (see NotifierPlugin).
@@ -42,6 +63,26 @@ public class MainActivity extends BridgeActivity {
         webView.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         // Navigation guard (see GuardedClient and NavPolicy): the WebView only ever shows https://localhost.
         bridge.setWebViewClient(new GuardedClient(bridge));
+    }
+
+    @Override
+    public void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        showForCall(intent);
+    }
+
+    // A ringing call turns the screen on, so the full-screen ring notification is seen; nothing else ever does. The app
+    // itself is never shown over the lock screen: it can run commands on the owner's computer, so
+    // it opens only after the phone is unlocked.
+    private void showForCall(Intent intent) {
+        if (Build.VERSION.SDK_INT < 27 || intent == null || !intent.getBooleanExtra(FOR_CALL, false)) return;
+        setTurnScreenOn(true);
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        if (Build.VERSION.SDK_INT >= 27) setTurnScreenOn(false);
     }
 
     /**

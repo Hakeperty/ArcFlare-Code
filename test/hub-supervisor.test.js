@@ -116,6 +116,30 @@ test("lifecycle: start, send, stop, statuses and events", async () => {
   assert.strictEqual(agentOf(log).opts.cwd, fs.realpathSync(PROJ));
 });
 
+test("a turn that cannot save agents.json still ends cleanly", async () => {
+  const { sup } = make();
+  const { id } = sup.create({ name: "a", cwd: PROJ });
+  await sup.start(id);
+  sup._save = () => { throw Object.assign(new Error("disk full"), { code: "ENOSPC" }); };
+  await sup.wake(id, "hi");
+  await sup.whenIdle(id);
+  assert.strictEqual(sup.get(id).status, "idle");
+  assert.strictEqual(sup.get(id).turns, 1);
+});
+
+test("an event from a removed agent's late turn does not bring its history back", async () => {
+  const { sup, log } = make();
+  const { id } = sup.create({ name: "a", cwd: PROJ });
+  await sup.start(id);
+  const onEvent = agentOf(log).opts.onEvent;
+  await sup.remove(id);
+  const seen = [];
+  sup.on("event", (e) => seen.push(e));
+  onEvent({ type: "content", text: "late" });
+  assert.deepStrictEqual(seen, []);
+  assert.strictEqual(sup._cold.has(id), false);
+});
+
 test("wake on a stopped agent starts it and resumes the saved conversation", async () => {
   const { sup, log } = make();
   const { id } = sup.create({ name: "r", cwd: PROJ });

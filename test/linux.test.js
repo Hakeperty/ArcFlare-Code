@@ -233,3 +233,32 @@ test("Wayland, live: windows, focus, typing, keys, screenshots and the clipboard
     assert.strictEqual(await desktop.clipboardGet(), "from arcflare ✓");
   } finally { try { process.kill(-term.pid); } catch { /* gone */ } }
 });
+
+test("device memory for one build is not answered from another build's cache", () => {
+  const build = (server, totalMiB) => ({ server, devices: [{ totalMiB, freeMiB: totalMiB / 2 }] });
+  assert.strictEqual(backend.deviceMemory(build("/a/llama-server", 8192), { skipUsed: true }).totalBytes, 8192 * 1024 * 1024);
+  assert.strictEqual(backend.deviceMemory(build("/b/llama-server", 24576), { skipUsed: true }).totalBytes, 24576 * 1024 * 1024);
+});
+
+// Screenshots go in a folder only this user can read, and the machine server removes it when it ends, also when
+// it is stopped with a signal (the server turns SIGTERM and SIGINT into a normal exit).
+test("the machine server's screenshot folder is private and removed when the server is stopped", { skip: process.platform === "win32" && "POSIX folder modes" }, async () => {
+  const { spawn } = require("child_process");
+  const root = path.join(__dirname, "..");
+  const script = `
+    require(${JSON.stringify(path.join(root, "lib/mcp/tools.js"))}).createServer({}).listen();
+    require(${JSON.stringify(path.join(root, "lib/mcp/desktop-unix.js"))}).screenshot().catch(() => {})
+      .finally(() => process.stderr.write("ready\\n"));`;
+  for (const sig of ["SIGTERM", "SIGINT"]) {
+    const dir = tmp("shots");
+    const child = spawn(process.execPath, ["-e", script], { env: { ...process.env, TMPDIR: dir }, stdio: ["pipe", "ignore", "pipe"] });
+    await new Promise((res) => child.stderr.on("data", (d) => { if (String(d).includes("ready")) res(); }));
+    const made = fs.readdirSync(dir).filter((n) => n.startsWith("arcflare-mcp-"));
+    assert.strictEqual(made.length, 1, sig);
+    assert.strictEqual(fs.statSync(path.join(dir, made[0])).mode & 0o777, 0o700);
+    const exited = new Promise((res) => child.on("exit", res));
+    child.kill(sig);
+    await exited;
+    assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => n.startsWith("arcflare-mcp-")), [], `removed on ${sig}`);
+  }
+});

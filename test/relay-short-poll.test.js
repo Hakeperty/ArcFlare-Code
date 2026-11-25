@@ -72,3 +72,22 @@ test("phone: stop() ends a long pause at once", async () => {
   await mb.loop;
   assert.ok(Date.now() - t0 < 500, "the loop ended without waiting out the pause");
 });
+
+test("phone: a relay that refuses the poll ends the connection instead of retrying forever", async () => {
+  const urls = [];
+  const fetch = async (url, init) => {
+    urls.push(init.method);
+    if (init.method === "POST") return { ok: true, status: 200, headers: { get: () => null }, text: async () => "{\"ok\":true}" };
+    return { ok: false, status: 403, headers: { get: () => null }, text: async () => "{}" };
+  };
+  const kp = await TC._internal.generateX25519(), hub = await TC._internal.generateX25519();
+  const b = (n) => TC._internal.b64u(new Uint8Array(n).fill(7));
+  const device = { relay: "https://r.test", room: b(32), hubKey: TC._internal.b64u(hub.pub), deviceId: b(16),
+    roomToken: "aftc_" + "a".repeat(43), privateKey: kp.privateKey, publicKey: TC._internal.b64u(kp.pub) };
+  const t0 = Date.now();
+  await assert.rejects(TC.connect(device, { fetch, handshakeTimeoutMs: 5000 }), { code: "REFUSED" });
+  assert.ok(Date.now() - t0 < 2000, "ended at the refusal, not at the handshake timeout");
+  const polls = urls.filter((m) => m === "GET").length;
+  await new Promise((r) => setTimeout(r, 1200));
+  assert.equal(urls.filter((m) => m === "GET").length, polls, "no more polls after the refusal");
+});

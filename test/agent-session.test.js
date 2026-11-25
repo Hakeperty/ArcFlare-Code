@@ -152,6 +152,31 @@ test("sessions save, list by folder, load by prefix, and prune", () => {
   }
 });
 
+// prune deleted the folder named by the id inside a session file: an id of
+// ".." removed ~/.arcflare, and a path in --resume read any JSON file.
+test("a session id that is a path is never read or pruned", () => {
+  const home = tmp("home-bad");
+  const prev = process.env.ARCFLARE_HOME;
+  process.env.ARCFLARE_HOME = home;
+  try {
+    const keep = path.join(home, "keep.txt");
+    fs.writeFileSync(keep, "x");
+    fs.writeFileSync(path.join(home, "secret.json"), JSON.stringify({ messages: [] }));
+    fs.mkdirSync(sessions.dir(), { recursive: true });
+    fs.writeFileSync(path.join(sessions.dir(), "old.json"),
+      JSON.stringify({ id: "..", updated: "2000-01-01", messages: [{ role: "user", content: "q" }] }));
+    sessions.save({ id: "new", cwd: home, messages: [{ role: "user", content: "q" }] });
+    sessions.prune(1);
+    assert.ok(fs.existsSync(keep), "nothing outside sessions/ is removed");
+    assert.deepStrictEqual(sessions.list().map((s) => s.id), ["new"]);
+    assert.strictEqual(sessions.load("../secret"), null);
+    assert.strictEqual(sessions.find("../secret"), null);
+    assert.throws(() => sessions.folderFor(".."), /not a session id/);
+  } finally {
+    if (prev === undefined) delete process.env.ARCFLARE_HOME; else process.env.ARCFLARE_HOME = prev;
+  }
+});
+
 test("--resume and --continue are taken out of argv before the model is picked", async () => {
   const home = tmp("home2");
   const prev = process.env.ARCFLARE_HOME;
@@ -252,4 +277,61 @@ test("a running shell command is killed when the turn is interrupted", async () 
   const r = await p;
   assert.ok(r.aborted || r.error, JSON.stringify(r));
   assert.ok(Date.now() - t0 < 10000, "it stopped well before the command would have");
+});
+
+// The shell exiting is the end of the command, even when something it put in
+// the background still holds stdout; the tool used to wait on it forever.
+test("a command that backgrounds a process returns when the shell exits", async (t) => {
+  if (process.platform === "win32") return t.skip("POSIX shell syntax");
+  const t0 = Date.now();
+  const r = await tools.runShell("sleep 30 & echo started $!", { cwd: os.tmpdir(), timeoutMs: 60000 });
+  const [word, pid] = r.stdout.trim().split(" ");
+  t.after(() => { try { process.kill(Number(pid)); } catch { /* already gone */ } });
+  assert.strictEqual(r.status, 0);
+  assert.strictEqual(word, "started");
+  assert.ok(Date.now() - t0 < 10000, "it did not wait for the background sleep");
+});
+
+// A process holding the pipes must not keep the CLI itself from exiting once the tool call is done.
+test("a backgrounded process does not keep the CLI running after the command returned", async (t) => {
+  if (process.platform === "win32") return t.skip("POSIX shell syntax");
+  const { execFile } = require("child_process");
+  const toolsPath = path.join(__dirname, "..", "lib", "agent", "tools.js");
+  const pidFile = path.join(tmp("bgexit"), "pid");
+  // The pid goes to a file as soon as the sleep starts, so the cleanup below works even if the test fails early.
+  t.after(() => { try { process.kill(Number(fs.readFileSync(pidFile, "utf8"))); } catch { /* not started, or already gone */ } });
+  const code = `require(${JSON.stringify(toolsPath)}).runShell("sleep 20 & echo $! > '${pidFile}'; echo started", { cwd: ${JSON.stringify(os.tmpdir())}, timeoutMs: 60000 }).then((r) => process.stdout.write(r.stdout))`;
+  const t0 = Date.now();
+  await new Promise((resolve, reject) => {
+    execFile(process.execPath, ["-e", code], { timeout: 12000 }, (err) => (err ? reject(new Error(`the process was still running after ${Date.now() - t0} ms (${err.message})`)) : resolve()));
+  });
+  assert.ok(Date.now() - t0 < 6000, "the process exited soon after the command returned");
+});
+
+// What a command left in the background keeps its stdout after the tool call
+// has returned: closing our end of the pipe used to kill it with SIGPIPE.
+test("a backgrounded process can still write after the command returned", async (t) => {
+  if (process.platform === "win32") return t.skip("POSIX shell syntax");
+  const marker = path.join(tmp("bgwrite"), "done");
+  const r = await tools.runShell(`(sleep 1; echo late; echo ok > '${marker}') & echo started`, { cwd: os.tmpdir(), timeoutMs: 60000 });
+  assert.strictEqual(r.stdout.trim(), "started");
+  for (let i = 0; i < 50 && !fs.existsSync(marker); i++) await new Promise((res) => setTimeout(res, 100));
+  assert.ok(fs.existsSync(marker), "the background process survived its late write");
+});
+
+// A model server that dies mid-answer left the agent's turn waiting forever.
+test("a model server that cuts off its answer fails the request instead of hanging", async () => {
+  const { streamChat } = require("../lib/agent/agent");
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "hel" } }] })}\n\n`);
+    setTimeout(() => res.socket.destroy(), 50);
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  try {
+    await assert.rejects(Promise.race([
+      streamChat(srv.address().port, { messages: [] }, null, 60000),
+      new Promise((_, no) => setTimeout(() => no(new Error("still waiting")), 5000)),
+    ]), /closed the answer early/);
+  } finally { srv.close(); }
 });

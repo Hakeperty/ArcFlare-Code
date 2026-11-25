@@ -248,3 +248,43 @@ test("pickFiles prefers the copy at the repo root over a copy in a subfolder", (
   const s = hf.pickFiles(sib(["Q4_K-GGUF/M-Q4_K-00001-of-00002.gguf", "Q4_K-GGUF/M-Q4_K-00002-of-00002.gguf"]), "Q4_K");
   assert.strictEqual(s.files.length, 2);
 });
+
+test("pull refuses file names and commit ids that would write outside the cache", async () => {
+  const hf = require("../lib/hf");
+  const cache = fs.mkdtempSync(path.join(os.tmpdir(), "af-cache-"));
+  const file = (rfilename) => ({ rfilename, size: 1 });
+  await assert.rejects(hf.pull("me/tiny:Q8_0", { cache, info: { sha: "abc", siblings: [file("../../../evil-Q8_0.gguf")] } }),
+    /leaves the model folder/);
+  await assert.rejects(hf.pull("me/tiny:Q8_0", { cache, info: { sha: "..", siblings: [file("tiny-Q8_0.gguf")] } }),
+    /unexpected commit id/);
+  assert.ok(!fs.existsSync(path.join(cache, "..", "evil-Q8_0.gguf")));
+});
+
+test("a download that stops sending data fails instead of hanging", async () => {
+  const s = require("http").createServer((q, r) => { r.writeHead(200, { "Content-Length": 1000 }); r.write(Buffer.alloc(100)); });
+  await new Promise((r) => s.listen(0, "127.0.0.1", r));
+  try {
+    await assert.rejects(dl.download(`http://127.0.0.1:${s.address().port}/f`, tmpFile("stall.gguf"), { idleMs: 300 }));
+  } finally { s.closeAllConnections(); s.close(); }
+});
+
+// Every name is checked before anything is written: a bad second name used to
+// be found only after the first file had been downloaded and refs/main written.
+test("pull writes nothing when any file name would leave the cache", async () => {
+  const { s, url } = await server();
+  const prev = process.env.HF_ENDPOINT;
+  try {
+    process.env.HF_ENDPOINT = url;
+    delete require.cache[require.resolve("../lib/hf")];
+    const hf2 = require("../lib/hf");
+    const cache = fs.mkdtempSync(path.join(os.tmpdir(), "af-cache-"));
+    const f = (rfilename) => ({ rfilename, size: BODY.length, lfs: { size: BODY.length, sha256: SHA } });
+    const info = { sha: "abc123", siblings: [f("tiny-Q8_0.gguf"), f("../mmproj-evil.gguf")] };
+    await assert.rejects(hf2.pull("me/tiny:Q8_0", { cache, info }), /leaves the model folder: \.\.\/mmproj-evil/);
+    assert.deepStrictEqual(fs.readdirSync(cache), []);
+  } finally {
+    s.close();
+    if (prev === undefined) delete process.env.HF_ENDPOINT; else process.env.HF_ENDPOINT = prev;
+    delete require.cache[require.resolve("../lib/hf")];
+  }
+});

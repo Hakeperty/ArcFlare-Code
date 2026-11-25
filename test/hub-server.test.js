@@ -261,6 +261,21 @@ test("CSRF: required on POST (missing/wrong -> 403), ok when right", async () =>
   await s.close();
 });
 
+test("only an owner account can remove an agent and its saved conversation", async () => {
+  const s = await start();
+  const a = await login(s);
+  let removed = 0;
+  s.supervisor.remove = () => { removed++; };
+  const del = () => req(s.port, { method: "DELETE", path: "/api/agents/a1", headers: { Cookie: a.cookie, "X-CSRF-Token": a.csrf } });
+  for (const v of s.auth.sessions.values()) v.user.role = "user";
+  assert.strictEqual((await del()).status, 403);
+  assert.strictEqual(removed, 0);
+  for (const v of s.auth.sessions.values()) v.user.role = "owner";
+  assert.strictEqual((await del()).status, 200);
+  assert.strictEqual(removed, 1);
+  await s.close();
+});
+
 test("Origin must match Host when present", async () => {
   const s = await start();
   const a = await login(s);
@@ -862,6 +877,18 @@ test("ask_phone round trip: agent asks, the phone sees it and answers, the agent
   } finally { await s.close(); }
 });
 
+test("a call line asked for a part it does not have is a 400, not a server error", async () => {
+  const logged = [];
+  const calls = { line: async () => { throw Object.assign(new Error("No such part"), { status: 400 }); }, current: () => null };
+  const s = await start({ opts: { local: { token: "t".repeat(43), calls } }, config: { log: (e) => logged.push(e) } });
+  try {
+    const a = await login(s);
+    const r = await req(s.port, { path: `/api/calls/${"a".repeat(16)}/line/0?part=99`, headers: { Cookie: a.cookie } });
+    assert.strictEqual(r.status, 400);
+    assert.deepStrictEqual(logged, []);
+  } finally { await s.close(); }
+});
+
 test("call_phone round trip: the agent rings, the phone answers and replies, only an owner can take the call", async () => {
   const { s, token } = await localHub();
   try {
@@ -890,6 +917,40 @@ test("call_phone round trip: the agent rings, the phone answers and replies, onl
     for (const v of s.auth.sessions.values()) v.user.role = "user";
     assert.strictEqual((await req(s.port, { path: "/api/calls/history", headers: { Cookie: a.cookie } })).status, 403);
     assert.strictEqual((await req(s.port, { path: `/api/calls/${id}/file/conversation.wav`, headers: { Cookie: a.cookie } })).status, 403);
+  } finally { await s.close(); }
+});
+
+test("an account that is not an owner neither sees the current call nor hears it ring on the event stream", async () => {
+  const { s, token } = await localHub();
+  try {
+    const a = await login(s);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    const c = await sse(s.port, "/api/events", { Cookie: a.cookie }, (t) => t.includes("retry:"));
+    let text = "";
+    c.res.on("data", (d) => { text += d; });
+    const id = (await bearerReq(s, "POST", "/api/local/call", token, { say: "Secret plan?" })).json.id;
+    s.supervisor.emit("event", { agentId: "a1", seq: 1, type: "approval", id: "p1" });   // arrives after the call event would
+    await waitFor(() => text.includes("approval"));
+    c.destroy();
+    assert.ok(!text.includes("Secret plan") && !text.includes(id), text);
+    assert.strictEqual((await req(s.port, { path: "/api/calls", headers: { Cookie: a.cookie } })).status, 403);
+  } finally { await s.close(); }
+});
+
+test("an account that is not an owner neither lists agents' questions nor sees them on the event stream", async () => {
+  const { s, token } = await localHub();
+  try {
+    const a = await login(s);
+    for (const v of s.auth.sessions.values()) v.user.role = "user";
+    const c = await sse(s.port, "/api/events", { Cookie: a.cookie }, (t) => t.includes("retry:"));
+    let text = "";
+    c.res.on("data", (d) => { text += d; });
+    assert.strictEqual((await bearerReq(s, "POST", "/api/local/ask", token, { question: "Secret plan?", timeoutSec: 60 })).status, 200);
+    s.supervisor.emit("event", { agentId: "a1", seq: 1, type: "approval", id: "p1" });   // arrives after the question event would
+    await waitFor(() => text.includes("approval"));
+    c.destroy();
+    assert.ok(!text.includes("Secret plan"), text);
+    assert.strictEqual((await req(s.port, { path: "/api/questions", headers: { Cookie: a.cookie } })).status, 403);
   } finally { await s.close(); }
 });
 
@@ -1047,6 +1108,7 @@ test("account routes: details, wrong password refused, CSRF required, delete sig
     assert.ok(!JSON.stringify(me).includes("hash"), "no password hashes");
     assert.strictEqual((await jsonPost(s, a, "/api/accounts/bob/delete", { password: "x" }, { "X-CSRF-Token": "bad" })).status, 403, "CSRF");
     assert.strictEqual((await jsonPost(s, a, "/api/accounts/bob/delete", { password: "wrong-password" })).status, 403);
+    assert.strictEqual((await jsonPost(s, a, "/api/accounts/%E0%A4%A/delete", { password: "correct-horse-1" })).status, 404, "bad %-escape");
     assert.strictEqual((await jsonPost(s, a, "/api/account/delete", { password: "correct-horse-1" })).status, 409, "last owner");
     assert.strictEqual((await jsonPost(s, a, "/api/accounts/bob/delete", { password: "correct-horse-1" })).status, 200);
     const del = await jsonPost(s, a, "/api/account/delete", { password: "correct-horse-1" });

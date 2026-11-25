@@ -105,6 +105,16 @@ test("the shop falls back to the bundled hub when the site is unreachable", asyn
   assert.ok(r.data.models.length > 10);
 });
 
+test("a catalogue entry missing a field the shop prints is left out instead of breaking search and show", async () => {
+  const good = { slug: "ok", name: "ok", category: "Chat", defaultSize: "1 GB", vram: "~2 GB", tags: [] };
+  const body = { models: [good, { slug: "no-name", category: "Chat" }, null, "x"] };
+  const r = await hub.load({ cfg: { hub: "http://127.0.0.1:8" }, fetchImpl: async () => new Response(JSON.stringify(body)), refresh: true });
+  assert.strictEqual(r.source, "live");
+  assert.deepStrictEqual(r.data.models.map((m) => m.slug), ["ok"]);
+  assert.deepStrictEqual(hub.search(r.data.models, "chat").map((m) => m.slug), ["ok"]);
+  assert.strictEqual(hub.bySlug(r.data.models, "missing"), null);
+});
+
 test("fit agrees with the website's thresholds", () => {
   assert.strictEqual(hub.fit({ vram: "~6 GB" }, 8), "fits");     // 6 <= 6.8
   assert.strictEqual(hub.fit({ vram: "~7.5 GB" }, 8), "tight");  // 6.8 < 7.5 <= 8

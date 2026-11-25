@@ -420,6 +420,16 @@ function chatOnce(port, model, messages, onDelta, sampling = null) {
       (res) => {
         let buf = "";
         let full = "";
+        // An error reply is JSON, not a stream: say what it was rather than show an empty answer.
+        if (res.statusCode >= 400) {
+          res.on("data", (d) => { buf += d; });
+          res.on("end", () => {
+            let msg = buf.trim().slice(0, 300);
+            try { const j = JSON.parse(buf); msg = (j.error && (j.error.message || j.error)) || msg; } catch {}
+            reject(new Error(`HTTP ${res.statusCode}${msg ? ": " + msg : ""}`));
+          });
+          return;
+        }
         res.on("data", (d) => {
           buf += d.toString();
           let i;
@@ -431,13 +441,16 @@ function chatOnce(port, model, messages, onDelta, sampling = null) {
             if (payload === "[DONE]") continue;
             try {
               const j = JSON.parse(payload);
+              if (j.error) { req.destroy(); return reject(new Error(String(j.error.message || j.error))); }
               const d0 = j.choices && j.choices[0] && j.choices[0].delta;
               const piece = d0 && (d0.content || "");
               if (piece) { full += piece; onDelta(piece); }
             } catch {}
           }
         });
-        res.on("end", () => resolve(full));
+        // A server that dies mid-answer ends the response without "end": settle on close.
+        res.on("error", reject);
+        res.on("close", () => (res.complete ? resolve(full) : reject(new Error("the server closed the answer early"))));
       },
     );
     req.on("error", reject);
@@ -592,7 +605,8 @@ async function interactive(argv) {
   });
 
   // 5. server, keyed preset, restart
-  const { port, servedId, ctx: loadedCtx } = await prepareModel(cfg, model, ctx, cacheType);
+  const { port, servedId, ctx: loadedCtx, failed, error } = await prepareModel(cfg, model, ctx, cacheType);
+  if (failed) die(`could not load ${label}: ${error}`);
 
   // 6. wire the harness up
   const target = { id: servedId, label, file: model.file };
@@ -925,7 +939,7 @@ async function mcpTrust(argv) {
 async function mcpAuth(argv) {
   const oauth = require("../lib/agent/oauth");
   const { loadMcpConfig, McpServer } = require("../lib/agent/mcp");
-  const { servers, file } = loadMcpConfig(process.cwd());
+  const { servers, file, origin } = loadMcpConfig(process.cwd());
   const hosted = Object.entries(servers).filter(([, s]) => s && s.url);
 
   let name = argv[2];
@@ -962,6 +976,11 @@ async function mcpAuth(argv) {
       : `  ${c.dim(`nothing stored for ${name}`)}`);
     return;
   }
+  // A repo's own config could aim the sign-in, and the env vars in its headers,
+  // at any host, so it is held to the same trust gate as starting the agent.
+  const trust = require("../lib/agent/trust");
+  const g = trust.gate({ file, origin, servers });
+  if (g.blocked.includes(name)) die(trust.explain(g));
 
   console.log(`\n  ${c.bold("Signing in to")} ${c.accent(name)} ${c.dim(cfg.url)}`);
   const rec = await oauth.login({
@@ -2026,7 +2045,8 @@ async function main() {
       if (!m) die(`no model matching "${want || ""}"`);
       const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
-      const { port, servedId: id } = await prepareModel(cfg, m, best.ctx, best.cacheType);
+      const { port, servedId: id, failed, error } = await prepareModel(cfg, m, best.ctx, best.cacheType);
+      if (failed) die(`could not load ${displayName(m)}: ${error}`);
       console.log(`  ${c.green(ui.sym.ok)} ${got ? `${c.accent(got.arc.name)} ${c.dim("on")} ` : ""}${c.accent(id)} @ ${ui.fmtTokens(best.ctx)} ctx\n`);
       await repl(port, id, {
         rc: argv.includes("--rc"),
@@ -2064,8 +2084,9 @@ async function main() {
       if (!m) die("no models found");
       const budget = await planningBudget(cfg);
       const { best } = contextChoices(m, budget);
-      const { port, servedId: id, ctx: loadedCtx } =
+      const { port, servedId: id, ctx: loadedCtx, failed, error } =
         await prepareModel(cfg, m, best.ctx, best.cacheType);
+      if (failed) die(`could not load ${displayName(m)}: ${error}`);
       const r = h.configure({ port, model: { id, label: displayName(m) }, ctx: best.ctx,
         apiKey: "arcflare", bin: det.bin });
       for (const n of r.notes || []) console.log(`  ${c.dim(n)}`);
@@ -2741,4 +2762,4 @@ if (require.main === module) {
   main().catch((e) => die(e && e.stack ? e.stack : String(e)));
 }
 
-module.exports = { pickModel, ubatchFor, DEFAULT_UBATCH, MIN_UBATCH };
+module.exports = { pickModel, ubatchFor, chatOnce, DEFAULT_UBATCH, MIN_UBATCH };

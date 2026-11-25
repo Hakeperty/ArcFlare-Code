@@ -145,3 +145,12 @@ test("with no home-network address, pair works over ArcFlare Connect alone, and 
     assert.match(p.stdout, /pairs over the internet/);
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+test("a refused relay address is reported as a plain error, not a crash", () => {
+  const home = mkHome();
+  try {
+    const r = run(home, ["phone", "relay", "on", "not a url"]);
+    assert.strictEqual(r.status, 1);
+    assert.doesNotMatch(r.stderr, /\n\s+at /, "no stack trace");
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
