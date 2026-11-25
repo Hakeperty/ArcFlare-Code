@@ -215,9 +215,14 @@
           <label class="dev-meta sub voice-label" for="phone-voice">The agent's voice on calls</label>
           <select id="phone-voice" class="model-select field-select"></select>
           <div id="ringtone-row" class="hours-row" hidden>
-            <p class="dev-meta ringtone-name">Ringtone: <span id="ringtone-title"></span></p>
+            <p class="dev-meta ringtone-name">Check-in tone: <span id="ringtone-title"></span></p>
             <button id="ringtone-pick" class="btn outline sm" type="button">Change</button>
             <button id="ringtone-test" class="btn outline sm" type="button">Test</button>
+          </div>
+          <div id="ringtone-row-emergency" class="hours-row" hidden>
+            <p class="dev-meta ringtone-name">Emergency tone: <span id="ringtone-title-emergency"></span></p>
+            <button id="ringtone-pick-emergency" class="btn outline sm" type="button">Change</button>
+            <button id="ringtone-test-emergency" class="btn outline sm" type="button">Test</button>
           </div>
           <p id="phone-note" class="dev-meta sub" hidden></p>
         </div>

@@ -70,9 +70,9 @@
       var p;
       try { p = plugin("Call"); } catch (e) { return null; }
       return {
-        ringtone: function () { return p.ringtone(); },
-        pickRingtone: function () { return p.pickRingtone(); },
-        ring: function (o) { return p.ring({ title: o.title, seconds: o.seconds }); },
+        ringtone: function (kind) { return p.ringtone({ kind: kind }); },
+        pickRingtone: function (kind) { return p.pickRingtone({ kind: kind }); },
+        ring: function (o) { return p.ring({ title: o.title, seconds: o.seconds, kind: o.kind }); },
         stopRing: function () { return p.stopRing(); },
         start: function () { return p.start(); },
         speak: function (text) { return p.speak({ text: text }); },

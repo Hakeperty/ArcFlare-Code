@@ -142,9 +142,12 @@ public class CallPlugin extends Plugin {
 
     // ---- ringtone ----
 
-    private Uri ringtoneUri() {
-        String s = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("ringtone", null);
-        return s != null ? Uri.parse(s) : RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+    // Two tones: "check" (routine calls) and "emergency". Until one is chosen, emergency uses the phone's alarm sound.
+    private static boolean emergency(String kind) { return "emergency".equals(kind); }
+
+    private Uri ringtoneUri(String kind) {
+        String s = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(emergency(kind) ? "ringtone_emergency" : "ringtone", null);
+        return s != null ? Uri.parse(s) : RingtoneManager.getDefaultUri(emergency(kind) ? RingtoneManager.TYPE_ALARM : RingtoneManager.TYPE_RINGTONE);
     }
 
     private String title(Uri uri) {
@@ -155,18 +158,18 @@ public class CallPlugin extends Plugin {
     @PluginMethod
     public void ringtone(PluginCall call) {
         JSObject r = new JSObject();
-        r.put("title", title(ringtoneUri()));
+        r.put("title", title(ringtoneUri(call.getString("kind"))));
         call.resolve(r);
     }
 
     @PluginMethod
     public void pickRingtone(PluginCall call) {
         Intent i = new Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
-            .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALL)
             .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
             .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
-            .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Ringtone for calls from agents")
-            .putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, ringtoneUri());
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, emergency(call.getString("kind")) ? "Tone for emergency calls" : "Tone for check-in calls")
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, ringtoneUri(call.getString("kind")));
         startActivityForResult(call, i, "picked");
     }
 
@@ -174,7 +177,7 @@ public class CallPlugin extends Plugin {
     private void picked(PluginCall call, ActivityResult result) {
         if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
             Uri uri = result.getData().getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI);
-            if (uri != null) getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("ringtone", uri.toString()).apply();
+            if (uri != null) getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(emergency(call.getString("kind")) ? "ringtone_emergency" : "ringtone", uri.toString()).apply();
         }
         ringtone(call);
     }
@@ -184,9 +187,10 @@ public class CallPlugin extends Plugin {
         Context ctx = getContext();
         int seconds = Math.max(1, Math.min(60, call.getInt("seconds", 45)));
         String who = clip(call.getString("title", "Your computer is calling"), 80);
+        String kind = call.getString("kind");
         main.post(() -> {
             stopRinging();
-            ringing = RingtoneManager.getRingtone(ctx, ringtoneUri());
+            ringing = RingtoneManager.getRingtone(ctx, ringtoneUri(kind));
             if (ringing != null) {
                 ringing.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
