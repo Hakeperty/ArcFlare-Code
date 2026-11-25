@@ -225,6 +225,7 @@ test("store.isStoreSpec: the catalogue command plus allowed arguments only", () 
   const cat = store.bundled().mcp.map(store.cleanMcp).filter(Boolean);
   const fsrv = cat.find((e) => e.id === "filesystem"), mem = cat.find((e) => e.id === "memory");
   assert.ok(store.isStoreSpec(fsrv, { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/a", "/b"] }));
+  assert.ok(!store.isStoreSpec(fsrv, { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/a", "--allow-all"] }));
   assert.ok(!store.isStoreSpec(mem, { command: "npx", args: ["-y", "@modelcontextprotocol/server-memory", "/a"] }));
   assert.ok(!store.isStoreSpec(mem, { command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"], env: {} }));
   assert.ok(!store.isStoreSpec(mem, { command: "node", args: ["-y", "@modelcontextprotocol/server-memory"] }));
