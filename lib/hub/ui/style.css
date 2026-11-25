@@ -1080,6 +1080,8 @@ fieldset.muted-off { opacity: 0.5; }
 .local-model, .local-agree { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 20px; }
 .local-model input, .local-agree input { flex: none; margin-top: 3px; width: 18px; height: 18px; }
 .local-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; line-height: 20px; min-height: 48px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.bottomnav.ai-first #tab-local { order: -1; }
+
 /* The chat fills the screen: header, messages that scroll, then the composer pinned at the bottom. */
 .view:has(> .local-root.is-chat), .view-login:has(.local-root.is-chat) { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
 .view-login:has(.local-root.is-chat) { padding-top: 0; justify-content: stretch; }
