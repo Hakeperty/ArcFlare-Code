@@ -431,6 +431,12 @@ test("parse: an mcp call, and mcp's own arguments written as the call", () => {
     [{ name: "mcp", args: { tool: "web_search", args: { query: "node" } } }]);
 });
 
+test("mcp's own arguments are unwrapped only when tool and args are the only keys, so no parameter is lost", () => {
+  const T = [{ server: "s", name: "run", description: "", params: [{ name: "tool", required: true }, { name: "args", required: false }, { name: "mode", required: true }] }];
+  assert.deepEqual(plain(A.describe(call("run", { tool: "run", args: { x: 1 }, mode: "fast" }), [], T)).mcp.args, { tool: "run", args: { x: 1 }, mode: "fast" });
+  assert.deepEqual(plain(A.parse('<tool_call>{"tool": "run", "args": {}, "mode": "fast"}</tool_call>')), { text: "", calls: [], bad: 1 }, "not a call: nothing is dropped from it");
+});
+
 test("describe: an mcp call names the server, the tool and its input; bad calls are short errors", () => {
   const d = plain(A.describe(call("mcp", { tool: "get_current_time", args: { timezone: "Asia/Tokyo" } }), [], MCP));
   assert.equal(d.ok, true);
