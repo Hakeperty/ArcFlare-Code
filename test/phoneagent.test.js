@@ -334,6 +334,22 @@ test("fit: older file texts become a stub first, oldest first, and the latest st
   assert.equal(A.fit(msgs, A.size(msgs) - 200).stubbed, 1);
 });
 
+test("fit: responses of earlier questions are stubbed before those of the question being answered", () => {
+  const msgs = [SYS, U("first"), AS("<tool_call>a</tool_call>"), TR(big(900)), AS("done"), U("second"), AS("<tool_call>b</tool_call>"), TR(big(900)), AS("<tool_call>c</tool_call>"), TR(big(300))];
+  const r = A.fit(msgs, A.size(msgs) - 200);
+  assert.equal(r.stubbed, 1);
+  assert.match(r.messages[3].content, /removed to save memory/, "the earlier question's file text goes first");
+  assert.equal(r.messages[7].content, msgs[7].content, "this question's earlier read is still whole");
+});
+
+test("run: a missing read limit still gives the start of the file, not an empty part", async () => {
+  const folders = [{ id: "f1", name: "notes" }];
+  const files = { read: async () => ({ text: "abc".repeat(1000) }) };
+  const out = await A.run({ name: "read_file", args: { folder: "notes", path: "a.txt" } }, folders, files);
+  assert.ok(out.startsWith("abcabc"), out.slice(0, 80));
+  assert.match(out, /call read_file again with start=2500/);
+});
+
 test("fit: then the oldest turns are dropped, never the system message or the latest question", () => {
   const msgs = [SYS, U(big(300)), AS(big(300)), U("two"), AS("ok"), U("three")];
   const r = A.fit(msgs, 40);
