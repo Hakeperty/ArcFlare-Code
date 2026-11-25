@@ -198,18 +198,21 @@ test("remove: only store servers; switched off first; built-ins and hand-written
 
 test("remove checks again after waiting for a connect: a server edited by hand meanwhile is kept", async () => {
   const { s, port, mcp, file } = await serve("owner");
-  assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "time", command: C("time") })).status, 200);
-  let release;
-  mcp.pending.set("time", new Promise((r) => { release = r; }));
-  const removing = mcp.remove("time");
-  const j = JSON.parse(fs.readFileSync(file, "utf8"));
-  j.mcpServers.time.env = { TOKEN: "s3cret" };          // the owner edits it on the computer meanwhile
-  fs.writeFileSync(file, JSON.stringify(j));
-  mcp.pending.delete("time");
-  release(true);
-  await assert.rejects(removing, (e) => e.status === 409);
-  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")).mcpServers.time.env, { TOKEN: "s3cret" });
-  await s.close();
+  try {
+    assert.strictEqual((await call(port, "POST", "/api/mcp/install", { id: "time", command: C("time") })).status, 200);
+    let release;
+    mcp.pending.set("time", new Promise((r) => { release = r; }));
+    const removing = mcp.remove("time");
+    const j = JSON.parse(fs.readFileSync(file, "utf8"));
+    j.mcpServers.time.env = { TOKEN: "s3cret" };          // the owner edits it on the computer meanwhile
+    fs.writeFileSync(file, JSON.stringify(j));
+    mcp.pending.delete("time");
+    release(true);
+    await assert.rejects(removing, (e) => e.status === 409);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")).mcpServers.time.env, { TOKEN: "s3cret" });
+  } finally {
+    await s.close();
+  }
 });
 
 test("installs and removes from the phone are rate limited", async () => {
