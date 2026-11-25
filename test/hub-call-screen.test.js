@@ -30,9 +30,9 @@ const FAKE_APP = () => {
 
 /**
  * A hub with one owner account and calls, and a signed-in phone-sized page on it.
- * before(calls) runs before the page opens; app: the page is given the app's player.
+ * before(calls) runs before the page opens; app: the page is given the app's player; clock: page.clock is installed.
  */
-async function phone(t, { before, app } = {}) {
+async function phone(t, { before, app, clock } = {}) {
   const { AuthStore } = require("../lib/hub/auth");
   const { Supervisor } = require("../lib/hub/supervisor");
   const { createHubServer } = require("../lib/hub/server");
@@ -51,6 +51,7 @@ async function phone(t, { before, app } = {}) {
   t.after(async () => { await browser.close(); await hub.close(); });
   const page = await (await browser.newContext(pw.devices["Pixel 7"])).newPage();
   if (app) await page.addInitScript(FAKE_APP);
+  if (clock) await page.clock.install();   // the page's timers can be run ahead
   await page.goto(`http://127.0.0.1:${port}/`);
   await page.fill("#login-user", "owner");
   await page.fill("#login-pass", PASS);
@@ -292,6 +293,25 @@ test("hanging up is tried again when the connection drops", { skip }, async (t) 
   assert.strictEqual(failed, 2);
   await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
   assert.ok(!(await page.isVisible("#call-error")));
+});
+
+// The app that never stops recording and a hang-up the computer never answers: the call screen still ends, with an
+// error, instead of staying on "Saving" for good.
+test("a hang-up that never gets an answer still ends the call screen", { skip }, async (t) => {
+  const { page, calls } = await phone(t, { app: true, clock: true });
+  calls.start({ say: "Deploy now?", from: "Codex" });
+  await page.click("#call-answer");
+  await page.locator("#call-status", { hasText: "Nothing heard" }).waitFor();
+  await page.evaluate(() => {
+    const make = window.ArcFlareNative.call;
+    window.ArcFlareNative.call = () => Object.assign(make(), { stop: () => new Promise(() => {}) });
+  });
+  await page.route("**/end", () => { /* never answered */ });
+  await page.click("#call-hangup");
+  await page.locator("#call-status", { hasText: "Saving" }).waitFor();
+  await page.clock.runFor(200000);
+  await page.locator("#sheet-call").waitFor({ state: "hidden" });
+  assert.match(await page.textContent("#call-error"), /did not reach the computer/);
 });
 
 // The event stream drops (a phone between networks) and the hub's call events in between are lost: when it comes
