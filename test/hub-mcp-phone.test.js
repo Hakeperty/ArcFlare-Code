@@ -159,3 +159,19 @@ test("a runaway loop of calls is stopped after 20 a minute", async () => {
     assert.ok(!mcp.reg.servers.has("clock"));
   } finally { await s.close(); }
 });
+
+test("asking for the tool list again and again tries a server that fails to connect at most once a minute", async (t) => {
+  let tries = 0;
+  function Failing() { this.servers = new Map(); this.add = async () => { tries++; return { ok: false, error: "exited" }; }; }
+  const mcp = new McpHub({ dir: tmp(), load: () => CONFIG, Registry: Failing });
+  let now = Date.now();
+  t.mock.method(Date, "now", () => now);
+  await mcp.setEnabled("clock", true);
+  assert.strictEqual(tries, 1);
+  for (let i = 0; i < 5; i++) assert.deepStrictEqual(await mcp.phoneTools(), []);
+  assert.strictEqual(tries, 1, "no new spawn inside the minute");
+  now += 61000;
+  await mcp.phoneTools();
+  await mcp.phoneTools();
+  assert.strictEqual(tries, 2, "one try after the minute");
+});
