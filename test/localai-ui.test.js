@@ -94,6 +94,11 @@ async function reachChat(page) {
 }
 // A model answer that asks for one tool call (the format phoneagent.js reads).
 const toolCall = (name, args) => `<tool_call>\n${JSON.stringify({ name, arguments: args })}\n</tool_call>`;
+// Opens the chat's options sheet and taps one of its items.
+async function option(page, name) {
+  await page.getByRole("button", { name: "Chat options" }).click();
+  await page.getByRole("dialog", { name: "Chat options" }).getByRole("button", { name }).click();
+}
 const APPROVE = (page) => page.getByRole("group", { name: "Arc Pocket asks to use a tool" });
 
 test("Local AI: the notice says what it costs, and nothing downloads until the box is ticked", { skip }, async (t) => {
@@ -147,7 +152,7 @@ test("Local AI: Models and storage deletes one model, or everything at once", { 
   const page = await open(t);
   await page.getByLabel(/I understand/).check();
   await page.getByRole("button", { name: /^Download Qwen3 1\.7B/ }).click();
-  await page.getByRole("button", { name: "Models and storage" }).click();
+  await option(page, "Models and storage");
   await page.getByText("Qwen3 1.7B, 1.8 GB on this phone").waitFor();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByText("Qwen3 1.7B, 1.8 GB, not downloaded").waitFor();   // stays on the list: you see it is gone
@@ -157,7 +162,7 @@ test("Local AI: Models and storage deletes one model, or everything at once", { 
   await page.getByLabel(/I understand/).check();   // a blank test page cannot store it; the app remembers it
   await page.getByRole("button", { name: /^Download Qwen3 1\.7B/ }).click();
   await page.getByPlaceholder("Message").waitFor();
-  await page.getByRole("button", { name: "Models and storage" }).click();
+  await option(page, "Models and storage");
   await page.getByRole("button", { name: "Delete all Local AI data" }).click();
   await page.getByText("Qwen3 0.6B, 0.64 GB, not downloaded").waitFor();
   assert.strictEqual(await page.getByRole("button", { name: "Delete all Local AI data" }).count(), 0);
@@ -172,7 +177,7 @@ test("Local AI: a Delete that fails shows the error and keeps the list current",
   const page = await open(t);
   await page.getByLabel(/I understand/).check();
   await page.getByRole("button", { name: /^Download Qwen3 1\.7B/ }).click();
-  await page.getByRole("button", { name: "Models and storage" }).click();
+  await option(page, "Models and storage");
   await page.evaluate(() => { window.__native.remove = async () => { throw new Error("The file is in use."); }; });
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "The file is in use." }).waitFor();
@@ -253,13 +258,15 @@ test("Local AI: a long chat is trimmed to the model's memory before it is sent, 
 test("Local AI: without the agent build there is no Files button", { skip }, async (t) => {
   const page = await open(t);
   await reachChat(page);
+  await page.getByRole("button", { name: "Chat options" }).click();
+  await page.getByRole("dialog", { name: "Chat options" }).getByRole("button", { name: "Models and storage" }).waitFor();
   assert.strictEqual(await page.getByRole("button", { name: /^Files/ }).count(), 0);
 });
 
 test("Local AI: sharing a folder needs the tick box, and Stop sharing forgets it", { skip }, async (t) => {
   const page = await open(t, { files: true });
   await reachChat(page);
-  await page.getByRole("button", { name: "Files: share a folder" }).click();
+  await option(page, "Files: share a folder");
   await page.getByText("Files Arc Pocket may use").waitFor();
   await page.getByText("It can list and read every file").waitFor();
   await page.getByText("A replaced file cannot be brought back").waitFor();
@@ -271,8 +278,7 @@ test("Local AI: sharing a folder needs the tick box, and Stop sharing forgets it
   await page.locator(".local-row", { hasText: "Notes" }).getByRole("button", { name: "Stop sharing" }).waitFor();
   assert.ok((await calls(page)).some((c) => c[0] === "pickFolder"), "pickFolder was called");
   await page.getByRole("button", { name: "Back to the chat" }).click();
-  await page.getByRole("button", { name: "Files: 1 shared" }).waitFor();
-  await page.getByRole("button", { name: "Files: 1 shared" }).click();
+  await option(page, "Files: 1 shared");
   await page.getByRole("button", { name: "Stop sharing" }).click();
   await page.getByText("No folder is shared.").waitFor();
   assert.deepStrictEqual((await calls(page)).filter((c) => c[0] === "forget"), [["forget", "tree-1"]]);
@@ -533,4 +539,61 @@ test("Local AI: the allowed computer tool runs, even if the tool list changed wh
   await page.getByRole("button", { name: "Allow", exact: true }).click();
   await page.locator(".local-msg.assistant", { hasText: "Paris is the capital." }).waitFor();
   assert.deepStrictEqual((await calls(page)).filter((c) => c[0] === "mcp"), [["mcp", "time", "get_current_time", { timezone: "UTC" }]]);
+});
+
+test("Local AI: an empty chat offers suggestions, and a tap sends one", { skip }, async (t) => {
+  const page = await open(t);
+  await reachChat(page);
+  await page.getByText("Ask Arc Pocket").waitFor();
+  const chips = await page.locator(".local-chip").allInnerTexts();
+  assert.deepStrictEqual(chips, ["What can you do?", "Help me write a short message", "Explain something simply"], "no tool suggestions without tools");
+  await page.getByRole("button", { name: "What can you do?" }).click();
+  await page.locator(".local-msg.assistant", { hasText: "Paris is the capital." }).waitFor();
+  assert.strictEqual(await page.locator(".local-msg.user").innerText(), "What can you do?");
+  assert.strictEqual((await calls(page)).filter((c) => c[0] === "chat")[0][4], "What can you do?", "the suggestion is what the model gets");
+  assert.strictEqual(await page.locator(".local-chip").count(), 0, "the suggestions go once the chat has started");
+  await page.getByRole("button", { name: "New chat" }).click();
+  await page.getByText("Ask Arc Pocket").waitFor();
+});
+
+test("Local AI: suggestions for files and computer tools show only when Arc Pocket can use them", { skip }, async (t) => {
+  const page = await open(t, { files: true, folders: [{ id: "tree-1", name: "Notes" }], mcp: [{ server: "time", name: "get_current_time", description: "Current time", inputSchema: { type: "object" } }] });
+  await reachChat(page);
+  const chips = await page.locator(".local-chip").allInnerTexts();
+  assert.deepStrictEqual(chips, ["What can you do?", "List the files in my shared folder", "What time is it on my computer?", "Help me write a short message"]);
+});
+
+test("Local AI: the header names the model, and the answer shows a writing indicator until text arrives", { skip }, async (t) => {
+  const page = await open(t);
+  await reachChat(page);
+  const sub = await page.locator(".local-bar-sub").innerText();
+  assert.match(sub, /^Qwen3 1\.7B, on this device/);
+  await page.evaluate(() => { window.__native.chat = () => new Promise((r) => { window.__go = r; }); });
+  await page.getByPlaceholder("Message").fill("hello");
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByLabel("Arc Pocket is writing").waitFor();
+  await page.getByRole("button", { name: "Stop" }).waitFor();
+  await page.evaluate(() => window.__go({ tokens: 0, ms: 1 }));
+  await page.getByRole("button", { name: "Send" }).waitFor();
+  assert.strictEqual(await page.getByLabel("Arc Pocket is writing").count(), 0);
+});
+
+test("Local AI: answers are drawn as markdown, and markup in them stays text", { skip }, async (t) => {
+  const page = await open(t);
+  await reachChat(page);
+  const say = "**Bold** and `code`\n\n- one\n- two\n\n```\n<b>x</b>\n```\n<script>window.pwned=1</script><img src=x onerror=window.pwned=1>";
+  await page.evaluate((s) => window.__chatResults.push({ say: s }), say);
+  await page.getByPlaceholder("Message").fill("<img src=x onerror=window.pwned=2> **not bold**");
+  await page.getByRole("button", { name: "Send" }).click();
+  const a = page.locator(".local-msg.assistant");
+  await a.filter({ hasText: "onerror" }).waitFor();
+  assert.strictEqual(await a.locator("strong").innerText(), "Bold");
+  assert.strictEqual(await a.locator("p code").innerText(), "code");
+  assert.deepStrictEqual(await a.locator("li").allInnerTexts(), ["one", "two"]);
+  assert.strictEqual(await a.locator("pre code").innerText(), "<b>x</b>");
+  assert.ok((await a.innerText()).includes("<script>window.pwned=1</script><img src=x onerror=window.pwned=1>"));
+  const user = page.locator(".local-msg.user");
+  assert.strictEqual(await user.innerText(), "<img src=x onerror=window.pwned=2> **not bold**", "the person's text is shown exactly as typed");
+  assert.strictEqual(await page.locator("#root img:not(.panda), #root script, #root b").count(), 0, "no element came from the text");
+  assert.strictEqual(await page.evaluate(() => window.pwned), undefined);
 });

@@ -1080,15 +1080,47 @@ fieldset.muted-off { opacity: 0.5; }
 .local-model, .local-agree { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 20px; }
 .local-model input, .local-agree input { flex: none; margin-top: 3px; width: 18px; height: 18px; }
 .local-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; line-height: 20px; min-height: 48px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
-.local-chat { display: flex; flex-direction: column; gap: 8px; }
-.local-log { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; }
-.local-msg { margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 15px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.local-msg.user { align-self: flex-end; max-width: 85%; background: var(--accent-soft, var(--surface-2)); }
-.local-msg.assistant { align-self: flex-start; max-width: 100%; background: var(--surface-2); }
-.local-msg.tool { align-self: flex-start; max-width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: 14px; line-height: 20px; }
+/* The chat fills the screen: header, messages that scroll, then the composer pinned at the bottom. */
+.view:has(> .local-root.is-chat), .view-login:has(.local-root.is-chat) { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.view-login:has(.local-root.is-chat) { padding-top: 0; justify-content: stretch; }
+.login-card:has(> .local-root.is-chat) { flex: 1; min-height: 0; display: flex; flex-direction: column; max-width: none; padding: 0; }
+.login-card:has(> .local-root.is-chat) > .btn-row { flex: none; margin: 0; padding: 4px 0 8px; }
+.local-root.is-chat { flex: 1; min-height: 0; padding: 0; gap: 0; }
+.local-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.local-bar { flex: none; display: flex; align-items: center; gap: 4px; min-height: 60px; padding: 8px var(--pr) 8px var(--pl); border-bottom: 1px solid var(--border); }
+.login-card .local-bar, .login-card .local-log, .login-card .local-compose, .login-card .local-foot { padding-left: 0; padding-right: 0; }
+.local-bar-text { flex: 1; min-width: 0; }
+.local-bar-title { margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; }
+.local-bar-sub { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: var(--muted); }
+.local-bar-sub::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ok-fill); }
+.local-icon-btn { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--foreground); cursor: pointer; }
+.local-icon-btn:active { background: var(--surface-2); }
+.local-chat > .banner { flex: none; margin: 8px var(--pr) 0 var(--pl); }
+.local-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; padding: 16px var(--pr) 12px var(--pl); }
+.local-msg { margin: 0; overflow-wrap: anywhere; }
+.local-msg.user { max-width: 85%; }
+.local-msg.assistant { align-self: flex-start; max-width: 92%; }
+.local-msg.tool { align-self: flex-start; display: flex; align-items: center; gap: 8px; max-width: 100%; min-height: 36px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 14px; line-height: 20px; }
+.local-msg.tool .ico { flex: none; width: 18px; height: 18px; }
+.local-note { align-self: center; max-width: 100%; padding: 6px 12px; border-radius: 12px; background: var(--surface-2); color: var(--muted); font-size: 12px; line-height: 16px; text-align: center; }
+.local-empty { margin: auto 0; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 0; text-align: center; }
+.local-empty .panda { width: 96px; height: auto; }
+.local-empty-title { font-size: 20px; line-height: 28px; font-weight: 600; }
+.local-empty .dev-meta { max-width: 320px; }
+.local-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
+.local-chip { min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--foreground); font: inherit; font-size: 14px; line-height: 20px; cursor: pointer; }
+.local-chip:active { background: var(--surface-2); }
+.local-compose { flex: none; display: flex; align-items: flex-end; gap: 8px; padding: 8px var(--pr) 4px var(--pl); background: var(--background); border-top: 1px solid var(--border); }
+.local-input { flex: 1; min-width: 0; min-height: 48px; max-height: 132px; padding: 12px 18px; border-radius: 24px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--foreground); font: inherit; font-size: 16px; line-height: 22px; }
+.local-input:disabled { opacity: 0.6; }
+.local-send-btn { flex: none; display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%; background: var(--accent-bright); color: var(--on-accent); cursor: pointer; transition: transform 120ms var(--ease); }
+.local-send-btn:active { transform: scale(0.94); }
+.local-send-btn.is-stop { background: var(--foreground); color: var(--background); }
+.local-foot { flex: none; padding: 0 var(--pr) 8px var(--pl); background: var(--background); color: var(--muted-2); font-size: 12px; line-height: 16px; text-align: center; }
+.local-chat > .local-approve { flex: none; margin: 8px var(--pr) 8px var(--pl); max-height: 60%; overflow-y: auto; border-color: var(--accent-tonal-line); }
+.local-menu { display: flex; flex-direction: column; margin: 12px 0; }
+.local-sheet .sheet > .dev-meta { margin-bottom: 8px; }
 .local-approve { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; }
 .local-approve .btn { flex: 1; margin: 0; }
 .local-pre { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-family: var(--mono); font-size: 13px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 40vh; overflow: auto; }
 .local-send { display: flex; gap: 8px; align-items: flex-end; }
-.local-input { flex: 1; min-width: 0; resize: vertical; font: inherit; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--foreground); }
-.local-tools { display: flex; gap: 8px; flex-wrap: wrap; }
