@@ -366,7 +366,6 @@ test("a call that rang while the last one was being saved still rings", { skip }
   await page.route("**/end", async (route) => { const res = await route.fetch(); await gate; await route.fulfill({ response: res }); });
   await page.click("#call-hangup");
   await until(() => calls.current() === null, "hanging up did not reach the hub");
-  console.log("CALLID", await page.evaluate(() => JSON.stringify(call)));
   calls.start({ say: "Second.", from: "Aider" });
   await new Promise((r) => setTimeout(r, 300));
   release();
