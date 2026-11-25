@@ -196,15 +196,16 @@ public class CallPlugin extends Plugin {
             main.postDelayed(ringStop, seconds * 1000L);
         });
         // The notification is how a call reaches someone with the app in the background: a tap opens it.
+        NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationManager nm = ctx.getSystemService(NotificationManager.class);
             if (nm.getNotificationChannel(CHANNEL) == null) {
                 NotificationChannel ch = new NotificationChannel(CHANNEL, "Calls from agents", NotificationManager.IMPORTANCE_HIGH);
                 ch.setSound(null, null); // the ringtone above is the sound
                 nm.createNotificationChannel(ch);
             }
         }
-        Intent open = new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        Intent open = new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(MainActivity.FOR_CALL, true); // turns the screen on for this call; the app is never shown over the lock screen
         PendingIntent tap = PendingIntent.getActivity(ctx, 1, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -216,6 +217,8 @@ public class CallPlugin extends Plugin {
             .setAutoCancel(true)
             .setTimeoutAfter(seconds * 1000L)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE);
+        // Rings over the lock screen. Android 14+ lets the person turn this off: then the heads-up notification above.
+        if (Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()) b.setFullScreenIntent(tap, true);
         try { NotificationManagerCompat.from(ctx).notify(NOTE_ID, b.build()); } catch (SecurityException e) { /* notifications off: it still rings */ }
         call.resolve();
     }

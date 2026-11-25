@@ -130,8 +130,9 @@ function check(s, { mode, pkg = "net.arcflare.app" }) {
   // REQUEST_INSTALL_PACKAGES: the app installs its own updates from the hub (AppUpdaterPlugin); Android still
   // confirms each install and refuses any APK not signed with this app's key.
   // FOREGROUND_SERVICE(_MICROPHONE): CallService keeps an answered call's microphone alive when the app leaves the screen.
+  // USE_FULL_SCREEN_INTENT: a call from an agent rings over the lock screen (CallPlugin.ring).
   const ALLOWED = ["android.permission.INTERNET", "android.permission.REQUEST_INSTALL_PACKAGES", "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO",
-    "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_MICROPHONE", `${pkg}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`];
+    "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_MICROPHONE", "android.permission.USE_FULL_SCREEN_INTENT", `${pkg}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`];
   const extra = s.permissions.filter((p) => !ALLOWED.includes(p));
   ok(s.permissions.includes("android.permission.INTERNET"), "the INTERNET permission is requested", "");
   ok(extra.length === 0, "no other permissions are requested", extra.join(", "));

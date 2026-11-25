@@ -61,6 +61,9 @@
          a "Call in progress" notification for as long as it runs. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- A call from an agent rings over the lock screen (CallPlugin.ring). Android 14+ may turn it off: it then rings
+         as a normal heads-up notification. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- Android 11+ hides other apps unless asked: the phone's speech recogniser and text-to-speech voice (CallPlugin). -->
     <queries>

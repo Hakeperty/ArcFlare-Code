@@ -87,7 +87,11 @@ are uploaded in 36 KB pieces when the call ends, saved on the computer, and dele
 foreground service of the microphone type, not exported) shows a "Call in progress" notification so Android lets the
 call keep the microphone when you switch apps or the screen goes off; that needs `FOREGROUND_SERVICE` and
 `FOREGROUND_SERVICE_MICROPHONE`. Android 14+ refuses to start it while the app is in the background, so it starts
-only when the call is answered with the app on screen, and the call goes on without it if Android says no. Mute and the hours under Tools stop calls on the computer's
+only when the call is answered with the app on screen, and the call goes on without it if Android says no. A call
+rings on the lock screen and turns the screen on (a full-screen notification, `USE_FULL_SCREEN_INTENT`). The app is
+never shown over the lock screen, because it can run commands on your computer: you unlock the phone to answer.
+Android 14+ can switch full-screen notifications off for the app (Settings, Apps, ArcFlare); the call then rings as a
+normal notification at the top of the screen. Mute and the hours under Tools stop calls on the computer's
 side. **None of this has run on a phone yet.**
 
 ## Layout
@@ -335,7 +339,7 @@ site.
   `allowFileAccess`/`allowContentAccess` off; `importantForAutofill=noExcludeDescendants` on the WebView so the system does
   not offer to save the hub password; only the launcher activity is exported, the template FileProvider is removed,
   the permissions are INTERNET, REQUEST_INSTALL_PACKAGES (its own updates), POST_NOTIFICATIONS, and for calls from
-  agents RECORD_AUDIO, FOREGROUND_SERVICE and FOREGROUND_SERVICE_MICROPHONE (each explained in the manifest); the intent filter is `arcflare://pair` only (no https app links); `FLAG_SECURE`
+  agents RECORD_AUDIO, FOREGROUND_SERVICE, FOREGROUND_SERVICE_MICROPHONE and USE_FULL_SCREEN_INTENT (each explained in the manifest); the intent filter is `arcflare://pair` only (no https app links); `FLAG_SECURE`
   (no screenshots, blank recents thumbnail); system CAs only; minSdk 26; minimum WebView 133.
 - **Cleartext.** `network_security_config.xml` permits cleartext for **every host**. It cannot be limited to private addresses
   (the config matches host names, not CIDR ranges, and the hub's address is whatever the router handed out). The exposure

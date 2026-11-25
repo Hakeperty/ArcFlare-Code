@@ -1,6 +1,8 @@
 package net.arcflare.app;
 
+import android.content.Intent;
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
@@ -18,8 +20,12 @@ import java.util.HashMap;
 
 public class MainActivity extends BridgeActivity {
 
+    /** Set by CallPlugin.ring() on the intent of the call notification. */
+    static final String FOR_CALL = "net.arcflare.app.FOR_CALL";
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        if (savedInstanceState == null) showForCall(getIntent());
         // No screenshots, no screen recording, blank thumbnail in the recents screen.
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
         // Updates of this app, downloaded from the signed-in hub (see AppUpdaterPlugin).
@@ -42,6 +48,26 @@ public class MainActivity extends BridgeActivity {
         webView.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         // Navigation guard (see GuardedClient and NavPolicy): the WebView only ever shows https://localhost.
         bridge.setWebViewClient(new GuardedClient(bridge));
+    }
+
+    @Override
+    public void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        showForCall(intent);
+    }
+
+    // A ringing call turns the screen on, so the full-screen ring notification is seen; nothing else ever does. The app
+    // itself is never shown over the lock screen: it can run commands on the owner's computer, so
+    // it opens only after the phone is unlocked.
+    private void showForCall(Intent intent) {
+        if (Build.VERSION.SDK_INT < 27 || intent == null || !intent.getBooleanExtra(FOR_CALL, false)) return;
+        setTurnScreenOn(true);
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        if (Build.VERSION.SDK_INT >= 27) setTurnScreenOn(false);
     }
 
     /**

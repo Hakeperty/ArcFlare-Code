@@ -115,10 +115,12 @@ test("manifest: allowBackup=false, rules files, networkSecurityConfig, no debugg
   assert.match(m, /<data android:scheme="arcflare" android:host="pair" \/>/);
   assert.doesNotMatch(m, /android:autoVerify|android:scheme="https?"/);
   // INTERNET, REQUEST_INSTALL_PACKAGES (AppUpdaterPlugin), POST_NOTIFICATIONS (NotifierPlugin), RECORD_AUDIO (CallPlugin),
-  // FOREGROUND_SERVICE and FOREGROUND_SERVICE_MICROPHONE (CallService). Nothing else.
+  // FOREGROUND_SERVICE and FOREGROUND_SERVICE_MICROPHONE (CallService), USE_FULL_SCREEN_INTENT (ringing over the lock
+  // screen). Nothing else.
   assert.deepEqual([...m.matchAll(/<uses-permission android:name="([^"]+)"/g)].map((x) => x[1]).sort(),
     ["android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_MICROPHONE", "android.permission.INTERNET",
-      "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO", "android.permission.REQUEST_INSTALL_PACKAGES"]);
+      "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO", "android.permission.REQUEST_INSTALL_PACKAGES",
+      "android.permission.USE_FULL_SCREEN_INTENT"]);
 });
 
 test("backup rule files exclude every domain", () => {
@@ -187,6 +189,13 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.match(cs, /return START_NOT_STICKY;/);
   const cp = read(path.join(dir, "CallPlugin.java"));
   assert.match(cp, /isAtLeast\(Lifecycle\.State\.STARTED\)\) \{\s*try \{ getContext\(\)\.startService\(new Intent\(getContext\(\), CallService\.class\)\); \} catch \(RuntimeException e\)/);
+  // Ringing over the lock screen: only when Android 14+ allows it. The screen turns on for a call's intent only, and the
+  // app is never shown over the lock screen: it can run commands on the owner's computer.
+  assert.match(cp, /if \(Build\.VERSION\.SDK_INT < 34 \|\| nm\.canUseFullScreenIntent\(\)\) b\.setFullScreenIntent\(tap, true\);/);
+  assert.match(cp, /\.putExtra\(MainActivity\.FOR_CALL, true\)/);
+  assert.match(main, /if \(Build\.VERSION\.SDK_INT < 27 \|\| intent == null \|\| !intent\.getBooleanExtra\(FOR_CALL, false\)\) return;\s*setTurnScreenOn\(true\);/);
+  assert.match(main, /public void onStop\(\) \{\s*super\.onStop\(\);\s*if \(Build\.VERSION\.SDK_INT >= 27\) setTurnScreenOn\(false\);/);
+  assert.equal([...main.matchAll(/setShowWhenLocked/g)].length, 0, "the app must never show over the lock screen");
   assert.match(cp, /private void stopRecording\(\) \{\s*running = false;\s*getContext\(\)\.stopService\(new Intent\(getContext\(\), CallService\.class\)\);/);
   // The updater: only ever this app, a private receiver, an explicit intent, size and hash checked before
   // commit, and no file sharing (no FileProvider, no shared storage, no ACTION_VIEW of a file).
@@ -288,6 +297,13 @@ test("native source lint: no Android call that needs a permission the manifest d
     for (const f of fs.readdirSync(dir)) if (f.endsWith(".java")) files.push(path.join(dir, f));
   }
   assert.ok(files.length >= 12, "the app's Java was found");
+  // The app can run commands on the owner's computer, so nothing may show it over a locked phone: not the Activity
+  // methods, not the window flags, not a manifest attribute, not a keyguard dismissal, in any source set.
+  const OVER_LOCK = /setShowWhenLocked|setInheritShowWhenLocked|FLAG_SHOW_WHEN_LOCKED|FLAG_DISMISS_KEYGUARD|showWhenLocked|requestDismissKeyguard/;
+  const manifests = [];
+  for (const set of fs.readdirSync(src)) { const m = path.join(src, set, "AndroidManifest.xml"); if (fs.existsSync(m)) manifests.push(m); }
+  assert.ok(manifests.length >= 1, "the manifests were found");
+  for (const f of [...files, ...manifests]) assert.doesNotMatch(read(f), OVER_LOCK, `${path.basename(f)} must not show the app over the lock screen`);
   for (const [permission, api] of Object.entries(NEEDS)) {
     if (manifest.includes("android.permission." + permission + '"')) continue;
     for (const f of files) assert.doesNotMatch(strip(read(f)), api, path.basename(f) + " uses an API that needs " + permission);
