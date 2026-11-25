@@ -17,7 +17,7 @@ test("a call: ring, answer, reply, the agent's next line, hang up, then both rec
   const events = [];
   box.on("event", (e) => events.push(e));
   const { id } = box.start({ say: "The build failed. Retry?", from: "Claude Code" });
-  assert.deepStrictEqual(events[0], { type: "call", id, from: "Claude Code", say: "The build failed. Retry?", line: 0 });
+  assert.deepStrictEqual(events[0], { type: "call", id, from: "Claude Code", say: "The build failed. Retry?", kind: "check", line: 0 });
   assert.throws(() => box.start({ say: "again" }), /already in a call/);
   assert.throws(() => box.reply(id, "yes"), /The call is ringing/);
 
@@ -145,8 +145,9 @@ test("the computer speaks the agent's lines: the phone fetches each in parts, or
   const events = [];
   box.on("event", (e) => events.push(e));
   const { id } = box.start({ say: "Hello there" });
-  assert.strictEqual(events[0].line, 0);
+  assert.strictEqual(events.length, 0, "the phone rings once line 0 is made");
   const p0 = await box.line(id, 0, 0, 1000);
+  assert.strictEqual(events[0].line, 0);
   assert.deepStrictEqual([p0.part, p0.parts, Buffer.from(p0.data, "base64").length], [0, 2, 384 * 1024]);
   assert.strictEqual(Buffer.from((await box.line(id, 0, 1, 1000)).data, "base64").length, 16 * 1024);
   await assert.rejects(box.line(id, 0, 2, 1000), /No such part/);
@@ -194,6 +195,7 @@ test("past calls: newest first, with what was said and the audio that can be pla
 
   t += 60_000;
   const id = box.start({ say: "Deploy now?", from: "Claude Code" }).id;
+  await box.line(id, 0, 0, 1000);                // it rings once its line is made
   box.answer(id);
   box.reply(id, "Yes");
   box.say(id, { say: "Deploying. Bye.", hangUp: true });
@@ -286,7 +288,7 @@ test("a scheduled call rings one-way: the phone is told to hang up after the lin
   assert.deepStrictEqual([cur.status, cur.from, cur.oneWay, cur.turns], ["ringing", "Codex", true, [{ who: "agent", text: "The nightly run passed." }]]);
   assert.notStrictEqual(cur.id, s.id);
   assert.ok(!fs.existsSync(s.folder), "the scheduled entry became the call");
-  assert.deepStrictEqual(events[0], { type: "call", id: cur.id, from: "Codex", say: "The nightly run passed.", line: 0, hangUp: true });
+  assert.deepStrictEqual(events[0], { type: "call", id: cur.id, from: "Codex", say: "The nightly run passed.", kind: "check", line: 0, hangUp: true });
 
   box.answer(cur.id);
   const done = box.reply(cur.id, "Thanks.", "text");
@@ -317,4 +319,13 @@ test("a scheduled call that may not ring then (muted, outside the user's hours) 
   assert.deepStrictEqual(events, [{ type: "call_end", id: s.id, why }]);
   const h = box.history();
   assert.deepStrictEqual([h.length, h[0].id, h[0].status, h[0].why, h[0].turns[0].text], [1, s.id, "missed", why, "The nightly run passed."]);
+});
+
+test("an emergency call rings through mute and hours with its own kind; a check call does not; any other kind is refused", () => {
+  const box = new CallBox({ dir: tmp(), allows: () => ({ ring: false, why: "calls are muted" }) });
+  assert.throws(() => box.start({ say: "routine" }), /muted/);
+  const { id } = box.start({ say: "The database is down.", kind: "emergency" });
+  assert.strictEqual(box.current().kind, "emergency");
+  box.end(id);
+  assert.throws(() => box.start({ say: "x", kind: "urgent" }), /check or emergency/);
 });
