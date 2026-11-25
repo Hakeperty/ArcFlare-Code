@@ -225,6 +225,30 @@ for (const what of ["model", "unqueue", "wake"]) {
   });
 }
 
+// A send that fails after you left the agent and came back to it: the message is put back in its composer.
+test("a send that fails after leaving and reopening the same agent puts the message back", { skip }, async (t) => {
+  let a, b;
+  const { page } = await phone(t, { setup: ({ supervisor, dir }) => {
+    a = supervisor.create({ name: "first", cwd: dir }).id;
+    b = supervisor.create({ name: "second", cwd: dir }).id;
+  } });
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await page.route(`**/api/agents/${a}/wake`, async (route) => { await gate; await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "it failed" }) }); });
+  for (const id of [a, b, a]) {
+    await page.evaluate((x) => { location.hash = "#/agent/" + x; }, id);
+    await page.waitForFunction((x) => state.agent && state.agent.id === x && state.agent.cwd !== undefined, id);
+    if (id === a && !(await page.evaluate(() => window.__sent))) {
+      await page.fill("#compose-text", "for the first agent");
+      await page.click("#compose-send");
+      await page.evaluate(() => { window.__sent = true; });
+    }
+  }
+  release();
+  await page.locator("#agent-error", { hasText: "it failed" }).waitFor();
+  assert.strictEqual(await page.inputValue("#compose-text"), "for the first agent");
+});
+
 // A chat message that fails after you opened another chat: the other chat's composer and error line stay as they were.
 test("a chat send that fails after opening another chat leaves that chat as it was", { skip }, async (t) => {
   const { page, chats } = await phone(t);
