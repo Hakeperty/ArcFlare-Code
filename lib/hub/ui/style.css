@@ -1084,7 +1084,7 @@ fieldset.muted-off { opacity: 0.5; }
 
 /* The chat fills the screen: header, messages that scroll, then the composer pinned at the bottom. */
 .view:has(> .local-root.is-chat), .view-login:has(.local-root.is-chat) { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
-.view-login:has(.local-root.is-chat) { padding-top: 0; justify-content: stretch; }
+.view-login:has(.local-root.is-chat) { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); justify-content: stretch; }
 .login-card:has(> .local-root.is-chat) { flex: 1; min-height: 0; display: flex; flex-direction: column; max-width: none; padding: 0; }
 .login-card:has(> .local-root.is-chat) > .btn-row { flex: none; margin: 0; padding: 4px 0 8px; }
 .local-root.is-chat { flex: 1; min-height: 0; padding: 0; gap: 0; }
@@ -1093,8 +1093,8 @@ fieldset.muted-off { opacity: 0.5; }
 .login-card .local-bar, .login-card .local-log, .login-card .local-compose, .login-card .local-foot { padding-left: 0; padding-right: 0; }
 .local-bar-text { flex: 1; min-width: 0; }
 .local-bar-title { margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; }
-.local-bar-sub { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: var(--muted); }
-.local-bar-sub::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ok-fill); }
+.local-bar-sub { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; line-height: 16px; color: var(--muted); }
+.local-bar-sub::before { content: ""; flex: none; width: 8px; height: 8px; margin-top: 4px; border-radius: 50%; background: var(--ok-fill); }
 .local-icon-btn { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--foreground); cursor: pointer; }
 .local-icon-btn:active { background: var(--surface-2); }
 .local-chat > .banner { flex: none; margin: 8px var(--pr) 0 var(--pl); }
@@ -1107,6 +1107,7 @@ fieldset.muted-off { opacity: 0.5; }
 .local-note { align-self: center; max-width: 100%; padding: 6px 12px; border-radius: 12px; background: var(--surface-2); color: var(--muted); font-size: 12px; line-height: 16px; text-align: center; }
 .local-empty { margin: auto 0; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 0; text-align: center; }
 .local-empty .panda { width: 96px; height: auto; }
+@media (max-height: 700px) { .local-empty .panda { display: none; } }
 .local-empty-title { font-size: 20px; line-height: 28px; font-weight: 600; }
 .local-empty .dev-meta { max-width: 320px; }
 .local-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
