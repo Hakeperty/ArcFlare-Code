@@ -371,6 +371,19 @@ test("after the event stream drops, the call screen catches up with the hub", { 
   assert.strictEqual(calls.history()[0].status, "ended");
 });
 
+// The call on screen ended and another rang, both while the stream was down: the new call rings once the stream is back.
+test("a call that rang while the stream was down and the last call ended still rings", { skip }, async (t) => {
+  const { page, calls } = await phone(t);
+  const drop = () => page.evaluate(() => { const s = state.streams.dash; s.es.close(); s.es.onerror(); });
+  const { id } = calls.start({ say: "First.", from: "Codex" });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
+  await drop();
+  calls.end(id);
+  calls.start({ say: "Second.", from: "Aider" });
+  await page.locator("#call-title", { hasText: "Aider" }).waitFor({ timeout: 10000 });
+  await page.locator("#call-ringing").waitFor({ state: "visible" });
+});
+
 // A call that rings while the last one is still being saved on the computer rings on the phone once that is done.
 test("a call that rang while the last one was being saved still rings", { skip }, async (t) => {
   const { page, calls } = await phone(t);
