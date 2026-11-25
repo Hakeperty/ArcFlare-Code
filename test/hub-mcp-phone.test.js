@@ -175,3 +175,36 @@ test("asking for the tool list again and again tries a server that fails to conn
   await mcp.phoneTools();
   assert.strictEqual(tries, 2, "one try after the minute");
 });
+
+test("tool names reach the phone clean and capped, and a call by the clean name runs the real tool", async () => {
+  const long = "t".repeat(100);
+  const ran = [];
+  function Odd() {
+    this.servers = new Map();
+    this.add = async (name) => {
+      this.servers.set(name, {
+        tools: [
+          { name: "do‮it\u0007", description: "Reversed‮ text​." },
+          { name: long },
+          { name: "a​b" }, { name: "ab" },                                                      // the same once clean: neither
+          { name: "zone", inputSchema: { properties: { "ci‮ty": { type: "string" } } } },      // a parameter shown differently
+        ],
+        async call(tool) { ran.push(tool); return { content: [{ type: "text", text: "ok" }] }; },
+        stop() {},
+      });
+      return { ok: true };
+    };
+  }
+  const mcp = new McpHub({ dir: tmp(), load: () => CONFIG, Registry: Odd });
+  await mcp.setEnabled("clock", true);
+  const tools = await mcp.phoneTools();
+  assert.deepStrictEqual(tools.map((x) => x.name), ["doit", "t".repeat(80)]);
+  assert.strictEqual(tools[0].description, "Reversed text.");
+  await mcp.callTool("clock", "doit", {});
+  await mcp.callTool("clock", "t".repeat(80), {});
+  assert.deepStrictEqual(ran, ["do‮it\u0007", long], "the real names run");
+  for (const bad of ["do‮it\u0007", "ab", "a​b", "zone", long]) {
+    await assert.rejects(mcp.callTool("clock", bad, {}), (e) => e.status === 404, JSON.stringify(bad));
+  }
+  assert.strictEqual(ran.length, 2);
+});
