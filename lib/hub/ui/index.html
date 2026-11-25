@@ -234,6 +234,7 @@
         </div>
         <p class="lead">MCP servers on the computer. Switch one on and agents you start get its tools; every call still asks you first.</p>
         <p id="tools-note" class="dev-meta sub tools-note" hidden></p>
+        <button id="mcp-add" class="btn outline block" type="button" hidden>Add a tool server</button>
         <ul id="tools-skeleton" class="stack" aria-hidden="true" hidden>
           <li class="card skel"><span class="bar w60"></span><span class="bar w90"></span></li>
           <li class="card skel"><span class="bar w40"></span><span class="bar w90"></span></li>
@@ -485,6 +486,20 @@
         <button id="confirm-cancel" class="btn outline block lg" type="button">Cancel</button>
         <button id="confirm-ok" class="btn danger-fill block lg" type="button">Sign out</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Add an MCP server from the store's catalogue (owner accounts). The command shown is the one the computer runs. -->
+  <div id="sheet-mcp-add" class="sheet-wrap" hidden>
+    <div class="scrim" data-dismiss="sheet-mcp-add"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mcp-add-title" aria-describedby="mcp-add-warn" tabindex="-1">
+      <span class="grabber" aria-hidden="true"></span>
+      <h2 id="mcp-add-title" class="sheet-title">Add a tool server</h2>
+      <p id="mcp-add-warn" class="hint">Adding one puts its command on your computer. The command runs there, as you, when you switch the server on; it may download the program first. Every tool call still asks you first.</p>
+      <p id="mcp-add-error" class="banner error" role="alert" hidden></p>
+      <p id="mcp-add-result" class="hint mcp-result" role="status" hidden></p>
+      <ul id="mcp-cat" class="stack mcp-cat"></ul>
+      <button id="mcp-add-done" class="btn outline block lg" type="button">Done</button>
     </div>
   </div>
 
