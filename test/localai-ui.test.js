@@ -76,7 +76,7 @@ async function open(t, { scheme = "light", files = false, folders = [], mcp = nu
     await page.evaluate((list) => {
       window.__mcp = {
         tools: async () => list,
-        call: async (server, tool, args) => { window.__calls.push(["mcp", server, tool, args]); return { text: "2026-11-25T21:04:00+09:00", isError: false }; },
+        call: async (server, tool, args) => { window.__calls.push(["mcp", server, tool, args]); return window.__mcpResult || { text: "2026-11-25T21:04:00+09:00", isError: false }; },
       };
     }, mcp);
   }
@@ -507,4 +507,16 @@ test("Local AI: Do not allow means the computer tool does not run, and calls bey
   const last = (await calls(page)).filter((c) => c[0] === "chat").at(-1);
   assert.strictEqual(last[1], "system,user,assistant," + Array(max + 1).fill("user").join(","), "one result per call");
   assert.ok(last[4].includes("Error: not run"), "the extra call was not run, nor asked about");
+});
+
+test("Local AI: a computer tool that reports a failure is noted as failed in the chat", { skip }, async (t) => {
+  const page = await open(t, { mcp: TIME });
+  await reachChat(page);
+  await page.evaluate((items) => { window.__mcpResult = { text: "unknown timezone", isError: true }; window.__chatResults.push(...items); }, [
+    { say: toolCall("get_current_time", { timezone: "Mars" }) },
+  ]);
+  await page.getByPlaceholder("Message").fill("time on Mars");
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Allow", exact: true }).click();
+  await page.locator(".local-msg.tool", { hasText: "Use time.get_current_time on your computer: failed" }).waitFor({ timeout: 5000 });
 });
