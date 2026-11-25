@@ -252,3 +252,41 @@ test("an AI on the phone can ring, notify or ask that phone at most 3 times a mi
   await mcp.callTool("clock", "call_phone", { say: "later" });
   assert.strictEqual(mcp.reg.calls.length, 6);
 });
+
+test("ArcFlare's phone tools are a built-in server: off at first, and on they reach the hub with its own token", async () => {
+  const home = tmp();
+  const token = "t".repeat(43);
+  const got = [];
+  const hubSrv = http.createServer((req, res) => {
+    let b = "";
+    req.on("data", (c) => { b += c; });
+    req.on("end", () => {
+      got.push({ url: req.url, auth: req.headers.authorization, body: JSON.parse(b || "{}") });
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: true, sound: true }));
+    });
+  });
+  await new Promise((r) => hubSrv.listen(0, "127.0.0.1", r));
+  fs.mkdirSync(path.join(home, "hub"), { recursive: true });
+  fs.writeFileSync(path.join(home, "hub", "running.json"), JSON.stringify({ pid: process.pid, port: hubSrv.address().port }));
+  fs.writeFileSync(path.join(home, "hub", "local-token"), token, { mode: 0o600 });
+  const before = process.env.ARCFLARE_HOME;
+  process.env.ARCFLARE_HOME = home;   // as the hub runs: its servers inherit it
+  const mcp = new McpHub({ dir: tmp(), home, builtins: true, load: () => ({ servers: {} }) });
+  try {
+    const row = mcp.list().find((s) => s.name === "arcflare-phone");
+    assert.deepStrictEqual([row.builtin, row.enabled, row.status], [true, false, "off"]);
+    assert.deepStrictEqual(await mcp.phoneTools(), []);
+    assert.strictEqual((await mcp.setEnabled("arcflare-phone", true)).status, "on");
+    const tools = await mcp.phoneTools();
+    for (const n of ["ask_phone", "notify_phone", "call_phone"]) assert.ok(tools.some((t) => t.server === "arcflare-phone" && t.name === n), n);
+    const r = await mcp.callTool("arcflare-phone", "notify_phone", { title: "Build done" });
+    assert.deepStrictEqual(r, { text: "sent", isError: false, truncated: false });
+    assert.deepStrictEqual(got, [{ url: "/api/local/notify", auth: "Bearer " + token, body: { title: "Build done", body: "" } }]);
+    assert.ok(!JSON.stringify([mcp.list(), tools]).includes(token));
+  } finally {
+    mcp.stopAll();
+    if (before === undefined) delete process.env.ARCFLARE_HOME; else process.env.ARCFLARE_HOME = before;
+    await new Promise((r) => hubSrv.close(r));
+  }
+});

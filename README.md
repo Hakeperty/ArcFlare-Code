@@ -728,7 +728,10 @@ In ArcFlare's own agent each has a switch (`arcflare mcp enable|disable desktop|
 or `--no-web` / `--no-desktop` for one run; the web switch covers the browser too), and
 the agent's system prompt names the ones that are on with their exact tool ids, so a
 model does not have to discover that it can browse. The phone's Tools screen lists the
-three as servers an owner can switch on.
+three as servers an owner can switch on, and a fourth, `arcflare-phone` (the `phone` part:
+`ask_phone`, `notify_phone`, `call_phone` and the local model tools), so the AI on the
+phone and the agents started from it can ring, notify or ask you without editing
+`mcp.json`. The phone tools are limited to 3 calls a minute from the phone's AI.
 
 **The web tools** reach the public internet only: an address on this machine or this
 network is refused, at every redirect. `web_fetch` returns headings, paragraphs, lists
