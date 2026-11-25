@@ -3,8 +3,8 @@ import json, sys, torch, soundfile as sf, librosa
 from transformers import pipeline
 
 model, files = sys.argv[1], sys.argv[2:]
-asr = pipeline("automatic-speech-recognition", model=model, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-               device=0 if torch.cuda.is_available() else -1)
+asr = pipeline("automatic-speech-recognition", model=model, torch_dtype=torch.float16, device=0)  # GPU only: no silent CPU fallback
+
 out = {}
 for f in files:
     a, sr = sf.read(f, dtype="float32")
