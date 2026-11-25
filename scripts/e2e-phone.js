@@ -247,7 +247,7 @@ async function openAgentView(P, page, name) {
 
 async function send(page, text) {
   await page.locator("#compose-text").fill(text);
-  await page.locator("#compose button[type=submit]").tap();
+  await page.locator("#compose-send").tap();
 }
 
 /** Layout rules, measured in the page. Returns a list of problems. */
