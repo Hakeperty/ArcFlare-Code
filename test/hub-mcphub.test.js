@@ -124,6 +124,12 @@ test("shortError keeps the reason and drops paths", () => {
   }
 });
 
+test("shortError stays fast on very long server text", () => {
+  const t0 = Date.now();
+  shortError("spawn ".repeat(200000));
+  assert.ok(Date.now() - t0 < 500);
+});
+
 test("the supervisor hands switched-on servers to the agents it boots", async () => {
   const dir = tmp();
   const h = hub(dir);
