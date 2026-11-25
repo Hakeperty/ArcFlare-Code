@@ -124,7 +124,7 @@ test("bad arguments are refused before anything runs", async () => {
     for (const args of [[1, 2], "city=Tokyo", null, 5]) {
       assert.strictEqual((await call(port, "POST", "/api/mcp-tools/call", { server: "clock", tool: "now", args })).status, 400, JSON.stringify(args));
     }
-    assert.strictEqual((await call(port, "POST", "/api/mcp-tools/call", { server: "clock", tool: "now", args: { city: "x".repeat(9000) } })).status, 413);
+    assert.strictEqual((await call(port, "POST", "/api/mcp-tools/call", { server: "clock", tool: "now", args: { city: "x".repeat(1500) } })).status, 413);
     assert.strictEqual((await call(port, "POST", "/api/mcp-tools/call", { tool: "now" })).status, 400);
     assert.strictEqual(mcp.reg.calls.length, 0);
   } finally { await s.close(); }

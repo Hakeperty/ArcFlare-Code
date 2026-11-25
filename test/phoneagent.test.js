@@ -470,3 +470,19 @@ test("run: an mcp call goes to the hub, and its output is marked as data and cut
   assert.match(await A.run(call("mcp", { tool: "nope" }), [], null, 400, mcp), /^Error: There is no computer tool/);
   assert.deepEqual(seen, [], "a bad call never reaches the hub");
 });
+
+test("an mcp call runs with exactly the input the card shows, and input too long to show in full is refused", async () => {
+  const seen = [];
+  const mcp = { list: MCP, call: async (s, t, a) => { seen.push(a); return { text: "ok" }; } };
+  const fits = call("mcp", { tool: "get_current_time", args: { timezone: "x".repeat(1400) } });
+  const d = plain(A.describe(fits, [], MCP));
+  assert.equal(d.ok, true);
+  await A.run(fits, [], null, 400, mcp);
+  assert.deepEqual(plain(seen), [JSON.parse(d.body)], "what runs is what was shown");
+  assert.equal(d.body, JSON.stringify(seen[0], null, 1));
+  seen.length = 0;
+  const long = call("mcp", { tool: "get_current_time", args: { timezone: "x".repeat(1600) } });
+  assert.match(plain(A.describe(long, [], MCP)).error, /^args are too long to show the person/);
+  assert.match(await A.run(long, [], null, 400, mcp), /^Error: args are too long/);
+  assert.deepEqual(seen, [], "nothing is sent");
+});
