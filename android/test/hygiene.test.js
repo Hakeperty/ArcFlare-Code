@@ -257,7 +257,7 @@ test("native source lint (greps only, cannot catch an inverted condition): MainA
   assert.ok(main.indexOf("applyScreenshots(this);") > 0 && main.indexOf("applyScreenshots(this);") < main.indexOf("super.onCreate(savedInstanceState);"), "applied before the page loads");
   const all = fs.readdirSync(dir).filter((f) => f.endsWith(".java")).map((f) => [f, read(path.join(dir, f))]);
   assert.deepEqual(all.filter(([, s]) => /FLAG_SECURE/.test(s)).map(([f]) => f), ["MainActivity.java"], "FLAG_SECURE is touched only in MainActivity.applyScreenshots");
-  assert.equal([...main.matchAll(/WindowManager\.LayoutParams\.FLAG_SECURE/g)].length, 3, "one clear, one set");
+  assert.equal([...main.matchAll(/WindowManager\.LayoutParams\.FLAG_SECURE/g)].length, 3, "the set line names it twice, the clear line once");
   assert.deepEqual(all.filter(([, s]) => /applyScreenshots\(|ALLOW_SCREENSHOTS/.test(s)).map(([f]) => f).sort(), ["MainActivity.java", "NotifierPlugin.java"]);
   assert.doesNotMatch(all.map(([, s]) => s).join("\n"), /setRecentsScreenshotEnabled/, "nothing else hides the app from captures or recents");
   const notifier = read(path.join(dir, "NotifierPlugin.java"));
