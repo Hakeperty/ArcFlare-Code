@@ -417,6 +417,7 @@ test("an approval or a Back gesture during a call keeps the call screen", { skip
   await new Promise((r) => setTimeout(r, 300));
   assert.ok(await page.isVisible("#call-active"), "the approval sheet replaced the call");
   assert.ok(!(await page.isVisible("#approval")));
+  assert.ok(await page.isVisible("#call-approval"), "the call sheet does not say an approval is waiting");
   await page.click("#call-hangup");
   await page.locator("#sheet-call").waitFor({ state: "hidden", timeout: 10000 });
   await page.locator("#approval").waitFor({ state: "visible" });
