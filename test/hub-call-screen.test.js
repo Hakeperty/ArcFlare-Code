@@ -279,6 +279,22 @@ test("what a listen hears after its call ended is not sent in the next call", { 
   assert.strictEqual(await page.isDisabled("#call-listen"), true, "Listen came back on while the second call listens");
 });
 
+// The 40 s guard gives Listen back while the app may still be listening; tapping it then must not start a second
+// listen in the app at the same time.
+test("Listen tapped again while the app still listens does not start a second listen", { skip }, async (t) => {
+  const { page, calls } = await phone(t, { app: true });
+  await page.evaluate(() => { window.__heard = []; });
+  calls.start({ say: "Deploy now?", from: "Codex" });
+  await page.click("#call-answer");
+  await until(() => page.evaluate(() => window.__heard.length === 1), "the call did not listen");
+  await page.evaluate(() => { listenForAnswer(); });   // as after the guard re-enabled Listen
+  await new Promise((r) => setTimeout(r, 300));
+  assert.strictEqual(await page.evaluate(() => window.__heard.length), 1, "a second listen was started");
+  await page.evaluate(() => window.__heard[0]({ text: "yes" }));
+  await until(() => calls.current() && calls.current().status === "waiting", "what was heard was not sent");
+  assert.strictEqual(calls.current().turns.filter((x) => x.who === "user").length, 1);
+});
+
 // Hanging up while the connection drops for a moment: the phone tries again, so the call does not stay open on the
 // computer (before, one failed request left it open until the hub's own timeout).
 test("hanging up is tried again when the connection drops", { skip }, async (t) => {
