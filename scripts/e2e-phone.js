@@ -280,6 +280,7 @@ function measureLayout(expectDark) {
   const nav = document.getElementById("bottomnav");
   if (nav && !nav.hidden) {
     for (const a of nav.querySelectorAll("a")) {
+      if (!vis(a)) continue;   // a tab that is hidden (On phone outside the app) is not a touch target
       if (a.getBoundingClientRect().height < 55.9) issues.push(`nav tab ${a.textContent.trim()} is ${a.getBoundingClientRect().height}px tall, want 56`);
     }
     if (Math.abs(nav.getBoundingClientRect().bottom - window.innerHeight) > 1) issues.push("bottom nav is not at the bottom of the screen");
@@ -292,7 +293,9 @@ function measureLayout(expectDark) {
   for (const n of document.querySelectorAll("button, input, select, textarea, a[href]")) {
     if (n.tagName === "INPUT" && n.type === "hidden") continue;
     if (!vis(n)) continue;
-    const r = n.getBoundingClientRect();
+    // A checkbox or radio is tapped through its label, so the label is the touch target.
+    const hit = ["checkbox", "radio"].includes(n.type) && n.closest("label") ? n.closest("label") : n;
+    const r = hit.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;
     const label = `${n.tagName.toLowerCase()}#${n.id || ""}"${(n.textContent || n.getAttribute("placeholder") || n.type || "").trim().slice(0, 24)}"`;
     if (n.tagName === "A" && !tapLinks.has((n.textContent || "").trim())) continue;
