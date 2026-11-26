@@ -123,3 +123,11 @@ test("arcflare create: a model of your own from a Modelfile, run as written", ()
   assert.strictEqual(arcs.find("pirate", opts), null);
   assert.strictEqual(arcs.remove("../../etc/passwd", { dir }), false);
 });
+
+test("a SYSTEM prompt that contains triple quotes survives write and read", () => {
+  const system = 'Put code in """ fences.\nBe brief.';
+  const back = modelfile.parse(modelfile.render({ from: "a/b", system, messages: [{ role: "user", content: 'say """' }] }));
+  assert.deepStrictEqual(back.errors, []);
+  assert.strictEqual(back.system, system);
+  assert.strictEqual(back.messages[0].content, 'say """');
+});
