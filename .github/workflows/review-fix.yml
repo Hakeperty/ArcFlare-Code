@@ -270,7 +270,7 @@ jobs:
               echo "$note"
             fi
             echo
-            [ -s .autofix/result.md ] && sed -e 's/<!--[^>]*-->//g' -e '/^VERDICT:/d' .autofix/result.md
+            [ -s .autofix/result.md ] && sed -e '/^VERDICT:/d' -e 's/</\&lt;/g' .autofix/result.md
             printf '\n<!-- arcflare-review-fix -->\n'
           } > .autofix/comment.md
           cat .autofix/comment.md >> "$GITHUB_STEP_SUMMARY"
