@@ -3,7 +3,7 @@
 # Copied into each ArcFlare repo from templates/workflows/ in
 # Hakeperty/Arcflare-rules-for-claude. Edit it there, not here.
 #
-# Safety: Claude can only read files and write the review file. A plain step
+# Safety: Claude is given only tools to read files and write the review file. A plain step
 # posts the comment, so the pull request text cannot make the model act on the
 # repository. Pull requests from forks are skipped: they get no secrets.
 # The review is advice. It never fails the check. Note that a pull_request
