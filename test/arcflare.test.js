@@ -795,3 +795,15 @@ test("a GGUF's file_type is named the way llama.cpp numbers it (gpt-oss files ar
   assert.strictEqual(sum(37).quant, "TQ2_0");
   assert.strictEqual(sum(15).quant, "Q4_K_M");
 });
+
+test("a projector named Model.mmproj-f16.gguf is paired with its model, not listed as one", () => {
+  const d = tmpdir("mmproj-dot");
+  const r = repo(d, "vendora", "Dottest-3D");
+  put(r, "Dottest-3D.Q8_0.gguf");
+  put(r, "Dottest-3D.mmproj-f16.gguf");
+
+  const found = discoverIn(d);
+  assert.strictEqual(found.length, 1, "the projector is not a model");
+  assert.ok(found[0].mmproj && found[0].mmproj.endsWith("Dottest-3D.mmproj-f16.gguf"));
+  fs.rmSync(d, { recursive: true, force: true });
+});

@@ -288,3 +288,14 @@ test("pull writes nothing when any file name would leave the cache", async () =>
     delete require.cache[require.resolve("../lib/hf")];
   }
 });
+
+test("pull finds a projector named Model.mmproj-f16.gguf (mradermacher's naming) and never takes it for the model", () => {
+  // Names as listed by mradermacher/gemma-3-4b-it-GGUF on 2026-11-26.
+  const repo = [sib("gemma-3-4b-it.Q8_0.gguf"), sib("gemma-3-4b-it.mmproj-Q8_0.gguf"), sib("gemma-3-4b-it.mmproj-f16.gguf")];
+  const r = hf.pickFiles(repo, "");
+  assert.deepStrictEqual(names(r), ["gemma-3-4b-it.Q8_0.gguf"]);
+  assert.strictEqual(r.mmproj.rfilename, "gemma-3-4b-it.mmproj-f16.gguf");
+  const only = hf.pickFiles([sib("m.mmproj-f16.gguf"), sib("m.f16.gguf")], "f16");
+  assert.deepStrictEqual(names(only), ["m.f16.gguf"]);
+  assert.throws(() => hf.pickFiles([sib("m.mmproj-f16.gguf")], ""), /no GGUF files/);
+});
