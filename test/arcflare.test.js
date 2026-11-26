@@ -786,3 +786,12 @@ test("chat reports server errors and cut-off answers instead of an empty reply",
     await assert.rejects(ask("cut"), /aborted|closed the answer early/);
   } finally { srv.close(); }
 });
+
+test("a GGUF's file_type is named the way llama.cpp numbers it (gpt-oss files are 38, MXFP4)", () => {
+  // Read from ggml-org/gpt-oss-20b-GGUF on 2026-11-26: general.file_type = 38.
+  const sum = (ft) => gguf.summarize({ "general.architecture": "x", "general.file_type": ft });
+  assert.strictEqual(sum(38).quant, "MXFP4");
+  assert.strictEqual(sum(36).quant, "TQ1_0");
+  assert.strictEqual(sum(37).quant, "TQ2_0");
+  assert.strictEqual(sum(15).quant, "Q4_K_M");
+});
