@@ -107,7 +107,7 @@ jobs:
           printf '\n<!-- arcflare-pr-review -->\n' >> "$f"
           cat "$f" >> "$GITHUB_STEP_SUMMARY"
           id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$N/comments" --paginate \
-            --jq '.[] | select(.body | contains("<!-- arcflare-pr-review -->")) | .id' | head -1)
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- arcflare-pr-review -->"))) | .id' | head -1)
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@"$f" > /dev/null
           else
