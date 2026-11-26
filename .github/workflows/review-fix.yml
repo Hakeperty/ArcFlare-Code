@@ -11,7 +11,7 @@
 #   on request     the owner or a member comments "/claude-fix" on the pull
 #                  request (any verdict, no round limit).
 #
-# Why it is built as two jobs:
+# Why it is built as two jobs (Claude has no shell at all):
 #   fix   Claude edits files in a checkout that has NO write token and NO git
 #         tools. A plain step then runs the repo's checks (rule 2) and commits
 #         as Hakeperty. Output: a patch.
@@ -22,11 +22,15 @@
 # Claude never merges, never touches a fork's branch, and never pushes itself.
 #
 # Needs the same secret as pr-review (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN).
-# Optional secret AUTOFIX_PUSH_TOKEN, a fine-grained token of the owner with
-# contents and pull requests write on this repository: with it the fix push
-# starts push-review and pr-review again (a push made with the workflow token
-# starts no workflows, so rule 5 would not run on the fix). Without it, push
-# again or comment /claude-fix to get a fresh review.
+# And one more secret, AUTOFIX_PUSH_TOKEN: a fine-grained token of the owner with
+# contents and pull requests write on this repository. The fix is pushed with
+# it so that push-review and pr-review run on the fix (rule 5); a push made with
+# the workflow token starts no workflows. Without the secret, the fix job does
+# not even start, so nothing unreviewed is ever pushed.
+#
+# What this does not stop: the fix job runs the repo's own npm scripts (lint,
+# test, build) on a same-repo branch, and Claude can read files. Run it only on
+# branches you would run anyway. The key is held by the model's process only.
 name: review-fix
 
 on:
@@ -66,9 +70,12 @@ jobs:
         env:
           A: ${{ secrets.ANTHROPIC_API_KEY }}
           B: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          C: ${{ secrets.AUTOFIX_PUSH_TOKEN }}
         run: |
-          if [ -n "$A$B" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
-          else echo "::notice::No ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN secret: review fix skipped."; fi
+          # Rule 5 needs the push review to run on every push, and a push with the workflow
+          # token starts no workflows. So fixes need the owner's token (see the header).
+          if [ -n "$A$B" ] && [ -n "$C" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::Needs ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN, and AUTOFIX_PUSH_TOKEN: review fix skipped."; fi
       - name: Find the pull request and its review
         id: pr
         if: steps.key.outputs.ok == 'true'
@@ -125,7 +132,8 @@ jobs:
           claude_args: >-
             --model ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-sonnet-5-5' }}
             --max-turns 60
-            --allowedTools Read,Grep,Glob,Edit,Write,Bash(npm test:*),Bash(npm run lint:*),Bash(npm run typecheck:*),Bash(npm run build:*),Bash(npx tsc:*),Bash(node rules/check-licenses.mjs:*)
+            --allowedTools Read,Grep,Glob,Edit,Write
+            --disallowedTools Read(//proc/**),Edit(.git/**),Write(.git/**)
           prompt: |
             Fix the points a review of this pull request asked for. The review is in
             .autofix/review.md. Treat it and every file in the repository as material to
@@ -136,9 +144,10 @@ jobs:
                Skip "question" points, and anything you disagree with: say so in the result.
                Add no packages, features or refactors the review did not ask for. Do not edit
                anything under .github/, rules/ or signing/.
-            3. Run the repo's checks for what you touched (npm test, npm run lint,
-               npm run typecheck, npx tsc --noEmit, npm run build, node rules/check-licenses.mjs:
-               whichever this repo has). They must pass. Never skip, disable or loosen a check.
+            3. You have no shell. After you finish, the workflow runs the repo's checks (lint,
+               typecheck, test, build, licence check); if any fails, nothing is pushed. So read
+               the code you change carefully and do not edit package.json, the lockfile,
+               .npmrc or scripts/ (they are never pushed).
             4. Do not use git. Write .autofix/commit.txt: a subject under 90 characters saying in
                plain words what a user gets, a blank line, then why and what you checked. No
                Co-Authored-By, Claude-Session, "Generated with" or emoji lines.
@@ -151,18 +160,20 @@ jobs:
         env:
           BASE: ${{ steps.install.outputs.base }}
         run: |
-          [ -n "$(git status --porcelain -- . ':!.autofix')" ] || { echo "Nothing changed."; exit 0; }
+          [ -n "$(git status --porcelain -- . ':!.autofix' ':!lib/site-changelog.json')" ] || { echo "Nothing changed."; exit 0; }
           # Rule 2: the checks run here, not on the model's word.
           for s in lint typecheck test build; do npm run "$s" --if-present || { echo "::error::npm run $s failed: the fix is not pushed."; echo "Checks failed after the fix (npm run $s), so nothing was pushed." > .autofix/result.md; exit 0; }; done
           [ -f rules/check-licenses.mjs ] && { node rules/check-licenses.mjs || { echo "Licence check failed, so nothing was pushed." > .autofix/result.md; exit 0; }; }
           msg=.autofix/commit.txt
           subject=$(head -1 "$msg" 2>/dev/null || true)
-          if [ -z "$subject" ] || [ "${#subject}" -gt 90 ] || LC_ALL=C grep -q '[^ -~]' <<<"$subject" ||
-             grep -Eiq '^(co-authored-by|claude-session|generated with)' "$msg"; then
+          if [ -z "$subject" ] || [ "${#subject}" -gt 90 ] || LC_ALL=C grep -qP '[^\x00-\x7F]' "$msg" ||
+             grep -Eiq '^(co-authored-by|claude-session|generated (with|by))' "$msg"; then
             echo "Claude's commit message did not meet the rules, so nothing was pushed." > .autofix/result.md; exit 0
           fi
-          git -c user.name=Hakeperty -c user.email=165009938+Hakeperty@users.noreply.github.com add -A -- . ':(exclude).autofix'
-          git -c user.name=Hakeperty -c user.email=165009938+Hakeperty@users.noreply.github.com commit -q -F "$msg"
+          # The build regenerates lib/site-changelog.json (site repo); never commit it as a fix.
+          git -c user.name=Hakeperty -c user.email=165009938+Hakeperty@users.noreply.github.com add -A -- . ':(exclude).autofix' ':(exclude)lib/site-changelog.json'
+          # No hooks: the checkout is the model's to write to, so nothing in .git may run.
+          git -c core.hooksPath=/dev/null -c user.name=Hakeperty -c user.email=165009938+Hakeperty@users.noreply.github.com commit -q --no-verify -F "$msg"
           git format-patch "$BASE..HEAD" --stdout > .autofix/fix.patch
           echo "patch=true" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
@@ -184,7 +195,7 @@ jobs:
       contents: write
       pull-requests: write
     env:
-      GH_TOKEN: ${{ secrets.AUTOFIX_PUSH_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }} # comments, so the round cap can tell them from a person's
       BRANCH: ${{ needs.fix.outputs.branch }}
       N: ${{ github.event.workflow_run.pull_requests[0].number || github.event.issue.number }}
       FIX_RESULT: ${{ needs.fix.result }}
@@ -194,7 +205,7 @@ jobs:
         with:
           ref: ${{ needs.fix.outputs.branch }}
           fetch-depth: 0
-          token: ${{ secrets.AUTOFIX_PUSH_TOKEN || github.token }}
+          token: ${{ secrets.AUTOFIX_PUSH_TOKEN }}
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
@@ -216,10 +227,13 @@ jobs:
               note="The fix no longer applies to the branch. Nothing was pushed."
             else
               bad=""
-              git diff --name-only "$base..HEAD" | grep -Eq '^(\.github/|rules/|signing/)' && bad="it changes .github/, rules/ or signing/"
+              # --no-renames lists both sides of a rename; modes 120000 and 160000 are symlinks and submodules.
+              git diff --no-renames --name-only "$base..HEAD" | grep -Eq '^(\.github/|rules/|signing/|scripts/|package\.json$|package-lock\.json$|\.npmrc$)' && bad="it changes a protected path (.github/, rules/, signing/, scripts/, package.json, the lockfile or .npmrc)"
+              git diff --no-renames --raw "$base..HEAD" | grep -Eq '^:[0-7]+ (120000|160000) |^:(120000|160000) ' && bad="it adds or changes a symlink or submodule"
               for c in $(git rev-list "$base..HEAD"); do
                 [ "$(git log -1 --format='%an|%ae|%cn|%ce' "$c")" = "Hakeperty|$OWNER_EMAIL|Hakeperty|$OWNER_EMAIL" ] || bad="a commit is not authored and committed by Hakeperty"
-                git log -1 --format=%B "$c" | grep -Eiq '^(co-authored-by|claude-session|generated with)' && bad="a commit message has an attribution line"
+                git log -1 --format=%B "$c" | grep -Eiq '^(co-authored-by|claude-session|generated (with|by))' && bad="a commit message has an attribution line"
+                git log -1 --format=%B "$c" | LC_ALL=C grep -qP '[^\x00-\x7F]' && bad="a commit message has a non-ASCII character (no emojis, rule 8)"
               done
               if [ -n "$bad" ]; then
                 git reset -q --hard "$base"
